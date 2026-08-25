@@ -13,13 +13,28 @@ import sys
 import time
 from pathlib import Path
 
-import torch
-import torch.nn as nn
-from torch.utils.data import DataLoader, random_split
-
 # Allow running as `python src/train_autoregressive.py` from the project root.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+# --- Resource cap MUST be applied before torch is imported ------------------
+# OpenMP/MKL read their thread limits at import time; setting them later has
+# no effect and torch would happily grab every core on this shared box.
+import resources
+
+_FRACTION = None
+for i, a in enumerate(sys.argv):
+    if a == "--resource-fraction" and i + 1 < len(sys.argv):
+        _FRACTION = sys.argv[i + 1]
+    elif a.startswith("--resource-fraction="):
+        _FRACTION = a.split("=", 1)[1]
+
+RESOURCE_PLAN = resources.apply(_FRACTION)
+# ----------------------------------------------------------------------------
+
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader, random_split
 
 import config
 from autoregressive_dataset import AutoregressiveDataset3D
@@ -90,16 +105,20 @@ def main():
                    help="Resume from the latest checkpoint if one exists.")
     p.add_argument("--dry-run", action="store_true",
                    help="Build everything and run one batch, then exit.")
+    p.add_argument("--resource-fraction", type=float, default=None,
+                   help="Fraction of server cores to use. Default 0.5 (half). "
+                        "Parsed before torch import; shown here for --help.")
     args = p.parse_args()
 
-    # Be a good citizen on a shared box.
-    torch.set_num_threads(config.CPU_THREADS)
+    # Enforce the cap inside torch as well as via the OMP env vars.
+    torch.set_num_threads(RESOURCE_PLAN["torch_threads"])
     torch.manual_seed(1337)
 
     config.ensure_dirs()
     print("NWP Emulator training")
     print(config.describe())
-    print(f"  torch          : {torch.__version__} (threads={config.CPU_THREADS})")
+    print(f"  torch          : {torch.__version__}")
+    print(resources.describe(RESOURCE_PLAN))
 
     # --- Data --------------------------------------------------------------
     run_folders = sorted([d for d in config.TENSOR_DIR.iterdir() if d.is_dir()]) \
@@ -122,9 +141,10 @@ def main():
         train_set, val_set = dataset, None
 
     train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True,
-                              num_workers=config.NUM_WORKERS)
+                              num_workers=RESOURCE_PLAN["dataloader_workers"])
     val_loader = DataLoader(val_set, batch_size=args.batch_size,
-                            num_workers=config.NUM_WORKERS) if val_set else None
+                            num_workers=RESOURCE_PLAN["dataloader_workers"]) \
+        if val_set else None
 
     print(f"  train / val    : {n_train} / {n_val} transitions")
 

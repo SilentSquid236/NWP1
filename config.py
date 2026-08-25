@@ -36,15 +36,12 @@ TEMP_CHANNEL_IDX = 0
 BATCH_SIZE = int(os.environ.get("NWP_BATCH_SIZE", 1))
 LEARNING_RATE = float(os.environ.get("NWP_LR", 1e-4))
 EPOCHS = int(os.environ.get("NWP_EPOCHS", 50))
-NUM_WORKERS = int(os.environ.get("NWP_NUM_WORKERS", 2))
-
 # Loss weights, aligned to CHANNELS. Temperature is the strict control
 # variable, so it carries a heavy multiplier.
 LOSS_WEIGHTS = [5.0, 1.0, 1.0, 1.0, 1.0]
 
-# Cap CPU threads. This box is shared with ~30 other users; grabbing every
-# core is antisocial and will get the job killed. Override with NWP_THREADS.
-CPU_THREADS = int(os.environ.get("NWP_THREADS", 8))
+# Thread/worker limits live in resources.py, which must be imported before
+# torch. Default policy: never use more than 50% of the server's cores.
 
 
 def ensure_dirs():
@@ -59,8 +56,7 @@ def describe() -> str:
         f"  TENSOR_DIR     : {TENSOR_DIR}\n"
         f"  CHECKPOINT_DIR : {CHECKPOINT_DIR}\n"
         f"  state          : {N_CHANNELS} vars x {N_LEVELS} levels {CHANNELS}\n"
-        f"  batch/lr/epochs: {BATCH_SIZE} / {LEARNING_RATE} / {EPOCHS}\n"
-        f"  cpu threads    : {CPU_THREADS}"
+        f"  batch/lr/epochs: {BATCH_SIZE} / {LEARNING_RATE} / {EPOCHS}"
     )
 
 

@@ -11,6 +11,7 @@ in the loss, so thermodynamic error dominates optimisation.
 
 ```
 config.py                     paths + hyperparameters (env-var driven)
+resources.py                  50% resource cap — import before torch
 test_env.py                   environment smoke test — run this first
 requirements.txt              ingestion machine only
 src/
@@ -54,12 +55,31 @@ python src/train_autoregressive.py --resume   # continue from latest.pth
 
 ## Shared-server etiquette
 
-The Xeon is shared with ~30 researchers. `config.CPU_THREADS` caps torch at 8
-threads by default; raise it only if you know the box is quiet.
+The Xeon is shared with ~30 researchers, so **this project never uses more
+than 50% of the machine's cores** unless explicitly told otherwise. The cap is
+enforced in `resources.py`, which must be imported before torch — OpenMP and
+MKL read their thread limits at import time, and torch will otherwise seize
+every core on the box.
+
+Check what the policy resolves to on any machine:
 
 ```bash
-export NWP_THREADS=4
+python resources.py
 ```
+
+Raise it only when you know the box is quiet:
+
+```bash
+python src/train_autoregressive.py --resource-fraction 0.75
+export NWP_RESOURCE_FRACTION=0.75      # or set it for the session
+```
+
+Core count is read via `sched_getaffinity`, so a cpuset or scheduler
+allocation is respected rather than the host's full core count.
+
+Memory is reported, not enforced — a hard RSS limit would kill a run mid-epoch
+instead of slowing it. Watch the reported budget and reduce batch size or
+domain if you approach it.
 
 Long runs should go under `nohup` or `tmux` so they survive a dropped SSH
 session.
