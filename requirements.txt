@@ -1,0 +1,15 @@
+# Ingestion machine (WSL) only -- the shared server uses its preinstalled stack.
+# Install with:  conda install -c conda-forge --file requirements.txt
+torch
+numpy
+scipy
+pandas
+xarray
+netcdf4
+eccodes
+cfgrib
+herbie-data
+metpy
+siphon
+matplotlib
+tqdm

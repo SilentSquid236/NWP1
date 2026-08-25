@@ -1,0 +1,15 @@
+# Ignore Raw Tensors and Telemetry Data
+data/
+*.pt
+*.grib2
+*.json
+
+# Ignore Model Weights
+checkpoints/
+*.pth
+
+# Ignore Python System Files
+__pycache__/
+*.pyc
+.venv/
+.ipynb_checkpoints/
