@@ -114,6 +114,10 @@ def main():
     torch.set_num_threads(RESOURCE_PLAN["torch_threads"])
     torch.manual_seed(1337)
 
+    # Governor re-tunes thread count between epochs based on what the other
+    # ~30 users on this box are actually doing.
+    governor = resources.LoadGovernor(RESOURCE_PLAN)
+
     config.ensure_dirs()
     print("NWP Emulator training")
     print(config.describe())
@@ -179,6 +183,9 @@ def main():
     # --- Train -------------------------------------------------------------
     print()
     for epoch in range(start_epoch, args.epochs):
+        obs = governor.update(torch)
+        if obs.get("changed"):
+            print(f"   [governor] {governor.format(obs)}")
         t0 = time.time()
         train_loss, train_ch = run_epoch(model, train_loader, optimizer, weights, train=True)
 
@@ -189,7 +196,7 @@ def main():
             track = val_loss
         else:
             track = train_loss
-        msg += f"  ({time.time() - t0:.1f}s)"
+        msg += f"  ({time.time() - t0:.1f}s, {governor.current}t)"
         print(msg)
         print("   channels:", {c: round(v.item(), 5) for c, v in zip(config.CHANNELS, train_ch)})
 

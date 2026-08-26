@@ -3,7 +3,7 @@
 A Conv3d autoregressive emulator that steps a gridded atmospheric state
 forward one hour at a time, trained on HRRR analysis fields.
 
-State vector: **5 variables x 15 pressure levels** — `TMP, RH, UGRD, VGRD, HGT`.
+State vector: **5 variables x 20 pressure levels** — `TMP, RH, UGRD, VGRD, HGT`.
 Temperature is treated as the strict control variable and carries a 5x weight
 in the loss, so thermodynamic error dominates optimisation.
 
@@ -15,6 +15,7 @@ resources.py                  50% resource cap — import before torch
 test_env.py                   environment smoke test — run this first
 requirements.txt              ingestion machine only
 src/
+  ingest_hrrr.py              HRRR -> domain-subset tensors
   nwp_emulator_3d.py          Conv3d encoder/decoder
   autoregressive_dataset.py   pairs state(T) -> state(T+1)
   train_autoregressive.py     training loop, checkpointing, resume
@@ -48,6 +49,8 @@ Add it to `~/.bashrc` on each so you don't have to think about it again.
 
 ```bash
 python test_env.py                          # what's available here?
+python src/ingest_hrrr.py --start 2026-08-01 --hours 6 --dry-run
+python src/ingest_hrrr.py --start 2026-08-01 --hours 24
 python src/train_autoregressive.py --dry-run  # verify wiring, one batch
 python src/train_autoregressive.py --epochs 5
 python src/train_autoregressive.py --resume   # continue from latest.pth
@@ -55,8 +58,10 @@ python src/train_autoregressive.py --resume   # continue from latest.pth
 
 ## Shared-server etiquette
 
-The Xeon is shared with ~30 researchers, so **this project never uses more
-than 50% of the machine's cores** unless explicitly told otherwise. The cap is
+The Xeon (104 cores, 376 GB) is shared with ~30 researchers, so **this
+project never uses more than 50% of the machine's cores** unless explicitly
+told otherwise — and below that ceiling it scales down further to whatever
+other users are leaving free, re-checked between every epoch. The cap is
 enforced in `resources.py`, which must be imported before torch — OpenMP and
 MKL read their thread limits at import time, and torch will otherwise seize
 every core on the box.
@@ -67,7 +72,20 @@ Check what the policy resolves to on any machine:
 python resources.py
 ```
 
-Raise it only when you know the box is quiet:
+How the adaptive cap behaves at 104 cores (50% ceiling = 50 threads):
+
+| 1-min load | others using | threads we take |
+|---|---|---|
+| 0-52 | ~0 | 50 (ceiling) |
+| 78 | ~28 | 38 |
+| 100 | ~50 | 27 |
+| 150 | ~100 | 4 (floor) |
+
+Adjustments smaller than 4 threads are ignored so the run doesn't oscillate.
+Disable adaptation and pin to the ceiling with `NWP_ADAPTIVE=0`; set the floor
+with `NWP_MIN_CORES`.
+
+Raise the ceiling only when you know the box is quiet:
 
 ```bash
 python src/train_autoregressive.py --resource-fraction 0.75
@@ -88,13 +106,18 @@ session.
 
 Working: model, dataset pairing, training loop, checkpoint/resume, config.
 
-**Not built yet: ingestion.** Nothing currently writes the
-`data/tensors_3d/<run>/live_hrrr_f<HH>.pt` files the dataset expects. Each
-must contain a dict with key `hrrr_features` holding a `[5, 15, Y, X]` tensor,
-channels in the `config.CHANNELS` order.
+Ingestion writes `data/tensors_3d/<run>/live_hrrr_f<HH>.pt`, each a dict with
+`hrrr_features` holding a `[5, 20, Y, X]` tensor plus lat/lon and metadata.
 
-Also open:
-- domain subsetting — full CONUS at 1799x1059 is ~500 MB/hour in float32
-- normalisation — raw geopotential and temperature differ by orders of
-  magnitude, which will distort the weighted loss until channels are scaled
-- data assimilation layer for balloon telemetry into the F00 state
+**Analysis vs forecast mode matters.** `--mode analysis` (default) fetches
+successive hourly F00 analyses, so T -> T+1 pairs teach real atmospheric
+evolution. `--mode forecast` walks one run's F00..FNN, where every step after
+F00 is HRRR's own forecast — pairs then teach the model to imitate HRRR rather
+than the atmosphere. Train on analysis.
+
+Still open:
+- **normalisation** — geopotential height (~5000) and RH (0-100) differ by
+  orders of magnitude, so the 5x temperature loss weight does not yet mean what
+  it appears to. Needs per-channel standardisation before results are
+  trustworthy.
+- data assimilation layer — see `docs/DATA_ASSIMILATION.md`
