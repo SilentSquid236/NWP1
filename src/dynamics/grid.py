@@ -70,27 +70,33 @@ class CGrid:
         """
         a[i+n] with the grid's edge treatment.
 
-        periodic  : wraps around (np.roll)
-        replicate : values beyond the edge repeat the edge value, i.e. a
-                    zero-gradient (Neumann) condition. Combined with a
-                    relaxation zone this stops the domain wrapping while
-                    keeping the interior operators unchanged.
+        axis is given in 2D convention -- 1 = x, 0 = y -- and mapped onto the
+        LAST two dimensions of the array. This lets the same operators serve
+        2D (ny, nx) fields and 3D (nz, ny, nx) fields without change. Using a
+        literal axis index here would silently difference along z for 3D
+        input, which is the kind of bug that produces plausible-looking
+        garbage rather than an error.
         """
-        if self.edge_mode == "periodic":
-            return np.roll(a, -n, axis=axis)
+        ax = -1 if axis == 1 else -2
 
-        out = np.roll(a, -n, axis=axis)
+        if self.edge_mode == "periodic":
+            return np.roll(a, -n, axis=ax)
+
+        out = np.roll(a, -n, axis=ax)
+        if n == 0:
+            return out
+
+        # Build slices that work for any number of leading dimensions.
+        def sl(idx):
+            s = [slice(None)] * a.ndim
+            s[ax] = idx
+            return tuple(s)
+
         if n > 0:      # pulled from beyond the far edge
-            if axis == 1:
-                out[:, -n:] = a[:, -1][:, None]
-            else:
-                out[-n:, :] = a[-1, :][None, :]
-        elif n < 0:    # pulled from before the near edge
+            out[sl(slice(-n, None))] = np.expand_dims(a[sl(-1)], axis=ax)
+        else:          # pulled from before the near edge
             k = -n
-            if axis == 1:
-                out[:, :k] = a[:, 0][:, None]
-            else:
-                out[:k, :] = a[0, :][None, :]
+            out[sl(slice(0, k))] = np.expand_dims(a[sl(0)], axis=ax)
         return out
 
     # --- differencing ------------------------------------------------------
