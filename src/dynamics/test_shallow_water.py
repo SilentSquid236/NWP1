@@ -192,6 +192,60 @@ def test_energy_drift():
            f"relative change = {rel * 100:+.3f}%")
 
 
+# ---------------------------------------------------------------------------
+def test_energy_drift_is_time_truncation():
+    """
+    Energy drift should shrink as dt^3 (RK3), proving the loss is TIME
+    truncation rather than a defective spatial scheme. If halving dt does not
+    sharply reduce drift, something is wrong with the discretisation itself.
+    """
+    def drift(frac):
+        gr = CGrid(64, 64, 20e3, 20e3)
+        m = ShallowWaterModel(gr, H=10_000.0)
+        m.h += 30.0 * np.exp(-(((gr.Xc - gr.Lx / 2) / 150e3) ** 2 +
+                               ((gr.Yc - gr.Ly / 2) / 150e3) ** 2))
+        e0 = m.total_energy()
+        m.run(24 * 3600, dt=m.max_dt() * frac)
+        return abs((m.total_energy() - e0) / e0)
+
+    d1, d2 = drift(1.0), drift(0.5)
+    ratio = d1 / d2 if d2 > 0 else np.inf
+
+    ok = ratio > 4.0            # >= 3rd order would give ~8
+    report("energy drift shrinks with dt (time truncation, not scheme)", ok,
+           f"drift {d1*100:.3f}% at dt_max, {d2*100:.3f}% at dt_max/2 "
+           f"-> ratio {ratio:.1f}x (3rd order ~= 8x)")
+
+
+# ---------------------------------------------------------------------------
+def test_enstrophy_conservation():
+    """
+    Potential enstrophy is the second invariant of shallow-water flow and
+    governs the turbulent cascade. The vector-invariant form should conserve
+    it markedly better than the advective form in a vorticity-rich flow.
+
+    This -- not energy -- is what the vector-invariant rewrite actually buys.
+    """
+    def run(form):
+        gr = CGrid(96, 96, 20e3, 20e3, beta=0.0)
+        m = ShallowWaterModel(gr, H=10_000.0, form=form)
+        y = gr.Yc / gr.Ly
+        m.u = 40.0 * (np.exp(-((y - 0.35) / 0.06) ** 2)
+                      - np.exp(-((y - 0.65) / 0.06) ** 2))
+        m.v = 1.0 * np.sin(4 * np.pi * gr.Xc / gr.Lx)
+        m.h = 10_000.0 - (gr.f0 / G) * np.cumsum(m.u, axis=0) * gr.dy
+        m.h -= m.h.mean() - 10_000.0
+        z0 = m.total_potential_enstrophy()
+        m.run(48 * 3600, dt=m.max_dt() * 0.25)
+        return abs((m.total_potential_enstrophy() - z0) / z0)
+
+    adv, vec = run("advective"), run("vector_invariant")
+    ok = vec < adv / 5.0
+    report("vector-invariant conserves potential enstrophy", ok,
+           f"advective {adv*100:.4f}%, vector-invariant {vec*100:.4f}% "
+           f"-> {adv/vec:.0f}x better")
+
+
 if __name__ == "__main__":
     print("\nShallow-water analytic validation\n" + "=" * 60)
     for fn in (test_rest_stays_at_rest,
@@ -199,7 +253,9 @@ if __name__ == "__main__":
                test_gravity_wave_speed,
                test_geostrophic_balance,
                test_cfl_limit_is_real,
-               test_energy_drift):
+               test_energy_drift,
+               test_energy_drift_is_time_truncation,
+               test_enstrophy_conservation):
         try:
             fn()
         except Exception as e:

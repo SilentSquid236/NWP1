@@ -19,16 +19,26 @@ Why C-grid: the pressure gradient and divergence become adjacent differences
 rather than 2*dx differences, which kills the checkerboard null mode that
 plagues the A-grid. It is what WRF, MPAS, and most operational models use.
 
-Indices are periodic, implemented with np.roll, so there are no boundary
-special cases in the interior operators. Lateral boundary conditions for a
-limited-area domain come later, as a relaxation zone applied after each step.
+Interior operators are index-shifts; edge_mode decides whether those shifts
+wrap (periodic) or replicate the edge value (limited-area). Lateral
+boundary forcing is applied as a Davies relaxation zone -- see boundaries.py.
 """
 
 import numpy as np
 
 
 class CGrid:
-    def __init__(self, nx, ny, dx, dy, f0=1.0e-4, beta=1.6e-11):
+    def __init__(self, nx, ny, dx, dy, f0=1.0e-4, beta=1.6e-11,
+                 edge_mode="periodic"):
+        """
+        edge_mode : "periodic" wraps (idealised tests);
+                    "replicate" repeats the edge value, so the domain has real
+                    boundaries. A limited-area run uses "replicate" plus a
+                    Davies relaxation zone driven by external data.
+        """
+        if edge_mode not in ("periodic", "replicate"):
+            raise ValueError(f"unknown edge_mode {edge_mode!r}")
+        self.edge_mode = edge_mode
         self.nx, self.ny = int(nx), int(ny)
         self.dx, self.dy = float(dx), float(dy)
         self.f0, self.beta = float(f0), float(beta)
@@ -51,52 +61,76 @@ class CGrid:
         self.f_u = self.f0 + self.beta * (self.Yc - y0)                 # same rows
         _, Yv = np.meshgrid(self.xc, self.yv)
         self.f_v = self.f0 + self.beta * (Yv - y0)
+        # Corner points (j-1/2, i-1/2) share the v rows in y.
+        self.f_corner = self.f_v.copy()
 
-    # --- differencing (periodic) -------------------------------------------
+    # --- shifting, honouring edge_mode -------------------------------------
 
-    @staticmethod
-    def dx_forward(a, dx):
-        """(a[i+1] - a[i]) / dx  -- centre -> face+1 or face -> centre."""
-        return (np.roll(a, -1, axis=1) - a) / dx
+    def shift(self, a, n, axis):
+        """
+        a[i+n] with the grid's edge treatment.
 
-    @staticmethod
-    def dx_backward(a, dx):
+        periodic  : wraps around (np.roll)
+        replicate : values beyond the edge repeat the edge value, i.e. a
+                    zero-gradient (Neumann) condition. Combined with a
+                    relaxation zone this stops the domain wrapping while
+                    keeping the interior operators unchanged.
+        """
+        if self.edge_mode == "periodic":
+            return np.roll(a, -n, axis=axis)
+
+        out = np.roll(a, -n, axis=axis)
+        if n > 0:      # pulled from beyond the far edge
+            if axis == 1:
+                out[:, -n:] = a[:, -1][:, None]
+            else:
+                out[-n:, :] = a[-1, :][None, :]
+        elif n < 0:    # pulled from before the near edge
+            k = -n
+            if axis == 1:
+                out[:, :k] = a[:, 0][:, None]
+            else:
+                out[:k, :] = a[0, :][None, :]
+        return out
+
+    # --- differencing ------------------------------------------------------
+
+    def dx_forward(self, a, dx=None):
+        """(a[i+1] - a[i]) / dx"""
+        return (self.shift(a, 1, 1) - a) / (dx or self.dx)
+
+    def dx_backward(self, a, dx=None):
         """(a[i] - a[i-1]) / dx"""
-        return (a - np.roll(a, 1, axis=1)) / dx
+        return (a - self.shift(a, -1, 1)) / (dx or self.dx)
 
-    @staticmethod
-    def dy_forward(a, dy):
-        return (np.roll(a, -1, axis=0) - a) / dy
+    def dy_forward(self, a, dy=None):
+        return (self.shift(a, 1, 0) - a) / (dy or self.dy)
 
-    @staticmethod
-    def dy_backward(a, dy):
-        return (a - np.roll(a, 1, axis=0)) / dy
+    def dy_backward(self, a, dy=None):
+        return (a - self.shift(a, -1, 0)) / (dy or self.dy)
 
     # --- interpolation between staggered points ----------------------------
 
-    @staticmethod
-    def h_to_u(h):
-        """Cell centre -> western face: average of the two straddling cells."""
-        return 0.5 * (h + np.roll(h, 1, axis=1))
+    def h_to_u(self, h):
+        """Cell centre -> western face."""
+        return 0.5 * (h + self.shift(h, -1, 1))
 
-    @staticmethod
-    def h_to_v(h):
-        return 0.5 * (h + np.roll(h, 1, axis=0))
+    def h_to_v(self, h):
+        return 0.5 * (h + self.shift(h, -1, 0))
 
-    @staticmethod
-    def v_to_u(v):
+    def v_to_u(self, v):
         """Four-point average of v onto u points. Needed for Coriolis."""
-        return 0.25 * (v + np.roll(v, -1, axis=0)
-                       + np.roll(v, 1, axis=1)
-                       + np.roll(np.roll(v, -1, axis=0), 1, axis=1))
+        return 0.25 * (v + self.shift(v, 1, 0)
+                       + self.shift(v, -1, 1)
+                       + self.shift(self.shift(v, 1, 0), -1, 1))
 
-    @staticmethod
-    def u_to_v(u):
-        return 0.25 * (u + np.roll(u, -1, axis=1)
-                       + np.roll(u, 1, axis=0)
-                       + np.roll(np.roll(u, -1, axis=1), 1, axis=0))
+    def u_to_v(self, u):
+        return 0.25 * (u + self.shift(u, 1, 1)
+                       + self.shift(u, -1, 0)
+                       + self.shift(self.shift(u, 1, 1), -1, 0))
 
     def __repr__(self):
         return (f"CGrid({self.nx}x{self.ny}, dx={self.dx/1000:.0f}km, "
                 f"dy={self.dy/1000:.0f}km, Lx={self.Lx/1000:.0f}km, "
-                f"f0={self.f0:.2e}, beta={self.beta:.2e})")
+                f"f0={self.f0:.2e}, beta={self.beta:.2e}, "
+                f"edges={self.edge_mode})")

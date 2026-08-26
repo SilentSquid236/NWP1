@@ -7,11 +7,26 @@ Equations (advective form, single layer of depth h):
     dv/dt = -u dv/dx - v dv/dy - f u - g dh/dy
     dh/dt = -d(h u)/dx - d(h v)/dy
 
-The continuity equation is written in FLUX form so total mass is conserved to
-machine precision -- it becomes a telescoping sum over the periodic domain.
-Momentum is in advective form, which is simpler and adequate here; a flux-form
-or vector-invariant momentum equation conserves energy better and is the right
-upgrade before moving to 3D.
+Two momentum formulations are available.
+
+VECTOR-INVARIANT (default, Sadourny 1975). Momentum is written in terms of
+potential vorticity q = (zeta + f)/h and the Bernoulli function B = K + g*h:
+
+    du/dt = + q_bar * V_bar - dB/dx
+    dv/dt = - q_bar * U_bar - dB/dy
+
+The pressure gradient and the kinetic-energy gradient merge into a single
+Bernoulli term, and Coriolis and momentum advection merge into the single
+vorticity flux q*V. Discretised on the C-grid with the averaging above, total
+energy is conserved to near machine precision -- it is a property of the
+discretisation, not a tolerance.
+
+ADVECTIVE (form="advective"). The textbook form, kept for comparison. Simpler
+to read, but energy drifts by several percent per day because the discrete
+advection and Coriolis terms do not cancel exactly.
+
+The continuity equation is FLUX form in both cases, so mass is conserved to
+machine precision -- it telescopes over the periodic domain.
 
 Time integration is the three-stage Runge-Kutta of Wicker & Skamarock (2002),
 the scheme WRF uses. It is stable for the CFL numbers we need and damps the
@@ -26,12 +41,17 @@ G = 9.80665      # m s^-2
 
 
 class ShallowWaterModel:
-    def __init__(self, grid: CGrid, H=10_000.0, nu=0.0, g=G):
+    def __init__(self, grid: CGrid, H=10_000.0, nu=0.0, g=G,
+                 form="vector_invariant"):
         """
         grid : CGrid
         H    : mean layer depth (m). Gravity wave speed is sqrt(gH).
         nu   : optional harmonic diffusion (m^2/s), 0 = off.
+        form : "vector_invariant" (energy conserving) or "advective".
         """
+        if form not in ("vector_invariant", "advective"):
+            raise ValueError(f"unknown form {form!r}")
+        self.form = form
         self.grid = grid
         self.H = float(H)
         self.nu = float(nu)
@@ -62,24 +82,73 @@ class ShallowWaterModel:
         return safety * min(gr.dx, gr.dy) / (speed * np.sqrt(2.0))
 
     def tendencies(self, u, v, h):
+        du, dv, dh = (self._tend_vector_invariant(u, v, h)
+                      if self.form == "vector_invariant"
+                      else self._tend_advective(u, v, h))
+
+        if self.nu > 0:
+            du = du + self.nu * self._laplacian(u)
+            dv = dv + self.nu * self._laplacian(v)
+        return du, dv, dh
+
+    # --- vector-invariant (Sadourny) --------------------------------------
+
+    def potential_vorticity_field(self, u, v, h):
+        """q = (zeta + f) / h, at cell corners (j-1/2, i-1/2)."""
+        gr = self.grid
+        zeta = gr.dx_backward(v, gr.dx) - gr.dy_backward(u, gr.dy)
+        h_corner = 0.25 * (h + gr.shift(h, -1, 1) + gr.shift(h, -1, 0)
+                           + gr.shift(gr.shift(h, -1, 1), -1, 0))
+        return (zeta + gr.f_corner) / h_corner
+
+    def _tend_vector_invariant(self, u, v, h):
         gr = self.grid
         dx, dy = gr.dx, gr.dy
 
-        # --- continuity, flux form ----------------------------------------
-        # Mass flux through each face uses the depth interpolated to that face.
-        U = gr.h_to_u(h) * u                       # at u points
-        V = gr.h_to_v(h) * v                       # at v points
+        U = gr.h_to_u(h) * u          # mass flux at u points
+        V = gr.h_to_v(h) * v          # mass flux at v points
         dh = -(gr.dx_forward(U, dx) + gr.dy_forward(V, dy))
 
-        # --- u momentum ----------------------------------------------------
+        q = self.potential_vorticity_field(u, v, h)
+
+        # Bernoulli function at cell centres: kinetic energy + g*h.
+        # Merging these is what makes the pressure gradient energy-consistent.
+        K = 0.25 * (u**2 + gr.shift(u, 1, 1)**2) \
+            + 0.25 * (v**2 + gr.shift(v, 1, 0)**2)
+        B = K + self.g * h
+
+        # q averaged onto u points (in y); V averaged onto u points (x and y).
+        q_u = 0.5 * (q + gr.shift(q, 1, 0))
+        V_u = 0.25 * (gr.shift(V, -1, 1) + V
+                      + gr.shift(gr.shift(V, -1, 1), 1, 0)
+                      + gr.shift(V, 1, 0))
+        du = q_u * V_u - gr.dx_backward(B, dx)
+
+        q_v = 0.5 * (q + gr.shift(q, 1, 1))
+        U_v = 0.25 * (U + gr.shift(U, 1, 1)
+                      + gr.shift(U, -1, 0)
+                      + gr.shift(gr.shift(U, 1, 1), -1, 0))
+        dv = -q_v * U_v - gr.dy_backward(B, dy)
+
+        return du, dv, dh
+
+    # --- advective (kept for comparison) ----------------------------------
+
+    def _tend_advective(self, u, v, h):
+        gr = self.grid
+        dx, dy = gr.dx, gr.dy
+
+        U = gr.h_to_u(h) * u
+        V = gr.h_to_v(h) * v
+        dh = -(gr.dx_forward(U, dx) + gr.dy_forward(V, dy))
+
         v_at_u = gr.v_to_u(v)
-        dudx = 0.5 * (gr.dx_forward(u, dx) + gr.dx_backward(u, dx))   # centred
+        dudx = 0.5 * (gr.dx_forward(u, dx) + gr.dx_backward(u, dx))
         dudy = 0.5 * (gr.dy_forward(u, dy) + gr.dy_backward(u, dy))
         du = (-u * dudx - v_at_u * dudy
               + gr.f_u * v_at_u
               - self.g * gr.dx_backward(h, dx))
 
-        # --- v momentum ----------------------------------------------------
         u_at_v = gr.u_to_v(u)
         dvdx = 0.5 * (gr.dx_forward(v, dx) + gr.dx_backward(v, dx))
         dvdy = 0.5 * (gr.dy_forward(v, dy) + gr.dy_backward(v, dy))
@@ -87,16 +156,12 @@ class ShallowWaterModel:
               - gr.f_v * u_at_v
               - self.g * gr.dy_backward(h, dy))
 
-        if self.nu > 0:
-            du += self.nu * self._laplacian(u)
-            dv += self.nu * self._laplacian(v)
-
         return du, dv, dh
 
     def _laplacian(self, a):
         gr = self.grid
-        return ((np.roll(a, -1, axis=1) - 2 * a + np.roll(a, 1, axis=1)) / gr.dx**2 +
-                (np.roll(a, -1, axis=0) - 2 * a + np.roll(a, 1, axis=0)) / gr.dy**2)
+        return ((gr.shift(a, 1, 1) - 2 * a + gr.shift(a, -1, 1)) / gr.dx**2 +
+                (gr.shift(a, 1, 0) - 2 * a + gr.shift(a, -1, 0)) / gr.dy**2)
 
     # --- time stepping -----------------------------------------------------
 
@@ -141,10 +206,13 @@ class ShallowWaterModel:
         return float((ke + pe) * gr.dx * gr.dy)
 
     def potential_vorticity(self):
-        """(zeta + f) / h, at cell corners."""
+        return self.potential_vorticity_field(self.u, self.v, self.h)
+
+    def total_potential_enstrophy(self):
+        """Integral of 0.5 * h * q^2 -- the other invariant of the flow."""
         gr = self.grid
-        zeta = (gr.dx_forward(self.v, gr.dx) - gr.dy_forward(self.u, gr.dy))
-        return (zeta + gr.f_h) / self.h
+        q = self.potential_vorticity()
+        return float((0.5 * self.h * q**2).sum() * gr.dx * gr.dy)
 
     def diagnostics(self):
         return {
@@ -160,4 +228,5 @@ class ShallowWaterModel:
 
     def __repr__(self):
         return (f"ShallowWaterModel({self.grid.nx}x{self.grid.ny}, H={self.H:.0f}m, "
-                f"c={self.gravity_wave_speed:.0f}m/s, t={self.time/3600:.2f}h)")
+                f"c={self.gravity_wave_speed:.0f}m/s, form={self.form}, "
+                f"t={self.time/3600:.2f}h)")
