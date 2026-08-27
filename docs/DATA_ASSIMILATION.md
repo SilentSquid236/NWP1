@@ -161,6 +161,37 @@ the domain.
 Each stage is independently testable, and each should show a measurable change
 in verification scores. A stage that changes nothing is a bug, not a no-op.
 
+## Data sources: observations only
+
+Implemented in `src/verification/fetchers.py`. Every value is a measurement
+made by an instrument.
+
+| source | what | coverage |
+|---|---|---|
+| ASOS/AWOS + state mesonets (IEM) | surface T, RH, wind | hundreds of sites, hourly |
+| Radiosondes (IEM RAOB) | upper-air T, RH, wind, height | 8 domain sites, 00Z/12Z |
+| MRMS (AWS) | mosaicked radar, gridded | ~2 min, CONUS |
+
+**Deliberately excluded as truth:**
+
+- **SPC mesoanalysis** is a gridded model ANALYSIS, not observations.
+  Verifying against it is circular in the same way as verifying against
+  HRRR — it measures agreement with someone else's model. Useful for
+  context, never as truth.
+- **NEXRAD Level II** is per-site volumetric and enormous (hundreds of GB per
+  CONUS day). MRMS is already mosaicked onto a grid and is the right choice
+  unless raw radial data is specifically needed.
+
+A regression test (`test_no_model_sources`) asserts that no model-derived
+source appears in the observation stream, so this cannot erode quietly.
+
+**Where HRRR is still required:** lateral boundary conditions. A bounded
+domain needs values supplied at its edges every timestep, and that must come
+from a larger-domain model. Initial conditions can become observation-driven
+through DA cycling (background = own previous forecast), leaving HRRR as a
+cold-start first guess only. Boundaries cannot be escaped without going
+global.
+
 ## Open questions
 
 - Time window: how far from valid time can an ob be used? ±30 min is typical

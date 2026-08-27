@@ -16,6 +16,9 @@ test_env.py                   environment smoke test — run this first
 requirements.txt              ingestion machine only
 src/
   ingest_hrrr.py              HRRR -> domain-subset tensors
+  dynamics/                   the physics core (see its own README)
+  verification/               observation operator, QC, scoring, archive
+  postproc/                   adaptive bias correction
   nwp_emulator_3d.py          Conv3d encoder/decoder
   autoregressive_dataset.py   pairs state(T) -> state(T+1)
   train_autoregressive.py     training loop, checkpointing, resume
@@ -114,6 +117,20 @@ successive hourly F00 analyses, so T -> T+1 pairs teach real atmospheric
 evolution. `--mode forecast` walks one run's F00..FNN, where every step after
 F00 is HRRR's own forecast — pairs then teach the model to imitate HRRR rather
 than the atmosphere. Train on analysis.
+
+## Test suites
+
+```bash
+cd src/dynamics && python test_shallow_water.py    # 8
+cd src/dynamics && python test_boundaries.py       # 6
+cd src/dynamics && python test_primitive3d.py      # 8
+cd src/dynamics && python test_subgrid.py          # 7
+cd src/verification && python test_verification.py # 9
+cd src/postproc && python test_bias_correction.py  # 7
+```
+
+45 tests. Physics tests assert analytic answers or convergence order, not
+tolerances chosen to pass.
 
 Still open:
 - **normalisation** — geopotential height (~5000) and RH (0-100) differ by
