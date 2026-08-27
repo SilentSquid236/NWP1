@@ -29,13 +29,26 @@ import numpy as np
 from grid import CGrid
 from vertical import (PressureLevels, hydrostatic_geopotential, diagnose_omega,
                       T_from_theta, RD, CP, KAPPA, G0)
+from subgrid import hyperdiffusion, recommended_hyper_coeff, hyper_stability_dt
 
 
 class Primitive3D:
-    def __init__(self, grid: CGrid, levels: PressureLevels, nu=0.0):
+    def __init__(self, grid: CGrid, levels: PressureLevels, nu=0.0,
+                 hyper=None, stochastic=None):
+        """
+        nu         : harmonic diffusion (m^2/s), usually 0 -- prefer hyper.
+        hyper      : biharmonic coefficient (m^4/s). None = auto (damps the
+                     2dx wave in ~3 h). 0 disables it, which is appropriate
+                     ONLY for idealised tests -- a real run without a
+                     grid-scale sink accumulates noise until it is useless.
+        stochastic : a StochasticPerturbation, or None for a deterministic run.
+        """
         self.grid = grid
         self.lev = levels
         self.nu = float(nu)
+        self.hyper = (recommended_hyper_coeff(grid) if hyper is None
+                      else float(hyper))
+        self.stochastic = stochastic
 
         shape = (levels.nz, grid.ny, grid.nx)
         self.u = np.zeros(shape)
@@ -114,6 +127,20 @@ class Primitive3D:
             dv = dv + self.nu * self._laplacian(v)
             dth = dth + self.nu * self._laplacian(theta)
 
+        if self.hyper > 0:
+            gr = self.grid
+            du = du + hyperdiffusion(u, gr, self.hyper)
+            dv = dv + hyperdiffusion(v, gr, self.hyper)
+            # theta is damped about its level mean, so the dissipation cannot
+            # erode the background stratification -- only the perturbations.
+            th_ref = theta.mean(axis=(1, 2)).reshape(-1, 1, 1)
+            dth = dth + hyperdiffusion(theta - th_ref, gr, self.hyper)
+
+        if self.stochastic is not None:
+            du = self.stochastic.apply(du)
+            dv = self.stochastic.apply(dv)
+            dth = self.stochastic.apply(dth)
+
         return du, dv, dth
 
     def _laplacian(self, a):
@@ -142,9 +169,14 @@ class Primitive3D:
         if om > 0:
             dt_v = safety * self.lev.dp.min() / om
 
-        return float(min(dt_h, dt_v))
+        # Explicit biharmonic diffusion has its own stability limit.
+        dt_hyper = hyper_stability_dt(gr, self.hyper)
+
+        return float(min(dt_h, dt_v, dt_hyper))
 
     def step(self, dt):
+        if self.stochastic is not None:
+            self.stochastic.advance(dt)
         u0, v0, t0 = self.u, self.v, self.theta
 
         du, dv, dth = self.tendencies(u0, v0, t0)
@@ -203,4 +235,6 @@ class Primitive3D:
 
     def __repr__(self):
         return (f"Primitive3D({self.lev.nz}x{self.grid.ny}x{self.grid.nx}, "
+                f"hyper={self.hyper:.2e}, "
+                f"stoch={'on' if self.stochastic else 'off'}, "
                 f"t={self.time/3600:.2f}h)")

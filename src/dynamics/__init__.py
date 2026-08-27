@@ -11,9 +11,12 @@ from boundaries import (relaxation_weights, DaviesRelaxation, BoundaryDriver,
 from vertical import (PressureLevels, hydrostatic_geopotential, diagnose_omega,
                       theta_from_T, T_from_theta, exner, RD, CP, KAPPA)
 from primitive3d import Primitive3D
+from subgrid import (hyperdiffusion, recommended_hyper_coeff,
+                     StochasticPerturbation, perturb_initial_state)
 
 __all__ = ["CGrid", "ShallowWaterModel", "G", "relaxation_weights",
            "DaviesRelaxation", "BoundaryDriver", "run_limited_area",
            "PressureLevels", "hydrostatic_geopotential", "diagnose_omega",
            "theta_from_T", "T_from_theta", "exner", "RD", "CP", "KAPPA",
-           "Primitive3D"]
+           "Primitive3D", "hyperdiffusion", "recommended_hyper_coeff",
+           "StochasticPerturbation", "perturb_initial_state"]

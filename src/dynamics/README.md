@@ -185,6 +185,55 @@ Truncation error converges, bugs do not.
 - **Rigid lid** at the top level, which reflects vertically propagating waves.
   Operational models use a sponge layer aloft.
 
+## Beyond lab conditions: dissipation and variance
+
+`subgrid.py`. Balanced analytic states are not what the model has to survive.
+
+**Hyperdiffusion.** Nonlinear flow cascades energy to scales the grid cannot
+hold. With no sink it accumulates at 2dx as noise until the run is worthless.
+Fourth-order (biharmonic) damping is scale-selective — at 10 km spacing:
+
+| wavelength | e-folding time |
+|---|---|
+| 2dx (grid scale) | 3.0 h |
+| 4dx | 48 h |
+| 8dx | 560 h |
+| 16dx | 8284 h |
+
+On by default; `hyper=0` disables it, which is correct only for idealised
+tests. The coefficient is derived from the **discrete** biharmonic eigenvalue,
+not the continuous k^4 — the discrete Laplacian's response at 2dx is 4/dx^2
+against the continuous (pi/dx)^2 = 9.87/dx^2, and using the continuous value
+makes the damping ~6x weaker than intended.
+
+**Stochastic variance.** A single deterministic run is systematically
+overconfident: unresolved processes have real, non-deterministic effects on
+resolved flow. `StochasticPerturbation` multiplies tendencies by (1 + r) in
+the style of ECMWF's SPPT, where r is smooth in space (spectral filter) and
+AR(1)-correlated in time. Both matter — white noise would be scrubbed out by
+the diffusion and would inject grid-scale energy.
+
+```python
+stoch = StochasticPerturbation(grid, amplitude=0.3, tau=6*3600,
+                               length_scale=500e3, seed=42)
+model = Primitive3D(grid, levels, stochastic=stoch)
+```
+
+`perturb_initial_state()` perturbs initial conditions instead, which samples a
+different uncertainty — the atmosphere's state is never known exactly. A 0.1 K
+initial perturbation grows to ~6 m/s wind differences in 12 h.
+
+### Validation
+
+```bash
+python test_subgrid.py    # 7 tests
+```
+
+Including a **baroclinic instability** case: a sheared jet with a small wave
+seed develops eddies reaching 23 m/s, with eddy energy growing 21% per day.
+That is weather forming from a smooth state — the model evolves rather than
+merely preserving what it was given.
+
 ## Next stages
 
 3. Moisture — vapour transport, condensation, latent heating
