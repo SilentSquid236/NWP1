@@ -23,6 +23,7 @@ Examples:
 
 import argparse
 import os
+import shutil
 import sys
 import time
 import traceback
@@ -40,15 +41,76 @@ import config
 from netpolicy import estimate_ingest_mb, max_mbps
 
 
-def _open_hrrr(H, search):
+def _download_subset(H, search, allow_full=True, verbose=True):
     """
-    Herbie renamed searchString -> search around 2024. Support both so this
-    doesn't break on whichever version the server happens to carry.
+    Download the matching GRIB messages and return the local path.
+
+    Herbie's byte-range subsetting shells out to `curl`. When curl is missing
+    -- or the .idx index cannot be fetched, so byte ranges cannot be computed
+    -- the download quietly produces NO FILE, and Herbie then hands the
+    non-existent path to cfgrib. The result is a FileNotFoundError deep in
+    cfgrib that says nothing about the actual cause.
+
+    So: download explicitly, verify the file exists and is non-empty, and
+    report the real problem here. Fall back to the full file only if asked,
+    since it is roughly 8x the transfer on a shared link.
     """
+    path = None
     try:
-        return H.xarray(search)
+        path = H.download(search)
     except TypeError:
-        return H.xarray(searchString=search)
+        path = H.download(searchString=search)
+    except Exception as e:
+        if verbose:
+            print(f"    subset download raised {type(e).__name__}: {e}")
+
+    if path is not None and Path(path).exists() and Path(path).stat().st_size > 0:
+        return Path(path)
+
+    # Work out WHY, so the message is actionable.
+    reasons = []
+    if shutil.which("curl") is None:
+        reasons.append("curl not found on PATH (Herbie uses it for byte-range "
+                       "subsetting; install it, or use --full-file)")
+    try:
+        n = len(H.inventory(search))
+        if n == 0:
+            reasons.append(f"the search regex matched 0 of "
+                           f"{len(H.inventory())} GRIB messages -- the "
+                           f"variable naming does not fit this file")
+        else:
+            reasons.append(f"{n} messages matched, so the index is fine; "
+                           f"the transfer itself produced no file")
+    except Exception as e:
+        reasons.append(f"could not read the GRIB index ({type(e).__name__}: "
+                       f"{e}) -- without it byte ranges cannot be computed")
+
+    if allow_full:
+        if verbose:
+            print(f"    subset produced no file; falling back to the FULL "
+                  f"file (~8x the transfer)")
+            for r in reasons:
+                print(f"      cause: {r}")
+        try:
+            full = H.download()
+            if full is not None and Path(full).exists() and Path(full).stat().st_size > 0:
+                return Path(full)
+        except Exception as e:
+            reasons.append(f"full-file download also failed: "
+                           f"{type(e).__name__}: {e}")
+
+    raise RuntimeError("HRRR download produced no file.\n        "
+                       + "\n        ".join(f"- {r}" for r in reasons))
+
+
+def _open_hrrr(H, search, allow_full=True, verbose=True):
+    """Download, verify, then open. Never hand cfgrib a path that may not exist."""
+    import xarray as xr
+    path = _download_subset(H, search, allow_full=allow_full, verbose=verbose)
+
+    import cfgrib
+    ds = cfgrib.open_datasets(str(path), backend_kwargs={"indexpath": ""})
+    return ds
 
 
 def _as_single_dataset(ds):
@@ -124,7 +186,7 @@ def herbie_save_dir():
     return d
 
 
-def fetch_hour(when, fxx=0, verbose=True, stride=1):
+def fetch_hour(when, fxx=0, verbose=True, stride=1, allow_full=True):
     """Download one HRRR field set and return (array, metadata)."""
     from herbie import Herbie
 
@@ -137,7 +199,8 @@ def fetch_hour(when, fxx=0, verbose=True, stride=1):
                product="prs", fxx=fxx, verbose=False,
                save_dir=herbie_save_dir())
 
-    ds = _as_single_dataset(_open_hrrr(H, search))
+    ds = _as_single_dataset(_open_hrrr(H, search, allow_full=allow_full,
+                                       verbose=verbose))
     ysl, xsl = domain_slice(ds)
     state = extract_state(ds, ysl, xsl)
 
@@ -198,6 +261,10 @@ def main():
                         "2 = 6 km, 4 = 12 km. The hydrostatic core resolves "
                         "nothing extra at 3 km, and cost scales as stride^-3, "
                         "so 4 is the sensible default for iteration.")
+    p.add_argument("--no-full-fallback", action="store_true",
+                   help="Do not fall back to downloading the full GRIB file "
+                        "when subsetting fails. The full file is ~8x the "
+                        "transfer; on a shared link that matters.")
     p.add_argument("--debug", action="store_true",
                    help="Full traceback on every failure.")
     p.add_argument("--max-failures", type=int, default=3,
@@ -252,7 +319,8 @@ def main():
 
         print(f"  {label}  {when:%Y-%m-%d %H}Z fxx={fxx}")
         try:
-            state, meta = fetch_hour(when, fxx, stride=args.stride)
+            state, meta = fetch_hour(when, fxx, stride=args.stride,
+                                     allow_full=not args.no_full_fallback)
         except Exception as e:
             print(f"    FAILED: {type(e).__name__}: {e}")
             # Print the full chain on the FIRST failure. The surface error is

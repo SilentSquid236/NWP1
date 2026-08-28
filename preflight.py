@@ -138,6 +138,16 @@ def main():
               + f"  (home has {home_free:.1f} GB; Herbie's default ~/data is "
                 f"deliberately overridden)")
 
+    # --- 4b. External tools Herbie needs ----------------------------------
+    curl = shutil.which("curl")
+    wget = shutil.which("wget")
+    check("curl / wget", OK if curl else WARN,
+          f"curl: {curl or 'NOT FOUND'}, wget: {wget or 'NOT FOUND'}"
+          + ("" if curl else
+             "  -- Herbie uses curl for byte-range GRIB subsetting; without "
+             "it the subset download silently produces no file and ingest "
+             "falls back to full files (~8x the transfer)"))
+
     # --- 5. Compute budget -------------------------------------------------
     try:
         import resources
