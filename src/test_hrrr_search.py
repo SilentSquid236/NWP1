@@ -19,7 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from ingest_hrrr import HRRR_SEARCH
+from ingest_hrrr import HRRR_SEARCH, CF_ALIASES, resolve_variable
 
 # Verbatim from hrrr.t13z.wrfprsf00.grib2.idx
 REAL_INDEX = [
@@ -92,10 +92,48 @@ def test_matches_forecast_hours_too():
            f"{len(anl)} analysis, {len(fcst)} forecast rows matched")
 
 
+def test_cf_short_names_resolve():
+    """
+    cfgrib renames GRIB variables to CF short names, so what we ASK for is not
+    what comes back: TMP->t, RH->r, UGRD->u, VGRD->v, HGT->gh. These are the
+    exact names a real HRRR prs download produced.
+    """
+    class FakeDS:
+        def __init__(self, names): self.data_vars = list(names)
+        def __contains__(self, k): return k in self.data_vars
+
+    ds = FakeDS(["t", "u", "v", "gh", "r"])       # verbatim from a live run
+    got = {c: resolve_variable(ds, c)
+           for c in ("TMP", "RH", "UGRD", "VGRD", "HGT")}
+    want = {"TMP": "t", "RH": "r", "UGRD": "u", "VGRD": "v", "HGT": "gh"}
+
+    ok = got == want
+    report("cfgrib CF short names resolve to our channels", ok,
+           f"{got}")
+
+
+def test_missing_variable_reports_usefully():
+    """The error must name what was tried and what was available."""
+    class FakeDS:
+        def __init__(self, names): self.data_vars = list(names)
+        def __contains__(self, k): return k in self.data_vars
+
+    try:
+        resolve_variable(FakeDS(["t", "u"]), "HGT")
+        ok, msg = False, "no error raised"
+    except KeyError as e:
+        msg = str(e)
+        ok = "gh" in msg and "['t', 'u']" in msg
+    report("missing variable error names candidates and contents", ok,
+           msg[:110])
+
+
 if __name__ == "__main__":
-    print("\nHRRR search regex\n" + "=" * 62)
+    print("\nHRRR search regex and variable naming\n" + "=" * 62)
     for fn in (test_matches_isobaric_entries, test_rejects_non_isobaric,
-               test_not_anchored_at_start, test_matches_forecast_hours_too):
+               test_not_anchored_at_start, test_matches_forecast_hours_too,
+               test_cf_short_names_resolve,
+               test_missing_variable_reports_usefully):
         try:
             fn()
         except Exception as e:

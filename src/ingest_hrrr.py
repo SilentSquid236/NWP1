@@ -163,10 +163,8 @@ def extract_state(ds, ysl, xsl):
 
     planes = []
     for name in config.CHANNELS:
-        if name not in sub:
-            raise KeyError(f"Variable {name} not in downloaded fields: "
-                           f"{list(sub.data_vars)}")
-        arr = sub[name].values[:, ysl, xsl]      # [L, Y, X]
+        var = resolve_variable(sub, name)
+        arr = sub[var].values[:, ysl, xsl]       # [L, Y, X]
         planes.append(arr)
 
     return np.ascontiguousarray(np.stack(planes, axis=0), dtype=np.float32)
@@ -174,6 +172,39 @@ def extract_state(ds, ysl, xsl):
 
 # Matches ":TMP:850 mb:anl", ":UGRD:500 mb:1 hour fcst", etc.
 HRRR_SEARCH = r":(?:TMP|RH|UGRD|VGRD|HGT):\d+ mb:"
+
+# cfgrib renames GRIB variables to CF short names on the way in, so the names
+# we ASK Herbie for are not the names we get back:
+#
+#     GRIB   cfgrib
+#     TMP -> t          RH   -> r
+#     UGRD -> u         VGRD -> v
+#     HGT -> gh
+#
+# Candidates are tried in order, so this also survives a cfgrib version that
+# uses the long CF name or passes the GRIB name through unchanged.
+CF_ALIASES = {
+    "TMP":  ("t", "TMP", "temperature", "air_temperature"),
+    "RH":   ("r", "RH", "relative_humidity", "r2"),
+    "UGRD": ("u", "UGRD", "eastward_wind", "u_component_of_wind"),
+    "VGRD": ("v", "VGRD", "northward_wind", "v_component_of_wind"),
+    "HGT":  ("gh", "HGT", "geopotential_height", "z"),
+}
+
+
+def resolve_variable(ds, name):
+    """
+    Find the dataset variable holding our channel, trying known aliases.
+
+    Returns the resolved name, or raises with everything that was tried and
+    everything that was available -- the two facts needed to fix it.
+    """
+    for cand in CF_ALIASES.get(name, (name,)):
+        if cand in ds:
+            return cand
+    raise KeyError(
+        f"channel {name!r} not found. Tried {list(CF_ALIASES.get(name, (name,)))}; "
+        f"dataset has {sorted(ds.data_vars)}")
 
 
 def herbie_save_dir():
