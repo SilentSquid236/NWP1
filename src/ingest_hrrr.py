@@ -109,7 +109,7 @@ def extract_state(ds, ysl, xsl):
     return np.ascontiguousarray(np.stack(planes, axis=0), dtype=np.float32)
 
 
-def fetch_hour(when, fxx=0, verbose=True):
+def fetch_hour(when, fxx=0, verbose=True, stride=1):
     """Download one HRRR field set and return (tensor, metadata)."""
     from herbie import Herbie
 
@@ -129,6 +129,15 @@ def fetch_hour(when, fxx=0, verbose=True):
     lon = ds.longitude.values[ysl, xsl]
     lon = np.where(lon > 180, lon - 360, lon)
 
+    if stride > 1:
+        # Subsample AFTER the domain cut, so the geographic extent is
+        # unchanged and only the spacing coarsens. build_grid() derives dx
+        # from the domain extent and array shape, so the dynamics picks up
+        # the coarser spacing automatically with no other change.
+        state = np.ascontiguousarray(state[:, :, ::stride, ::stride])
+        lat = np.ascontiguousarray(lat[::stride, ::stride])
+        lon = np.ascontiguousarray(lon[::stride, ::stride])
+
     meta = {
         "valid_time": (when + timedelta(hours=fxx)).isoformat(),
         "run_time": when.isoformat(),
@@ -138,6 +147,7 @@ def fetch_hour(when, fxx=0, verbose=True):
         "lat": np.ascontiguousarray(lat, dtype=np.float32),
         "lon": np.ascontiguousarray(lon, dtype=np.float32),
         "source": f"HRRR prs f{fxx:02d}",
+        "stride": stride,
     }
     if verbose:
         print(f"    shape {state.shape}  {state.nbytes / 1e6:.1f} MB  "
@@ -167,6 +177,11 @@ def main():
     p.add_argument("--overwrite", action="store_true")
     p.add_argument("--dry-run", action="store_true",
                    help="Fetch one hour, report shape, write nothing.")
+    p.add_argument("--stride", type=int, default=1,
+                   help="Subsample the grid by this factor. 1 = native 3 km, "
+                        "2 = 6 km, 4 = 12 km. The hydrostatic core resolves "
+                        "nothing extra at 3 km, and cost scales as stride^-3, "
+                        "so 4 is the sensible default for iteration.")
     p.add_argument("--pause", type=float, default=2.0,
                    help="Seconds to pause between hourly downloads (default 2). "
                         "Herbie manages its own transfers, so pacing between "
@@ -188,6 +203,8 @@ def main():
     print("HRRR ingestion")
     print(config.describe())
     print(f"  mode           : {args.mode}")
+    print(f"  stride         : {args.stride} "
+          f"(~{3 * args.stride} km effective spacing)")
     print(f"  window         : {start:%Y-%m-%d %H}Z + {args.hours}h")
     print(f"  output         : {out_dir}")
     est = estimate_ingest_mb(args.hours, config.N_LEVELS, config.N_CHANNELS)
@@ -214,7 +231,7 @@ def main():
 
         print(f"  {label}  {when:%Y-%m-%d %H}Z fxx={fxx}")
         try:
-            state, meta = fetch_hour(when, fxx)
+            state, meta = fetch_hour(when, fxx, stride=args.stride)
         except Exception as e:
             print(f"    FAILED: {type(e).__name__}: {e}")
             if "--debug" in sys.argv:

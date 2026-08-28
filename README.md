@@ -131,6 +131,34 @@ Measured runtime for a 12 h forecast (single core, 20 levels): **2.1 min at
 the 104-core server does not speed it up. Run at 6-12 km — the hydrostatic
 core resolves nothing extra at 3 km.
 
+## Before a live run
+
+```bash
+python preflight.py --hours 12 --stride 4
+```
+
+Checks packages, config, disk, Herbie's cache location, compute budget,
+estimated runtime, network reachability, and the fast test suites. Read-only
+and quick — it exists to fail in seconds on a missing package rather than
+twenty minutes into a download. Exits 0 for GO, 1 for NO-GO with the blocking
+items named.
+
+### Resolution: use `--stride`
+
+The ingest subsamples the grid AFTER the domain cut, so the geographic extent
+is unchanged and only the spacing coarsens. `build_grid()` derives dx from the
+domain and array shape, so the dynamics follows automatically.
+
+| stride | spacing | grid | stored | 12 h forecast |
+|---|---|---|---|---|
+| 1 | 3 km | 388x438 | 68 MB/h | 4.2 hours |
+| 2 | 6 km | 194x219 | 17 MB/h | 22 min |
+| **4** | **12 km** | **97x109** | **4.2 MB/h** | **2.1 min** |
+
+**Start at stride 4.** The core is hydrostatic with no convection scheme, so
+3 km resolves nothing the equations can represent — it is false precision at
+120x the cost. Cost scales as stride^-3.
+
 ## Shared-resource policy
 
 Two caps, same philosophy: take a modest share by default, adapt, and never
