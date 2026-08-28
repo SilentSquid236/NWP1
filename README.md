@@ -15,7 +15,8 @@ resources.py                  50% resource cap — import before torch
 test_env.py                   environment smoke test — run this first
 requirements.txt              ingestion machine only
 src/
-  ingest_hrrr.py              HRRR -> domain-subset tensors
+  ingest_hrrr.py              HRRR -> domain-subset .npz (init + boundaries)
+  forecast.py                 end-to-end: initialise, integrate, output
   dynamics/                   the physics core (see its own README)
   verification/               observation operator, QC, scoring, archive
   postproc/                   adaptive bias correction
@@ -52,8 +53,8 @@ Add it to `~/.bashrc` on each so you don't have to think about it again.
 
 ```bash
 python test_env.py                          # what's available here?
-python src/ingest_hrrr.py --start 2026-08-01 --hours 6 --dry-run
 python src/ingest_hrrr.py --start 2026-08-01 --hours 24
+python src/forecast.py --run-dir data/tensors_3d/analysis_20260801_00 --hours 12
 python src/train_autoregressive.py --dry-run  # verify wiring, one batch
 python src/train_autoregressive.py --epochs 5
 python src/train_autoregressive.py --resume   # continue from latest.pth
@@ -118,6 +119,42 @@ evolution. `--mode forecast` walks one run's F00..FNN, where every step after
 F00 is HRRR's own forecast — pairs then teach the model to imitate HRRR rather
 than the atmosphere. Train on analysis.
 
+## What to expect
+
+See **`docs/CAPABILITIES.md`** for an honest assessment. Short version: the dry
+core is correct and verified, mid-tropospheric flow is reasonable for 12-24 h,
+and surface weather is not — there is no moisture, radiation, boundary layer,
+or terrain. Do not use it for forecasts anyone relies on.
+
+Measured runtime for a 12 h forecast (single core, 20 levels): **2.1 min at
+12 km, 22 min at 6 km, 4.2 h at 3 km**. The code is single-threaded numpy, so
+the 104-core server does not speed it up. Run at 6-12 km — the hydrostatic
+core resolves nothing extra at 3 km.
+
+## Shared-resource policy
+
+Two caps, same philosophy: take a modest share by default, adapt, and never
+be the reason a colleague's session is slow.
+
+**CPU** (`resources.py`) — ceiling of 50% of cores, scaling down to what other
+users leave free, rechecked between epochs. Note the dynamics is single-
+threaded numpy, so this constrains intent more than throughput today.
+
+**Network** (`netpolicy.py`) — token-bucket rate limit (default 8 MB/s, ~6% of
+a 1 Gb/s link), sequential requests only, an enforced gap between them,
+exponential backoff, and a content-addressed cache so nothing is downloaded
+twice. A 13-hour HRRR ingest is ~220 MB, reported up front before it runs.
+
+```bash
+export NWP_MAX_MBPS=25          # raise the cap when the link is quiet
+export NWP_CACHE_DIR=/data5/pierce/NWP/cache
+python src/ingest_hrrr.py --start 2026-08-01 --hours 13 --pause 2
+```
+
+Saturating a shared link is more disruptive than saturating a core: everyone's
+ssh, file transfer, and data fetch degrades at once, and it is not obvious to
+them why.
+
 ## Test suites
 
 ```bash
@@ -127,14 +164,18 @@ cd src/dynamics && python test_primitive3d.py      # 8
 cd src/dynamics && python test_subgrid.py          # 7
 cd src/verification && python test_verification.py # 9
 cd src/postproc && python test_bias_correction.py  # 7
+cd src/verification && python test_fetchers.py     # 9
+cd src && python test_forecast.py                  # 7
+python test_netpolicy.py                           # 9
 ```
 
-45 tests. Physics tests assert analytic answers or convergence order, not
+70 tests. Physics tests assert analytic answers or convergence order, not
 tolerances chosen to pass.
 
 Still open:
-- **normalisation** — geopotential height (~5000) and RH (0-100) differ by
-  orders of magnitude, so the 5x temperature loss weight does not yet mean what
-  it appears to. Needs per-channel standardisation before results are
-  trustworthy.
-- data assimilation layer — see `docs/DATA_ASSIMILATION.md`
+- **terrain** — pressure coordinates assume a flat lower boundary, and the
+  Appalachians run through this domain. Sigma coordinates are the fix.
+- **moisture** — the core is dry: no condensation, no latent heat.
+- **data assimilation** — designed, not built. See `docs/DATA_ASSIMILATION.md`.
+- **live fetcher verification** — parsers are tested offline against captured
+  samples; the network calls themselves are untested.

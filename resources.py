@@ -8,15 +8,17 @@ This box is shared with ~30 researchers. Policy:
     re-checked between epochs so a long run yields as the box fills up.
   * Never drop below a floor, so a run always makes progress.
 
-IMPORTANT: import this module and call apply() BEFORE torch. OpenMP and MKL
-read their thread limits at import time; setting them afterwards is ignored.
+IMPORTANT: import this module and call apply() BEFORE numpy (or any BLAS-
+backed library). OpenMP and MKL read their thread limits at import time;
+setting them afterwards is ignored, and numpy's linear algebra will happily
+grab every core on this shared box.
 
     import resources
     PLAN = resources.apply()   # first
-    import torch               # second
+    import numpy as np         # second
 
-The env cap is set to the CEILING, and the governor then moves torch's
-thread count up and down within that range at runtime via set_num_threads().
+The env cap is set to the CEILING; the governor then adjusts within that
+range at runtime as other users come and go.
 
 Environment overrides:
     NWP_RESOURCE_FRACTION=0.75   raise the ceiling (default 0.5)
@@ -163,7 +165,7 @@ def plan(fraction=None) -> dict:
 
 
 def apply(fraction=None) -> dict:
-    """Set env thread caps to the CEILING. Must run before torch import."""
+    """Set env thread caps to the CEILING. Must run before numpy import."""
     p = plan(fraction)
     for var in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS",
                 "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):

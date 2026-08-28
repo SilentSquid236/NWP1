@@ -1,16 +1,19 @@
 """
 Fetch HRRR pressure-level data, subset to the configured domain, and write
-[C, L, Y, X] tensors the training pipeline can consume.
+[C, L, Y, X] arrays as compressed .npz.
+
+HRRR supplies INITIAL and BOUNDARY conditions for the physics core. It is not
+training data and it is never used as verification truth -- see
+docs/DATA_ASSIMILATION.md.
 
 Two modes:
 
-  analysis  (default) -- successive hourly F00 analyses. Each file is the best
-                         estimate of the real atmosphere at that hour, so
-                         T -> T+1 pairs teach real dynamics. Use this to train.
+  analysis  (default) -- successive hourly F00 analyses. Best estimate of the
+                         real atmosphere at each hour; use these to drive the
+                         lateral boundaries of a limited-area run.
 
-  forecast            -- one model run's F00..FNN sequence. Each file after
-                         F00 is HRRR's own forecast, so pairs teach "imitate
-                         HRRR". Useful for comparison, not for ground truth.
+  forecast            -- one model run's F00..FNN sequence, for comparing our
+                         forecast against HRRR's own at matching lead times.
 
 Examples:
     python src/ingest_hrrr.py --start 2026-08-01 --hours 24
@@ -20,6 +23,7 @@ Examples:
 
 import argparse
 import sys
+import time
 import traceback
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -31,8 +35,8 @@ import resources
 RESOURCE_PLAN = resources.apply()
 
 import numpy as np
-import torch
 import config
+from netpolicy import estimate_ingest_mb, max_mbps
 
 
 def _open_hrrr(H, search):
@@ -102,8 +106,7 @@ def extract_state(ds, ysl, xsl):
         arr = sub[name].values[:, ysl, xsl]      # [L, Y, X]
         planes.append(arr)
 
-    state = np.stack(planes, axis=0)             # [C, L, Y, X]
-    return torch.from_numpy(np.ascontiguousarray(state)).float()
+    return np.ascontiguousarray(np.stack(planes, axis=0), dtype=np.float32)
 
 
 def fetch_hour(when, fxx=0, verbose=True):
@@ -127,26 +130,28 @@ def fetch_hour(when, fxx=0, verbose=True):
     lon = np.where(lon > 180, lon - 360, lon)
 
     meta = {
-        "valid_time": when + timedelta(hours=fxx),
-        "run_time": when,
+        "valid_time": (when + timedelta(hours=fxx)).isoformat(),
+        "run_time": when.isoformat(),
         "fxx": fxx,
-        "channels": list(config.CHANNELS),
-        "levels_hPa": list(config.PRESSURE_LEVELS),
-        "domain": dict(config.DOMAIN),
-        "lat": torch.from_numpy(np.ascontiguousarray(lat)).float(),
-        "lon": torch.from_numpy(np.ascontiguousarray(lon)).float(),
+        "channels": np.array(config.CHANNELS),
+        "levels_hPa": np.array(config.PRESSURE_LEVELS),
+        "lat": np.ascontiguousarray(lat, dtype=np.float32),
+        "lon": np.ascontiguousarray(lon, dtype=np.float32),
         "source": f"HRRR prs f{fxx:02d}",
     }
     if verbose:
-        print(f"    shape {tuple(state.shape)}  "
-              f"{state.numel() * 4 / 1e6:.1f} MB  "
+        print(f"    shape {state.shape}  {state.nbytes / 1e6:.1f} MB  "
               f"T[0] {state[0, 0].mean():.1f}K")
     return state, meta
 
 
-def write_tensor(path: Path, state, meta):
+def write_state(path: Path, state, meta):
+    """
+    Save as compressed .npz -- no torch dependency anywhere in the physics
+    pipeline. The whole chain (ingest -> dynamics -> verification) is numpy.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    torch.save({"hrrr_features": state, **meta}, path)
+    np.savez_compressed(path, hrrr_features=state, **meta)
 
 
 def main():
@@ -162,6 +167,10 @@ def main():
     p.add_argument("--overwrite", action="store_true")
     p.add_argument("--dry-run", action="store_true",
                    help="Fetch one hour, report shape, write nothing.")
+    p.add_argument("--pause", type=float, default=2.0,
+                   help="Seconds to pause between hourly downloads (default 2). "
+                        "Herbie manages its own transfers, so pacing between "
+                        "files is how we stay polite on a shared link.")
     args = p.parse_args()
 
     for fmt in ("%Y-%m-%dT%H", "%Y-%m-%d %H", "%Y-%m-%d"):
@@ -180,7 +189,13 @@ def main():
     print(config.describe())
     print(f"  mode           : {args.mode}")
     print(f"  window         : {start:%Y-%m-%d %H}Z + {args.hours}h")
-    print(f"  output         : {out_dir}\n")
+    print(f"  output         : {out_dir}")
+    est = estimate_ingest_mb(args.hours, config.N_LEVELS, config.N_CHANNELS)
+    print(f"  est. download  : ~{est['total_download_MB']:.0f} MB "
+          f"({est['per_hour_download_MB']:.0f} MB/hour), "
+          f"pausing {args.pause:.1f}s between files")
+    print(f"  bandwidth      : shared link -- cap {max_mbps():.0f} MB/s "
+          f"(NWP_MAX_MBPS to override)\n")
 
     ok = failed = skipped = 0
     for i in range(args.hours):
@@ -190,7 +205,7 @@ def main():
             when, fxx = start, i
 
         label = f"f{i:02d}"
-        out_path = out_dir / f"live_hrrr_{label}.pt"
+        out_path = out_dir / f"live_hrrr_{label}.npz"
 
         if out_path.exists() and not args.overwrite and not args.dry_run:
             print(f"  {label}  skip (exists)")
@@ -209,13 +224,18 @@ def main():
 
         if args.dry_run:
             print("\nDry run complete -- nothing written.")
-            print(f"  tensor {tuple(state.shape)} matches config "
+            print(f"  state {state.shape} matches config "
                   f"[{config.N_CHANNELS}, {config.N_LEVELS}, Y, X]: "
-                  f"{tuple(state.shape[:2]) == (config.N_CHANNELS, config.N_LEVELS)}")
+                  f"{state.shape[:2] == (config.N_CHANNELS, config.N_LEVELS)}")
             return 0
 
-        write_tensor(out_path, state, meta)
+        write_state(out_path, state, meta)
         ok += 1
+
+        # Pace the downloads. This machine is shared with ~30 users behind one
+        # connection; back-to-back GRIB fetches are noticeable to all of them.
+        if args.pause > 0 and i < args.hours - 1:
+            time.sleep(args.pause)
 
     print(f"\nDone. {ok} written, {skipped} skipped, {failed} failed -> {out_dir}")
     if failed:

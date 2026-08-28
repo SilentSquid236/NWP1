@@ -1,6 +1,6 @@
-# Ingestion machine (WSL) only -- the shared server uses its preinstalled stack.
-# Install with:  conda install -c conda-forge --file requirements.txt
-torch
+# Server-side stack. No PyTorch: the physics pipeline is numpy throughout.
+# conda install -c conda-forge --file requirements.txt
+
 numpy
 scipy
 pandas

@@ -38,6 +38,11 @@ access is not guaranteed in every environment.
 
 import io
 import csv
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from netpolicy import PoliteFetcher
 from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
@@ -173,18 +178,17 @@ def asos_url(networks, start, end, stations=None):
     return f"{IEM_ASOS}?{urlencode(params)}"
 
 
-def fetch_asos(networks, start, end, stations=None, timeout=120):
+def fetch_asos(networks, start, end, stations=None, timeout=120, fetcher=None):
     """
     Download and parse surface observations.
 
-    Network access required. Kept as a thin wrapper so the parser above can be
-    tested without it.
+    Goes through PoliteFetcher: rate-limited, sequential, cached. This machine
+    is shared, and a download loop that saturates the link disrupts everyone
+    at once.
     """
-    import urllib.request
+    fetcher = fetcher or PoliteFetcher()
     url = asos_url(networks, start, end, stations)
-    with urllib.request.urlopen(url, timeout=timeout) as r:
-        text = r.read().decode("utf-8", errors="replace")
-    return parse_asos_csv(text)
+    return parse_asos_csv(fetcher.get_text(url, timeout=timeout))
 
 
 # ---------------------------------------------------------------------------
@@ -288,12 +292,11 @@ def raob_url(stations, start, end):
     return f"{IEM_RAOB}?{urlencode(params)}"
 
 
-def fetch_raob(stations, start, end, timeout=180):
-    import urllib.request
+def fetch_raob(stations, start, end, timeout=180, fetcher=None):
+    """Download and parse radiosonde data. Rate-limited and cached."""
+    fetcher = fetcher or PoliteFetcher()
     url = raob_url(stations, start, end)
-    with urllib.request.urlopen(url, timeout=timeout) as r:
-        text = r.read().decode("utf-8", errors="replace")
-    return parse_raob_csv(text)
+    return parse_raob_csv(fetcher.get_text(url, timeout=timeout))
 
 
 # ---------------------------------------------------------------------------
