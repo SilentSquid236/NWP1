@@ -29,12 +29,14 @@ import numpy as np
 from grid import CGrid
 from vertical import (PressureLevels, hydrostatic_geopotential, diagnose_omega,
                       T_from_theta, RD, CP, KAPPA, G0)
-from subgrid import hyperdiffusion, recommended_hyper_coeff, hyper_stability_dt
+from subgrid import (hyperdiffusion, recommended_hyper_coeff,
+                     hyper_stability_dt, divergence_damping)
 
 
 class Primitive3D:
     def __init__(self, grid: CGrid, levels: PressureLevels, nu=0.0,
-                 hyper=None, stochastic=None):
+                 hyper=None, stochastic=None, div_damp=None,
+                 sponge_levels=4, sponge_strength=8.0):
         """
         nu         : harmonic diffusion (m^2/s), usually 0 -- prefer hyper.
         hyper      : biharmonic coefficient (m^4/s). None = auto (damps the
@@ -49,6 +51,48 @@ class Primitive3D:
         self.hyper = (recommended_hyper_coeff(grid) if hyper is None
                       else float(hyper))
         self.stochastic = stochastic
+
+        # DIVERGENCE DAMPING, as a post-step filter.
+        #
+        # Balancing the initial state removes the divergence present at t=0,
+        # but integration keeps generating more -- from boundary relaxation,
+        # from imperfectly balanced driving frames, and from the flow's own
+        # adjustment. With no sink that gravity-wave energy accumulates and
+        # the run dies.
+        #
+        # This is DIMENSIONLESS and applied after the RK3 update, not as a
+        # tendency. Written as a tendency with a coefficient in m^2/s it must
+        # satisfy nu*dt/dx^2 <= 0.25, and a coefficient chosen without knowing
+        # dt violates that and blows the model up -- which is exactly what the
+        # first version of this did. As a post-step filter the increment is
+        # beta * dx^2 * grad(div), where beta IS the stability number, so it
+        # is stable by construction for any dt.
+        # DEFAULT OFF. Measured: any value >= 0.01 suppresses baroclinic
+        # growth (eddy energy 1.21x/day -> 0.33x/day at 0.01), i.e. it damps
+        # the weather along with the waves. It also did NOT rescue a run from
+        # real analysis data -- see docs/STABILITY.md. Available for
+        # experiments; not a fix.
+        self.div_damp = 0.0 if div_damp is None else float(div_damp)
+        if not 0.0 <= self.div_damp <= 0.25:
+            raise ValueError(f"div_damp is a stability number and must be in "
+                             f"[0, 0.25]; got {self.div_damp}")
+
+        # SPONGE LAYER. The rigid lid reflects vertically propagating gravity
+        # waves back into the domain, where they interfere and grow.
+        #
+        # The sponge amplifies DIVERGENCE damping near the top rather than
+        # damping the wind itself. Gravity waves are divergent; balanced
+        # large-scale flow is rotational. Relaxing the full wind toward its
+        # horizontal mean would absorb the waves but also flatten a jet --
+        # legitimate structure -- which is exactly what the thermal-wind test
+        # caught when this was first written that way.
+        self.sponge_levels = int(sponge_levels)
+        self.sponge_strength = float(sponge_strength)
+        self._sponge = np.ones((levels.nz, 1, 1))
+        for k in range(self.sponge_levels):
+            frac = (self.sponge_levels - k) / self.sponge_levels
+            self._sponge[levels.nz - 1 - k, 0, 0] = \
+                1.0 + self.sponge_strength * 0.5 * (1 - np.cos(np.pi * frac))
 
         shape = (levels.nz, grid.ny, grid.nx)
         self.u = np.zeros(shape)
@@ -174,6 +218,20 @@ class Primitive3D:
 
         return float(min(dt_h, dt_v, dt_hyper))
 
+    def apply_divergence_filter(self):
+        """
+        Post-step divergence damping. Absorbs gravity waves; leaves the
+        rotational (weather-carrying) flow alone. The sponge scales it up near
+        the lid, where a rigid top would otherwise reflect waves back down.
+        """
+        if self.div_damp <= 0:
+            return
+        gr = self.grid
+        beta = np.minimum(self.div_damp * self._sponge, 0.25)
+        div = gr.dx_forward(self.u) + gr.dy_forward(self.v)
+        self.u += beta * gr.dx ** 2 * gr.dx_backward(div)
+        self.v += beta * gr.dy ** 2 * gr.dy_backward(div)
+
     def step(self, dt):
         if self.stochastic is not None:
             self.stochastic.advance(dt)
@@ -189,6 +247,8 @@ class Primitive3D:
         self.u = u0 + dt * du
         self.v = v0 + dt * dv
         self.theta = t0 + dt * dth
+
+        self.apply_divergence_filter()
 
         self.time += dt
         self.step_count += 1
@@ -235,6 +295,7 @@ class Primitive3D:
 
     def __repr__(self):
         return (f"Primitive3D({self.lev.nz}x{self.grid.ny}x{self.grid.nx}, "
-                f"hyper={self.hyper:.2e}, "
+                f"hyper={self.hyper:.2e}, divdamp={self.div_damp:.2f}, "
+                f"sponge={self.sponge_levels}L, "
                 f"stoch={'on' if self.stochastic else 'off'}, "
                 f"t={self.time/3600:.2f}h)")

@@ -40,6 +40,19 @@ first-order omission for surface weather.
 | **terrain** | pressure coordinates assume a flat lower boundary. The Appalachians and the coastline both shape Northeast weather heavily |
 | **nonhydrostatic dynamics** | no convection. Thunderstorms cannot form by construction |
 
+## Stability on real data — read this first
+
+**The core is stable on idealised balanced states and unstable on real HRRR
+analyses**, diverging after 2–3 forecast hours. All 29 idealised physics tests
+pass; the operators are verified to machine precision. The failure appears
+only with realistic sheared, noisy initial states, and no damping
+configuration fixes it — see `docs/STABILITY.md` for the full measurements.
+
+The likely cause is the pressure vertical coordinate's ill-posed lower
+boundary. The fix is sigma coordinates, already needed for terrain.
+
+Everything below describes what the model would deliver once integrable.
+
 ## What to expect in practice
 
 **Reasonable for 12-24 h:** mid-tropospheric flow — 500 hPa heights,
