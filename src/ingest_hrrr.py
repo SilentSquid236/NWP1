@@ -172,6 +172,10 @@ def extract_state(ds, ysl, xsl):
     return np.ascontiguousarray(np.stack(planes, axis=0), dtype=np.float32)
 
 
+# Matches ":TMP:850 mb:anl", ":UGRD:500 mb:1 hour fcst", etc.
+HRRR_SEARCH = r":(?:TMP|RH|UGRD|VGRD|HGT):\d+ mb:"
+
+
 def herbie_save_dir():
     """
     Where Herbie caches downloaded GRIB.
@@ -190,10 +194,16 @@ def fetch_hour(when, fxx=0, verbose=True, stride=1, allow_full=True):
     """Download one HRRR field set and return (array, metadata)."""
     from herbie import Herbie
 
-    # One regex for all five variables across all isobaric levels -- Herbie
+    # One regex for all five variables across all isobaric levels. Herbie
     # byte-range downloads only the matching GRIB messages, so we never pull
     # the full ~130 MB file.
-    search = r"^(?:TMP|RH|UGRD|VGRD|HGT):\d+ mb:"
+    #
+    # NOTE THE LEADING COLON, and the absence of "^". HRRR index entries are
+    # of the form ":HGT:50 mb:anl" -- they BEGIN with a colon, so anchoring
+    # with ^ matches nothing at all. A regex that matches zero messages makes
+    # Herbie download no file, which surfaces much later as a FileNotFoundError
+    # from cfgrib about a path that was never created.
+    search = HRRR_SEARCH
 
     H = Herbie(when.strftime("%Y-%m-%d %H:%M"), model="hrrr",
                product="prs", fxx=fxx, verbose=False,
