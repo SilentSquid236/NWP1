@@ -112,13 +112,31 @@ def main():
                   f"({per_hour_mb:.1f} MB/hour at stride {args.stride})")
 
     # --- 4. Herbie cache location -----------------------------------------
-    herbie_cfg = Path.home() / ".config" / "herbie"
-    home_free_gb = shutil.disk_usage(Path.home()).free / 1e9
-    check("Herbie cache", WARN if home_free_gb < 20 else OK,
-          f"Herbie caches GRIB under {herbie_cfg}; home has "
-          f"{home_free_gb:.1f} GB free"
-          + ("  -- point it at /data5 before a long ingest"
-             if home_free_gb < 20 else ""))
+    # Herbie defaults to ~/data. On a shared box that is a quota'd home
+    # directory, and a failed write there does NOT raise -- the file simply
+    # never appears and xarray later reports a baffling FileNotFoundError.
+    # ingest_hrrr.py overrides save_dir; verify that target is usable.
+    if config:
+        cache = Path(os.environ.get("NWP_HERBIE_DIR",
+                                    config.DATA_ROOT / "herbie_cache"))
+        try:
+            cache.mkdir(parents=True, exist_ok=True)
+            probe = cache / ".preflight_probe"
+            probe.write_bytes(b"x" * 4096)
+            probe.unlink()
+            cache_ok, why = True, ""
+        except Exception as e:
+            cache_ok, why = False, f"{type(e).__name__}: {e}"
+
+        free_gb = shutil.disk_usage(cache if cache.exists()
+                                    else cache.parent).free / 1e9
+        home_free = shutil.disk_usage(Path.home()).free / 1e9
+        check("Herbie cache", OK if cache_ok else FAIL,
+              f"{cache} "
+              + (f"writable, {free_gb:.1f} GB free" if cache_ok
+                 else f"NOT WRITABLE -- {why}")
+              + f"  (home has {home_free:.1f} GB; Herbie's default ~/data is "
+                f"deliberately overridden)")
 
     # --- 5. Compute budget -------------------------------------------------
     try:

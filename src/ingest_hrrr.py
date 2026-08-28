@@ -22,6 +22,7 @@ Examples:
 """
 
 import argparse
+import os
 import sys
 import time
 import traceback
@@ -109,8 +110,22 @@ def extract_state(ds, ysl, xsl):
     return np.ascontiguousarray(np.stack(planes, axis=0), dtype=np.float32)
 
 
+def herbie_save_dir():
+    """
+    Where Herbie caches downloaded GRIB.
+
+    Herbie defaults to ~/data, which on a shared machine is usually a small
+    quota'd home directory. A failed write there does not raise -- the file
+    simply never appears, and the failure surfaces later as a confusing
+    FileNotFoundError from xarray. Keep the cache beside our own data.
+    """
+    d = Path(os.environ.get("NWP_HERBIE_DIR", config.DATA_ROOT / "herbie_cache"))
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def fetch_hour(when, fxx=0, verbose=True, stride=1):
-    """Download one HRRR field set and return (tensor, metadata)."""
+    """Download one HRRR field set and return (array, metadata)."""
     from herbie import Herbie
 
     # One regex for all five variables across all isobaric levels -- Herbie
@@ -119,7 +134,8 @@ def fetch_hour(when, fxx=0, verbose=True, stride=1):
     search = r"^(?:TMP|RH|UGRD|VGRD|HGT):\d+ mb:"
 
     H = Herbie(when.strftime("%Y-%m-%d %H:%M"), model="hrrr",
-               product="prs", fxx=fxx, verbose=False)
+               product="prs", fxx=fxx, verbose=False,
+               save_dir=herbie_save_dir())
 
     ds = _as_single_dataset(_open_hrrr(H, search))
     ysl, xsl = domain_slice(ds)
@@ -182,6 +198,10 @@ def main():
                         "2 = 6 km, 4 = 12 km. The hydrostatic core resolves "
                         "nothing extra at 3 km, and cost scales as stride^-3, "
                         "so 4 is the sensible default for iteration.")
+    p.add_argument("--debug", action="store_true",
+                   help="Full traceback on every failure.")
+    p.add_argument("--max-failures", type=int, default=3,
+                   help="Give up after this many failures with no successes.")
     p.add_argument("--pause", type=float, default=2.0,
                    help="Seconds to pause between hourly downloads (default 2). "
                         "Herbie manages its own transfers, so pacing between "
@@ -212,7 +232,8 @@ def main():
           f"({est['per_hour_download_MB']:.0f} MB/hour), "
           f"pausing {args.pause:.1f}s between files")
     print(f"  bandwidth      : shared link -- cap {max_mbps():.0f} MB/s "
-          f"(NWP_MAX_MBPS to override)\n")
+          f"(NWP_MAX_MBPS to override)")
+    print(f"  herbie cache   : {herbie_save_dir()}\n")
 
     ok = failed = skipped = 0
     for i in range(args.hours):
@@ -234,9 +255,25 @@ def main():
             state, meta = fetch_hour(when, fxx, stride=args.stride)
         except Exception as e:
             print(f"    FAILED: {type(e).__name__}: {e}")
-            if "--debug" in sys.argv:
+            # Print the full chain on the FIRST failure. The surface error is
+            # often FileNotFoundError from xarray, which says nothing about
+            # why the download did not happen.
+            if failed == 0 or args.debug:
                 traceback.print_exc()
             failed += 1
+
+            if args.dry_run:
+                print("\nDry run stopped at the first failure. "
+                      "Run diagnose_herbie.py for the cause.")
+                return 1
+
+            # Do not hammer a source that is clearly not working: 13 identical
+            # failures tell us nothing 12 more times than 1 does.
+            if failed >= args.max_failures and ok == 0:
+                print(f"\nAborting: {failed} consecutive failures, none "
+                      f"succeeded. Fix the cause before retrying "
+                      f"(try: python diagnose_herbie.py).")
+                return 1
             continue
 
         if args.dry_run:
