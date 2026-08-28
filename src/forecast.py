@@ -40,7 +40,7 @@ from grid import CGrid
 from vertical import PressureLevels, theta_from_T, T_from_theta
 from primitive3d import Primitive3D
 from boundaries import DaviesRelaxation, BoundaryDriver
-from subgrid import StochasticPerturbation
+from subgrid import StochasticPerturbation, balance_initial_state
 
 
 # ---------------------------------------------------------------------------
@@ -196,6 +196,10 @@ def main():
     p.add_argument("--stochastic", action="store_true",
                    help="Enable SPPT-style tendency perturbations")
     p.add_argument("--seed", type=int, default=None)
+    p.add_argument("--no-balance", action="store_true",
+                   help="Skip initial divergence removal. The forecast will "
+                        "almost certainly blow up; useful only for showing "
+                        "why the balancing step exists.")
     p.add_argument("--out", default=None, help="Where to write forecast .npz")
     args = p.parse_args()
 
@@ -224,6 +228,11 @@ def main():
     for i, f in enumerate(files[:args.hours + 1]):
         fl, _ = load_state(f)
         u, v, th = hrrr_to_model_state(fl, levels)
+        if not args.no_balance:
+            # Balance every boundary frame too. Relaxing toward an unbalanced
+            # state would re-inject at the edges exactly what we removed from
+            # the interior, every single step.
+            u, v, _ = balance_initial_state(u, v, grid, verbose=False)
         times.append(i * 3600.0)
         states.append(state_to_boundary(u, v, th))
     driver = BoundaryDriver(times, states)
@@ -236,7 +245,23 @@ def main():
         print(f"  stochastic     : {stoch}")
 
     model = Primitive3D(grid, levels, stochastic=stoch)
+
+    # Analysis winds are not in balance with OUR discretisation. Coarsened and
+    # differenced with our operators they carry ~100x too much grid-scale
+    # divergence, which the column integral turns into tens of Pa/s of
+    # spurious vertical motion -- enough to destroy the forecast in one hour.
+    if not args.no_balance:
+        u0, v0, binfo = balance_initial_state(u0, v0, grid)
+        if binfo["omega_after_Pa_s"] > 5.0:
+            print("  WARNING: initial divergence is still large; expect a "
+                  "noisy first hour.")
     model.u, model.v, model.theta = u0, v0, th0
+
+    d0 = np.abs(model.divergence(model.u, model.v)).max()
+    om0 = np.abs(model.omega()).max()
+    print(f"  initial state  : max|div| {d0:.2e} 1/s, "
+          f"max|omega| {om0:.3f} Pa/s "
+          f"(real atmosphere is order 1 Pa/s)")
 
     relax = Relaxation3D(grid, width=args.relax_width)
     print(f"  relaxation     : width {args.relax_width}, "

@@ -199,3 +199,143 @@ def perturb_initial_state(field, rng, amplitude, grid, length_scale=300e3):
     if field.ndim == 3 and r.ndim == 2:
         r = r[None, :, :]
     return field + amplitude * r
+
+
+# ---------------------------------------------------------------------------
+# Initialisation: removing spurious divergence
+# ---------------------------------------------------------------------------
+
+def divergence_damping(u, v, grid, coeff):
+    """
+    Tendency that damps the DIVERGENT part of the flow, leaving the rotational
+    part untouched:
+
+        du/dt += nu * d(div)/dx ,   dv/dt += nu * d(div)/dy
+
+    Standard in operational models. It targets exactly the component that
+    drives spurious vertical motion, without smearing the vorticity that
+    carries the weather.
+    """
+    div = grid.dx_forward(u) + grid.dy_forward(v)
+    return coeff * grid.dx_backward(div), coeff * grid.dy_backward(div)
+
+
+def remove_divergence_spectral(u, v, grid):
+    """
+    Remove the divergent part of a wind field EXACTLY, in one step.
+
+    Helmholtz: any flow splits into rotational + divergent parts. The
+    divergent part is the gradient of a velocity potential chi satisfying
+
+        laplacian(chi) = div(u, v)
+
+    Subtracting grad(chi) leaves a non-divergent field. Solving in Fourier
+    space with the eigenvalues of OUR DISCRETE Laplacian -- not the continuous
+    -k^2 -- means the discrete divergence cancels to machine precision rather
+    than approximately.
+
+    The FFT assumes periodicity, which this domain does not have, so expect
+    some error in the outermost cells. The relaxation zone overwrites those
+    anyway, and the interior gain is worth far more.
+    """
+    div = grid.dx_forward(u) + grid.dy_forward(v)
+
+    ny, nx = div.shape[-2:]
+    kx = 2 * np.pi * np.fft.fftfreq(nx)
+    ky = 2 * np.pi * np.fft.fftfreq(ny)
+    KX, KY = np.meshgrid(kx, ky)
+
+    # Eigenvalue of the 5-point Laplacian built from our forward/backward pair.
+    lam = (-4 * np.sin(KX / 2) ** 2 / grid.dx ** 2
+           - 4 * np.sin(KY / 2) ** 2 / grid.dy ** 2)
+    lam[0, 0] = 1.0                     # mean mode: no correction
+
+    chi_hat = np.fft.fft2(div, axes=(-2, -1)) / lam
+    chi_hat[..., 0, 0] = 0.0
+    chi = np.real(np.fft.ifft2(chi_hat, axes=(-2, -1)))
+
+    return u - grid.dx_backward(chi), v - grid.dy_backward(chi)
+
+
+def balance_initial_state(u, v, grid, target_div=2e-5, max_iter=400,
+                          verbose=True, method="hybrid", edge=6):
+    """
+    Iteratively remove grid-scale divergence from an initial wind field.
+
+    WHY THIS IS NEEDED
+
+    Analysis winds are not in balance with OUR discretisation. Interpolated,
+    coarsened, and differenced with our operators, they carry divergence of
+    order 1e-3 s^-1 where the real atmosphere has ~1e-5. Integrated over an
+    800 hPa column that is tens of Pa/s of vertical motion -- a hundred times
+    reality -- which drives a violent gravity-wave adjustment and destroys the
+    forecast in the first hour.
+
+    Real models solve this with digital-filter or variational initialisation.
+    This is the cheap version: gradient descent on divergence squared, which
+    is what divergence damping does when iterated to convergence. The
+    rotational flow -- the part carrying the weather -- is preserved.
+
+    Returns (u, v, info).
+    """
+    u, v = u.copy(), v.copy()
+
+    def maxdiv(a, b):
+        return float(np.abs(grid.dx_forward(a) + grid.dy_forward(b)).max())
+
+    d0 = maxdiv(u, v)
+    speed0 = float(np.abs(u).max())
+
+    if method in ("spectral", "hybrid"):
+        # Exact in one shot. Applied per level for a 3D field.
+        if u.ndim == 3:
+            for k in range(u.shape[0]):
+                u[k], v[k] = remove_divergence_spectral(u[k], v[k], grid)
+        else:
+            u, v = remove_divergence_spectral(u, v, grid)
+        it = 1
+        if method == "hybrid":
+            # The FFT assumes periodicity, so the outermost cells retain
+            # error. A short iterative polish cleans them; the interior is
+            # already exact and is barely touched.
+            coeff = 0.2 * min(grid.dx, grid.dy) ** 2
+            for _ in range(60):
+                du, dv = divergence_damping(u, v, grid, coeff)
+                u += du
+                v += dv
+            it = 61
+    else:
+        coeff = 0.2 * min(grid.dx, grid.dy) ** 2
+        it = 0
+        for it in range(1, max_iter + 1):
+            du, dv = divergence_damping(u, v, grid, coeff)
+            u += du
+            v += dv
+            if it % 10 == 0 and maxdiv(u, v) < target_div:
+                break
+
+    d = maxdiv(u, v)
+    e = edge
+    sl = (Ellipsis, slice(e, -e), slice(e, -e))
+    d_interior = float(np.abs((grid.dx_forward(u) + grid.dy_forward(v))[sl]).max())
+    info = {
+        "div_interior": d_interior,
+        "iterations": it,
+        "div_before": d0,
+        "div_after": d,
+        "omega_before_Pa_s": d0 * 80000,
+        "omega_after_Pa_s": d * 80000,
+        "speed_before": speed0,
+        "speed_after": float(np.abs(u).max()),
+        "converged": d < target_div,
+    }
+    if verbose:
+        print(f"  initialisation : max|div| {d0:.2e} -> {d:.2e} 1/s "
+              f"({method}, {it} pass{'es' if it > 1 else ''})"
+              + ("" if info["converged"] else "  (did not reach target)"))
+        print(f"                   interior max|div| {d_interior:.2e} 1/s "
+              f"(edges are relaxed to the driver anyway)")
+        print(f"                   implied omega {info['omega_before_Pa_s']:.1f}"
+              f" -> {d_interior * 80000:.2f} Pa/s interior; "
+              f"max|u| {speed0:.1f} -> {info['speed_after']:.1f} m/s")
+    return u, v, info
