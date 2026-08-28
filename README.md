@@ -119,6 +119,21 @@ evolution. `--mode forecast` walks one run's F00..FNN, where every step after
 F00 is HRRR's own forecast — pairs then teach the model to imitate HRRR rather
 than the atmosphere. Train on analysis.
 
+## Documentation
+
+| document | what it is |
+|---|---|
+| `docs/AI_COLLABORATION.md` | the research study: AI-assisted model building, error taxonomy |
+| `docs/RESEARCH_LOG.md` | dated record of every experiment, including failures |
+| `docs/METHODOLOGY.md` | standards of evidence — how we decide something works |
+| `docs/CAPABILITIES.md` | honest assessment of what the model can and cannot do |
+| `docs/STABILITY.md` | the open stability problem, with all measurements |
+| `docs/DATA_ASSIMILATION.md` | observation operator, QC, increments — design |
+| `docs/POSTPROCESSING.md` | bias correction and learned post-processing — design |
+
+New log entry: `python tools/newlog.py "Short title"`. Hypothesis before
+result.
+
 ## What to expect
 
 See **`docs/CAPABILITIES.md`** for an honest assessment. Short version: the dry
