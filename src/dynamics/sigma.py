@@ -65,6 +65,19 @@ class SigmaLevels:
         pressure-gradient term at the topmost levels, where R*T/p is largest
         and the hydrostatic integral has accumulated furthest. A dry model
         with no stratospheric physics gains little from a 50 hPa lid.
+
+        RE-MEASURED 2026-09-03 on corrected initial states, because the
+        original measurement was made on a state now known to carry a clipped
+        166 m/s jet. The conclusion survives. Over 2500 m terrain, clean and
+        filtered, 12-hour ceiling:
+
+            lid      sponge 5 levels   sponge 8 levels
+            200 hPa      11/12             11/12
+            100 hPa      10/12             11/12
+             50 hPa       9/12             10/12
+
+        Raising the lid is neutral to slightly worse at every sponge depth.
+        Keep 200 hPa.
         """
         self.nz = int(n_levels)
         self.p_top = float(p_top)

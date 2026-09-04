@@ -33,12 +33,16 @@ from sigma import (SigmaLevels, hydrostatic_geopotential, continuity,
                    RD, CP, KAPPA, P0, G0)
 from subgrid import hyperdiffusion, recommended_hyper_coeff, hyper_stability_dt
 from turbulence import vertical_mixing, richardson, mixing_stability_dt
+from surface import surface_drag, drag_stability_dt, ROUGHNESS
+from convection import dry_convective_adjustment
 
 
 class PrimitiveSigma:
     def __init__(self, grid: CGrid, levels: SigmaLevels, terrain=None,
                  hyper=None, stochastic=None, ref_pgf=True,
-                 sponge_levels=5, sponge_rate=1.0 / 900.0, mixing=True):
+                 sponge_levels=5, sponge_rate=1.0 / 900.0, mixing=True,
+                 drag=True, z0=0.1, theta_surface=None,
+                 convection=True):
         self.grid = grid
         self.lev = levels
 
@@ -89,6 +93,27 @@ class PrimitiveSigma:
         # instability and without this has nothing to dissipate it.
         self.mixing = bool(mixing)
         self._K_last = None
+
+        # Surface drag. Mixing redistributes momentum within a column; only
+        # drag REMOVES it. Without a sink the near-surface wind has nothing
+        # holding it back and the mixing scheme fights a source it cannot
+        # switch off.
+        self.drag = bool(drag)
+        self.z0 = float(z0)
+        self.theta_surface = theta_surface     # None => neutral surface layer
+        self._drag_info = None
+
+        # DRY CONVECTIVE ADJUSTMENT. A post-step adjustment, not a tendency.
+        #
+        # Measured over 2500 m terrain: the wind never runs away (41 m/s from
+        # start to finish), but the minimum Richardson number falls
+        # monotonically -- 11.5 at hour 1, 0.23 at hour 9, NEGATIVE at hour 10
+        # -- and the run dies at hour 12. Ri < 0 is static instability: the
+        # mountain wave has overturned. Diffusive mixing with K capped at
+        # 100 m^2/s relaxes a 600 m layer in an hour, which is slower than the
+        # wave steepens. Overturning has to be removed by rearrangement.
+        self.convection = bool(convection)
+        self._conv_info = None
 
         self.time = 0.0
         self.step_count = 0
@@ -178,6 +203,13 @@ class PrimitiveSigma:
             # noise in pi has to be controlled by the wind field that
             # generates it, not by diffusing mass.
 
+        if self.drag:
+            ddu, ddv, info = surface_drag(u, v, theta, pi, lev, z0=self.z0,
+                                          theta_s=self.theta_surface)
+            du = du + ddu
+            dv = dv + ddv
+            self._drag_info = info
+
         if self.mixing:
             mu, mv, mth, K = vertical_mixing(u, v, theta, pi, lev)
             du = du + mu
@@ -249,6 +281,16 @@ class PrimitiveSigma:
         self.v = v0 + dt * dv
         self.theta = t0 + dt * dth
         self.pi = p0 + dt * dp
+
+        # Post-step adjustments. These enforce an inequality on the state and
+        # have no meaningful time derivative, so they are applied to the
+        # completed step rather than inside the Runge-Kutta stages -- an
+        # intermediate stage would otherwise re-create the instability the
+        # final state is meant to be free of.
+        if self.convection:
+            self.theta, self.u, self.v, self._conv_info = \
+                dry_convective_adjustment(self.theta, self.u, self.v,
+                                          self.pi, self.lev)
 
         self.time += dt
         self.step_count += 1

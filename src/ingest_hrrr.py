@@ -275,6 +275,88 @@ def fetch_hour(when, fxx=0, verbose=True, stride=1, allow_full=True):
     return state, meta
 
 
+# ---------------------------------------------------------------------------
+# Surface fields: orography, and surface pressure
+# ---------------------------------------------------------------------------
+#
+# The sigma core needs terrain. Without it every real forecast runs over a
+# flat sea-level plain in a domain whose defining feature is the Appalachians
+# (P-05 in docs/PROBLEMS.md).
+#
+# Orography is STATIC, so it is fetched once per run rather than once per
+# hour. Surface pressure is not static and is taken from the same message set
+# when available; when it is missing, `interpolate.surface_pressure_from_
+# heights` derives it from the analysis geopotential heights instead, which is
+# why the forecast does not hard-fail without it.
+#
+# UNTESTED AGAINST THE LIVE SERVICE. Every interface defect in this project's
+# history was invisible to an offline suite and appeared on first contact
+# (P-20 to P-22). This code is written to fail loudly and specifically rather
+# than to be trusted.
+
+HRRR_SURFACE_SEARCH = r":(?:HGT|PRES):surface:"
+
+SURFACE_ALIASES = {
+    "HGT":  ("orog", "gh", "HGT", "surface_altitude", "h"),
+    "PRES": ("sp", "PRES", "surface_air_pressure", "pres"),
+}
+
+
+def resolve_surface(ds, name):
+    for cand in SURFACE_ALIASES.get(name, (name,)):
+        if cand in ds:
+            return cand
+    raise KeyError(
+        f"surface field {name!r} not found. Tried "
+        f"{list(SURFACE_ALIASES.get(name, (name,)))}; "
+        f"dataset has {sorted(ds.data_vars)}")
+
+
+def fetch_surface(when, verbose=True, stride=1, allow_full=True):
+    """
+    Fetch terrain height and surface pressure for the domain.
+
+    Returns {"terrain": (Y, X) metres, "p_surface": (Y, X) Pa or None}.
+    Surface pressure is optional; terrain is not.
+    """
+    from herbie import Herbie
+
+    H = Herbie(when.strftime("%Y-%m-%d %H:%M"), model="hrrr",
+               product="prs", fxx=0, verbose=False,
+               save_dir=herbie_save_dir())
+    ds = _as_single_dataset(_open_hrrr(H, HRRR_SURFACE_SEARCH,
+                                       allow_full=allow_full, verbose=verbose))
+    ysl, xsl = domain_slice(ds)
+
+    terrain = np.asarray(ds[resolve_surface(ds, "HGT")].values)[ysl, xsl]
+    try:
+        p_sfc = np.asarray(ds[resolve_surface(ds, "PRES")].values)[ysl, xsl]
+    except KeyError:
+        p_sfc = None
+
+    if stride > 1:
+        terrain = np.ascontiguousarray(terrain[::stride, ::stride])
+        if p_sfc is not None:
+            p_sfc = np.ascontiguousarray(p_sfc[::stride, ::stride])
+
+    if verbose:
+        print(f"    terrain {terrain.shape}  "
+              f"{terrain.min():.0f}-{terrain.max():.0f} m"
+              + ("" if p_sfc is None
+                 else f"   p_s {p_sfc.min()/100:.0f}-{p_sfc.max()/100:.0f} hPa"))
+
+    return {"terrain": np.ascontiguousarray(terrain, dtype=np.float32),
+            "p_surface": (None if p_sfc is None
+                          else np.ascontiguousarray(p_sfc, dtype=np.float32))}
+
+
+def write_surface(path: Path, surf):
+    payload = {"terrain": surf["terrain"]}
+    if surf.get("p_surface") is not None:
+        payload["p_surface"] = surf["p_surface"]
+    np.savez_compressed(path, **payload)
+
+
 def write_state(path: Path, state, meta):
     """
     Save as compressed .npz -- no torch dependency anywhere in the physics
@@ -342,6 +424,29 @@ def main():
     print(f"  bandwidth      : shared link -- cap {max_mbps():.0f} MB/s "
           f"(NWP_MAX_MBPS to override)")
     print(f"  herbie cache   : {herbie_save_dir()}\n")
+
+    # Terrain first, and once. It is static, so fetching it per hour would be
+    # twelve redundant transfers on a shared link; and if it fails, the run is
+    # worth knowing about before spending the bandwidth on the rest.
+    terrain_path = out_dir / "terrain.npz"
+    if args.dry_run:
+        print("  terrain  skip (dry run)")
+    elif terrain_path.exists() and not args.overwrite:
+        print(f"  terrain  skip (exists)")
+    else:
+        try:
+            out_dir.mkdir(parents=True, exist_ok=True)
+            surf = fetch_surface(start, stride=args.stride,
+                                 allow_full=not args.no_full_fallback)
+            write_surface(terrain_path, surf)
+            print(f"  terrain  -> {terrain_path.name}")
+        except Exception as e:
+            if args.debug:
+                raise
+            print(f"  terrain  FAILED: {type(e).__name__}: {e}")
+            print("           The forecast will refuse to run over flat "
+                  "ground rather than pretend the Appalachians are absent. "
+                  "Re-run with --debug for the traceback.")
 
     ok = failed = skipped = 0
     for i in range(args.hours):

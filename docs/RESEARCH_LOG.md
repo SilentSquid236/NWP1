@@ -815,6 +815,738 @@ the mixing scheme currently has to handle alone.
 
 ---
 
+## 2026-09-02 — Surface drag measured, and the instability traced to the test
+
+**Context.** Richardson mixing had lifted 12-hour survival on the hard cases
+from 2-3/12 to 6/12 and stopped there. Surface drag was the stated next
+candidate: mixing redistributes momentum inside a column, only drag removes
+it. Rather than adding drag and re-running the single decisive test, both
+schemes were turned independently over the same terrain x noise grid, so a
+change could be attributed to a scheme rather than to a coincidence.
+
+**Hypothesis (stated before the runs).** Drag would raise survival on the
+noisy and terrain cases by damping near-surface shear that mixing alone has to
+handle.
+
+**Method.** `src/dynamics/sweep_boundary_layer.py`: terrain 0 / 1000 / 2500 m
+x noise 0.0 / 1.2 m/s x mixing off/on x drag off/on, 24 runs, 90x88x20,
+12-hour ceiling, failure = non-finite or max|u| > 150 m/s.
+
+**Result (first sweep).** Drag changed *nothing*. Twelve matched pairs, twelve
+identical survival counts, max|u| agreeing to about 0.5 m/s. Mean hours
+survived: neither 1.33, mixing 2.67, drag 1.33, both 2.67. The absolute
+numbers were also worse than the 6/12 previously recorded, so the sweep was
+not reproducing the earlier baseline either.
+
+**Probe instead of patch.** `src/dynamics/probe_failure.py` recorded surface
+pressure, wind, and every momentum term each step, then located the growing
+mode in level, latitude and wavenumber.
+
+| measurement | result |
+|---|---|
+| min surface pressure at failure | 101.0 kPa — never approached zero |
+| max\|u\| trajectory | 63.8 -> 161 m/s over 1.2 h, then non-finite |
+| growing scale, clean case | **2dx**, peaking two rows from the boundary |
+| 2dx damping, interior | e-folding 10 800 s (3 h, as designed) |
+| 2dx damping, replicate edge | e-folding 18 400 s (1.7x weaker) |
+| observed 2dx growth | doubling in ~20 min |
+
+Damping was losing the race by roughly a factor of nine. The question then
+became what *generates* a 2dx mode in a clean, supposedly balanced state.
+
+**Three defects, all in the initial state, none in the dynamics.**
+
+1. The 6 K meridional temperature contrast implies a **166 m/s** jet by
+   thermal wind (Ro = 3.2). The test then clipped the wind at +/-60 m/s,
+   destroying geostrophic balance over **33.6%** of the domain. That clip is
+   the 2dx source. Category E (test design) — the third time an unrealistic
+   test jet has been mistaken for a model instability.
+2. The balanced wind was taken as `-d(phi)/dy / f`. On sigma surfaces the
+   horizontal force has two terms that largely cancel over sloping ground;
+   keeping only the first implies an **845 m/s** "balanced" wind over 2500 m
+   terrain. Every terrain row of the earlier mixing baseline was measured
+   against that. Category B (discrete-vs-continuous / formulation).
+3. 1.2 m/s of **white** noise puts 89% of its variance at wavelengths the grid
+   cannot carry. Real analyses are filtered before they are integrated; this
+   one was not. Category E.
+
+**Result (second sweep, corrected initial states).** 1.5 K contrast, no clip
+(41 m/s jet), wind from the full sigma PGF:
+
+| terrain | noise | neither | mixing | drag | both |
+|---|---|---|---|---|---|
+| 0 m | 0.0 | 12/12 | 12/12 | 12/12 | 12/12 |
+| 0 m | 1.2 | 1/12 | 1/12 | 1/12 | 1/12 |
+| 1000 m | 0.0 | 7/12 | 12/12 | **11/12** | 12/12 |
+| 1000 m | 1.2 | 1/12 | 1/12 | 1/12 | 1/12 |
+| 2500 m | 0.0 | 5/12 | 6/12 | **7/12** | 8/12 |
+| 2500 m | 1.2 | 1/12 | 1/12 | 1/12 | 1/12 |
+
+Means: neither 4.50, mixing 5.50, drag 5.50, both 6.33. **Drag is worth as
+much as mixing over terrain and the two are partly additive** — invisible in
+the first sweep because the initialization artifact dominated everything.
+
+**Noise threshold.** Flat ground, balanced 41 m/s jet, mixing and drag on:
+
+| white noise | survived |
+|---|---|
+| 0.00 m/s | 12/12 |
+| 0.15 m/s | 12/12 |
+| 0.30 m/s | 12/12 |
+| 0.60 m/s | 7/12 |
+| 1.20 m/s | 1/12 |
+
+A sharp threshold between 0.3 and 0.6 m/s, unmoved by any boundary-layer
+setting. This is a *resolution* limit, not a physics gap.
+
+**Initialization filter.** `src/dynamics/initialization.py`: raised-cosine
+spectral lowpass, full response above 8dx, zero at or below 4dx, applied to
+u, v and the theta deviation from the level mean. Order was measured, not
+assumed:
+
+| treatment | initial max\|div\| | survived |
+|---|---|---|
+| none | 3.90e-05 1/s | 1/12 |
+| filter only | 9.93e-05 1/s | 11/12 |
+| filter, then rebalance | 1.23e-05 1/s | **12/12**, max\|u\| 42.4 |
+
+Note the middle row: filtering *raises* divergence yet survives ten hours
+longer. Divergence is not the controlling variable — wavenumber content is.
+Filtering changes u, v and theta separately, so it puts divergence back into a
+balanced state; balancing afterwards removes it. Sub-4dx wind rms goes
+0.808 -> 0.049 m/s.
+
+**Interpretation.** The stability failure that survived nine single-candidate
+patches was never in the dynamics. It was an unbalanced, over-strong,
+unfiltered initial state, and the schemes added along the way were being
+scored on their ability to survive an artifact. What it does *not* mean: the
+boundary-layer schemes were wasted. With honest initial states both measure
+as real, and drag turns out to be the stronger of the two over terrain.
+
+What still stands open: 2500 m terrain reaches 8/12, not 12/12, even clean and
+filtered. That is the next genuine question, and it is now uncontaminated.
+
+**Status.** Kept. `surface.py`, `turbulence.py`, `initialization.py` and the
+corrected `test_primitive_sigma.py` all retained. All suites green:
+shallow water 8/8, boundaries 6/6, sigma 7/7, subgrid 7/7, surface 6/6,
+initialization 5/5, sigma 3D core **6/6** (previously 5/6).
+
+**For the collaboration study.** Defects introduced this session: two category
+E (test design: clipped super-geostrophic jet, unfiltered white noise) and one
+category B (geostrophic wind from one PGF term over sigma terrain). All three
+were detected by *targeted measurement*, none by the test suite — the suite
+reported them as a model failure. The stated hypothesis (drag improves the
+noisy cases) did **not** survive: drag has no effect on noise at any
+amplitude, and its real benefit is over terrain, which the hypothesis did not
+predict. Human intervention was direction-setting and decisive: "taking a step
+back and probing the error is a better idea than guess checking" is what
+produced this entry rather than a tenth patch.
+
+---
+
+## 2026-09-02 — Prompt log and generated project structure
+
+**Context.** The research log records what was done; nothing recorded what was
+*asked*. For a study whose subject is AI-assisted building, the input side is
+half the data and is the half that disappears fastest.
+
+**Method.** `docs/PROMPT_LOG.md` — all 60 human prompts to date, verbatim, in
+order, each tagged (direction / constraint / correction / methodological /
+observation / administrative) with what it caused. `tools/tree.py` generates
+`docs/STRUCTURE.md`: the tree shape is read from disk so it cannot drift, and
+any file lacking an annotation is printed as `(unannotated)` rather than
+passing silently.
+
+**Result.** Median prompt length **11 words**. Distribution: direction 37%,
+observation 22%, administrative 17%, methodological 15%, constraint 13%,
+correction 5%. The four highest-leverage prompts average 19 words and none
+names a technique.
+
+**Interpretation.** The AI proposed nearly every equation, discretisation and
+test in the repository, and none of the project's turns. It never proposed
+starting from 2D, deferring moisture, banning HRRR from verification, capping
+server usage, or probing rather than patching — the five decisions that most
+determined how the work went. What this does *not* show is that the direction
+was hard to produce: each of those is a short sentence. The scarce input was
+knowing which sentence to say, and when.
+
+**Status.** Kept. Append prompts as they arrive rather than in batches;
+reconstructing intent afterwards is the self-report problem the methodology
+section warns about.
+
+---
+
+## 2026-09-03 — Tall terrain: the wave was right, the aftermath was missing
+
+**Context.** With the initialization artifacts gone, one case was still open:
+2500 m terrain reached 11/12 hours clean and filtered, and no boundary-layer
+setting moved it. Following the same method as last time, the failure was
+located before anything was added.
+
+**Hypothesis (stated before the runs).** The growth peaked at level k=5 of 20,
+which is exactly the base of the 5-level sponge — so partial reflection off
+the absorbing layer, fixable by deepening or raising the lid.
+
+**Method and result — the hypothesis half survived.** Moving the sponge base
+and watching where the growth peak went:
+
+| sponge levels | peak growth level k | max\|du\| at 6 h | min Ri aloft |
+|---|---|---|---|
+| 0 | 0 (the lid) | 60.8 m/s | 0.83 |
+| 5 | 5 | 36.4 m/s | 0.23 |
+| 8 | 8 | 21.3 m/s | 0.94 |
+| 12 | 18 (the surface) | 15.1 m/s | 1.96 |
+
+The peak tracks the sponge base exactly, and the amplitude falls as the sponge
+deepens. Reflection is real. But **survival barely moved** — 11/12 at sponge 5
+and 11/12 at sponge 8 — so reflection was not what killed the run.
+
+Raising the lid was tested too, which re-opened a prior negative result
+recorded in `SigmaLevels.__init__` (that measurement had been taken on the
+clipped-jet state and no longer counted as evidence). It survives re-testing:
+200 hPa 11/12, 100 hPa 10-11/12, 50 hPa 9-10/12. Raising the lid is neutral to
+worse. The note in the code now says so on valid data.
+
+**Ruling out the coordinate.** A motionless isothermal atmosphere over a
+mountain has no wave and no shear; anything that grows is sigma-coordinate
+truncation error.
+
+| terrain | max slope | spurious max\|u\| at 6 h | at 12 h |
+|---|---|---|---|
+| 1200 m | 0.0041 | 0.002 m/s | 0.003 m/s |
+| 2500 m | 0.0086 | 0.004 m/s | 0.006 m/s |
+| 4000 m | 0.0137 | 0.006 m/s | 0.009 m/s |
+
+Linear in slope, and nine millimetres per second over twelve hours at 4000 m.
+The coordinate is not the problem.
+
+**The actual cause, watched hour by hour.** 2500 m, clean, filtered, sponge 8:
+
+| hour | 1 | 3 | 6 | 8 | 9 | 10 | 11 | 12 |
+|---|---|---|---|---|---|---|---|---|
+| max\|u\| | 41.3 | 41.3 | 41.3 | 41.3 | 41.6 | 42.1 | 42.2 | dead |
+| min Ri | 11.5 | 2.07 | 0.94 | 0.33 | 0.23 | **-0.05** | **-1.15** | — |
+| interfaces with Ri<0 | 0 | 0 | 0 | 0 | 0 | 1 | 18 | — |
+
+**The wind never runs away.** It sits at 41 m/s from the first hour to the
+last. What runs away is the stratification: Ri falls monotonically and goes
+negative at hour 10. Ri < 0 is N² < 0 — potential temperature decreasing with
+height. The mountain wave steepens as it propagates upward and **overturns**,
+and the model had nothing that removes a statically unstable layer.
+
+This is correct physics with a missing consequence. Mountain waves do break.
+`turbulence.eddy_diffusivity` does treat Ri <= 0 as full-strength mixing, but
+it is a diffusion capped at K = 100 m²/s, which relaxes a 600 m layer in
+dz²/K = 3600 s. The wave steepens faster than an hour. Diffusion lost the race
+exactly as hyperdiffusion lost the race against grid-scale noise last week —
+the same failure shape, in a different scheme.
+
+**What was added.** `src/dynamics/convection.py`: dry convective adjustment.
+Wherever theta decreases with height, contiguous unstable segments are mixed
+to their mass-weighted mean — neutral stratification, enthalpy conserved —
+with the wind mixed over the same layers so momentum is conserved and
+convective momentum transport is carried. Applied as a **post-step
+adjustment**, not a tendency: an adjustment enforcing an inequality has no
+meaningful time derivative, and inside the Runge-Kutta stages an intermediate
+state would re-create the instability the final state must be free of.
+
+Segment mixing replaced a first attempt at pairwise mixing, which is
+conservative but converges like a diffusion: a fully inverted 20-level column
+still had 0.26 K of spread after 200 sweeps. Segments settle it in one.
+Conservation measured at 2.8e-16 relative for heat and 2.6e-16 for momentum.
+
+**Prediction, written before the run, and the outcome.**
+
+| prediction | outcome |
+|---|---|
+| min Ri floors near 0 instead of going negative | held: 0.09, 0.011, 0.020, 0.028, 0.013 at hours 10-14 |
+| the count of Ri<0 interfaces stops growing | held: 0 for the whole run |
+| the run completes 12 hours | held: reached **16** hours |
+| the wind is NOT damped — convection removes overturning, not the wave | held: 41-42 m/s through hour 14 |
+
+The fourth was the one worth stating. A scheme that bought stability by
+flattening the flow would have looked identical in the first three, and that
+is exactly how the first sponge implementation failed.
+
+**Terrain rows, re-measured:**
+
+| terrain | without convection | with convection |
+|---|---|---|
+| 1000 m | 12/12 | 12/12 |
+| 2500 m | 11/12 | **12/12**, max\|u\| 42.4 |
+| 4000 m | 6/12 | 6/12 |
+
+**Interpretation.** The tall-terrain failure was the absence of a physical
+process, not a numerical defect — the opposite of last week's finding, and
+worth noting that the same debugging method produced both answers. What it
+does not mean: terrain is finished. 4000 m fails at 6/12 with or without
+convection, and the 2500 m run past hour 15 starts growing the wind rather
+than the instability, so the mode there is different again.
+
+Also unresolved, and now separated from the failure: sponge reflection is
+measurably real, halving in amplitude between 5 and 8 levels, and it is
+sitting there contaminating the upper levels whether or not it ends the run.
+
+**Status.** Kept, on by default. All suites green: shallow water 8/8,
+boundaries 6/6, sigma 7/7, subgrid 7/7, surface 6/6, initialization 5/5,
+convection 5/5, sigma 3D core 6/6.
+
+**For the collaboration study.** The stated hypothesis (sponge reflection)
+was *partly* right and would have been accepted as the answer by a
+patch-and-check loop — deepening the sponge does reduce the growth, visibly
+and by a factor of two. Requiring it to move the survival count is what
+exposed that it was the wrong cause. Category F (wrong causal hypothesis),
+caught by insisting the fix predict the outcome it was proposed to explain.
+
+---
+
+## 2026-09-04 — 4000 m: five more candidates eliminated, and a regime boundary
+
+**Context.** Convective adjustment took 2500 m terrain to 12/12. At 4000 m it
+changed nothing — 6/12 with it and without. A scheme that fixes one case and
+not the other is evidence the two cases fail differently, so the 4000 m
+failure was probed rather than treated as more of the same.
+
+**Hypotheses tested, in order, each with the measurement that settled it.**
+
+**1. Is it the timestep?** `max|sigma_dot|` grows an order of magnitude before
+the run dies (3.9e-05 → 2.9e-04), which is what a vertical-CFL violation looks
+like. Halving dt:
+
+| hour | 1 | 2 | 3 | 4 | 5 | 6 |
+|---|---|---|---|---|---|---|
+| max\|u\|, dt = 14.89 s | 53.86 | 54.39 | 53.04 | 54.30 | 54.98 | 54.75 |
+| max\|u\|, dt = 7.45 s | 53.86 | 54.39 | 53.04 | 54.30 | 54.98 | 54.75 |
+| min Ri, dt = 14.89 s | 8.190 | 1.966 | 1.101 | 0.428 | 0.032 | 0.007 |
+| min Ri, dt = 7.45 s | 8.190 | 1.966 | 1.101 | 0.428 | 0.032 | 0.007 |
+
+Identical to four significant figures for six hours. **The solution is
+converged in time.** The timestep is not the cause, and `max|sigma_dot|`
+growing is a symptom of the breaking, not of a CFL violation.
+
+**2. Is the eddy-diffusivity ceiling binding?** The adjustment holds min Ri at
+0.007 rather than letting it go negative, but the overturning fraction climbs
+steadily (0.09% → 0.37% by hour 6) until it fires domain-wide. A breaking wave
+generates turbulence, and `K_MAX` caps the diffusivity at 100 m²/s where
+observed values in a breaking mountain wave are 10²–10³.
+
+| K_MAX (m²/s) | 100 | 300 | 1000 |
+|---|---|---|---|
+| survived | 6/12 | 6/12 | 6/12 |
+
+Flat. **The ceiling is innocent.** Tenth candidate eliminated by measurement.
+
+**3. Is the initial state balanced?** Evaluating the tendencies at t = 0,
+which is the check the clipped-jet episode should have had:
+
+| terrain | max\|u₀\| | max\|v₀\| | peak acceleration | Nh/U |
+|---|---|---|---|---|
+| 0 m | 41.6 | 0.0 | 30.0 m/s/h | 0.00 |
+| 1000 m | 41.5 | 9.3 | 31.5 m/s/h | 0.38 |
+| 2500 m | 41.3 | 14.7 | 34.1 m/s/h | 0.96 |
+| 4000 m | 53.8 | 33.5 | **95.2 m/s/h** | **1.19** |
+
+The 4000 m state is measurably less balanced — three times the peak
+acceleration, and 34 m/s of cross-mountain flow before a step is taken.
+
+**The regime boundary.** Nh/U, the nondimensional mountain height, is the
+parameter that orders every result in this and the previous entry:
+
+| terrain | Nh/U | outcome |
+|---|---|---|
+| 1000 m | 0.38 | 12/12 with or without convection — linear wave |
+| 2500 m | 0.96 | 11/12 without convection, **12/12 with** — wave at the overturning threshold |
+| 4000 m | 1.19 | 6/12 regardless — blocked / breaking regime |
+
+Nh/U ≈ 1 is the classical boundary between a mountain wave that propagates
+over the obstacle and one where the low-level flow is partly blocked and the
+wave breaks. The model reproduces that boundary without having been told about
+it, which is a point in its favour, and it fails on the far side of it, which
+is where a scheme it does not have would be needed.
+
+**What is NOT missing.** Orographic gravity-wave drag, the standard
+parameterization for this regime, would be wrong here: it parameterizes
+*subgrid* orography, and this mountain is 250 km wide on a 12 km grid —
+resolved by a factor of twenty. The model is explicitly simulating the wave.
+Adding GWD would double-count it. Noting this because it is the scheme a
+literature search suggests first, and it would have been a plausible-looking
+mistake.
+
+**Perspective on the failing case.** The highest terrain in the Northeast
+domain is Mount Washington at 1917 m, and on a 12 km grid the cell-mean
+elevation is well under 1500 m — Nh/U ≈ 0.5, comfortably inside the validated
+envelope. **4000 m is a stress test of a mountain the domain does not
+contain.** It stays on the list because it marks where the model's physics
+runs out, not because the forecast needs it.
+
+**An engineering note.** The convective adjustment initially swept the whole
+domain every step and became the dominant cost of a 4000 m run — a 12-hour
+integration that should take 20 minutes had not finished in 100. Compacting to
+the columns that actually contain an inversion made the cost proportional to
+the convection rather than to the domain: 1.7 ms on a stable state, 270 ms
+when 0.3% of the domain is overturning. Worth recording because the symptom
+looked like a hang, not like a performance bug.
+
+**Status.** 4000 m open, and better bounded: not the coordinate, not the
+timestep, not the sponge, not the lid, not the initialization, not the
+convective adjustment, not the mixing ceiling. Nh/U > 1 with a resolved
+mountain is the regime, and it is outside anything the operational domain
+requires. All suites green.
+
+**For the collaboration study.** Two of the three hypotheses this session were
+mine and both were wrong (timestep, diffusivity ceiling — categories C and F).
+The measurement that resolved each took under twenty minutes to design and
+answered definitively. Ten candidates have now been eliminated by measurement
+across this failure; the running cost of the probe-first method is roughly one
+afternoon per eliminated candidate, against five patch cycles that eliminated
+nothing.
+
+---
+
+## 2026-09-04 — A problem register, and an audit that found twenty gaps
+
+**Context.** The research log is chronological, which is right for the study
+but wrong for answering "what is broken now". A problem diagnosed across four
+sessions was scattered across four entries, and the ruled-out candidates —
+the expensive part of every diagnosis here — existed only as prose inside
+whichever entry happened to mention them.
+
+**Method.** `docs/PROBLEMS.md`: one entry per problem, updated in place,
+across the whole project history. Statuses are OPEN, FIXED, ELIMINATED,
+REVERTED and ACCEPTED — ACCEPTED existing so that "known, understood,
+deliberately not fixed" is a stateable position rather than something that
+looks like an oversight. `tools/problem.py` appends entries and audits the
+register.
+
+**The audit is the part that earned its keep.** The rule this project runs on
+is that a fix must predict the outcome it was proposed to explain, so
+`problem.py check` flags any FIXED entry without a "Confirmed by" measurement.
+Run against the first draft it returned **20 issues**: thirteen fixes asserted
+with no number attached, four open problems with no stated symptom, and a
+numbering gap where the eliminated-candidates table was invisible to the
+parser. Every one of the thirteen was a real fix — but "fixed" with no
+measurement beside it is exactly the habit that produced nine failed patch
+cycles, and writing them out forced the numbers to be found again.
+
+**Result.** 45 entries: 7 open, 22 fixed, 12 eliminated, 2 reverted,
+2 accepted. Register clean.
+
+The distribution is worth noting on its own. **Twelve of the forty-five are
+candidates that were investigated and were not the cause** — more than a
+quarter of the register is negative results. That is the honest cost of the
+probe-first method and the part that normally disappears from a repository
+entirely.
+
+**Interpretation.** The register makes one thing legible that the log did not:
+of the seven open problems, only three are model defects (P-01, P-02, P-03)
+and four are unbuilt work (P-04 to P-07). And of those four, P-07 — the
+verification archive — is the only item in the project that gets permanently
+more expensive every day it stays open, because a day not archived cannot be
+obtained retroactively.
+
+**Status.** Kept. Run `python tools/problem.py check` before a commit.
+
+---
+
+## 2026-09-04 — The sigma core is now reachable from real data
+
+**Context.** The terrain target was agreed at 2 km, and the model does 2500 m
+at 12/12, so P-01 moved from OPEN to ACCEPTED and the register's largest
+remaining items were the two that had nothing to do with physics: the driver
+still built a `Primitive3D` on pressure levels. Every result measured since
+the coordinate change was unreachable from a real forecast — the only core
+real data could run was the one that diverges in two to three hours.
+
+**Method.** `src/dynamics/interpolate.py`, and a rewrite of the driver.
+
+The conversion is three steps and the order matters. Terrain height gives
+surface pressure by finding the pressure at which the analysis geopotential
+height equals the terrain — an interpolation rather than a hydrostatic guess,
+so it inherits the analysis's own stratification. Surface pressure gives the
+target pressure of every sigma level. The analysis columns are then
+interpolated to those pressures in **log(p)**, which matters more than it
+sounds: the level spacing runs from 25 hPa near the ground to 50 hPa aloft,
+and a field is far more nearly linear in log(p) than in p.
+
+**Extrapolation was the part with a trap in it.** Sigma levels near the ground
+over low terrain sit at pressures *below* the analysis's lowest level — 1000
+hPa is about 100 m above sea level, not the surface — so something has to be
+said about the layer beneath. Theta follows the lapse rate of the lowest two
+levels rather than being held constant, because holding it constant makes the
+near-surface layer exactly neutral, which the convective adjustment then reads
+as marginal everywhere on step one. Wind is held constant, because
+extrapolating a shear downward produces surface winds the drag scheme fights.
+
+**Result.**
+
+| test | result |
+|---|---|
+| field linear in log(p) reproduced | 0.00e+00 error |
+| source levels recovered | 3.6e-15 |
+| surface pressure vs standard atmosphere, 0–2500 m terrain | **7.6 Pa** |
+| sea-level terrain extrapolated below 1000 hPa | 1013.3 hPa vs 1013.25 |
+| converted analysis integrated 6 h | held |
+| `test_interpolate.py` | 7/7 |
+| `test_forecast.py`, rewritten for sigma | 11/11 |
+
+**Two defects found on the way, both by tests written to have a known
+answer.**
+
+The bracket search in `surface_pressure_from_heights` had the height ordering
+backwards. After sorting by descending pressure, index 0 is the highest
+pressure and therefore the *lowest* height — heights increase with index — and
+I had written the comparison the other way. Every column above the lowest
+analysis level stayed pinned at that level's pressure: a **253 hPa** error
+over 2500 m of terrain. Caught only because the test compares against a
+standard atmosphere, where the answer is known in closed form; a
+self-consistency check would have passed. Category D, and the fourth time an
+ordering convention has been the defect.
+
+The second was in a test rather than the code, and is worth recording because
+it hid a real hazard. The relaxation test reported "edge moved +0 Pa" — it had
+handed the model the same array it later compared against, and `apply` updates
+in place. The test was measuring nothing. The driver had the same aliasing
+hazard: assigning the analysis arrays to the model directly would let the
+first relaxation step quietly rewrite the driving data. Both now assign
+copies.
+
+**A new problem, opened rather than absorbed.** A converted analysis started
+at rest over a 1500 m mountain develops **9.1 m/s** of spurious wind in six
+hours, where a state hydrostatically consistent with the model's own
+discretisation develops 0.004 m/s. The interpolated theta reproduces the
+analysis's stratification but not the model's hydrostatic integral over its
+sigma layers, so the geopotential carries a gradient no wind balances. Against
+a 20–40 m/s analysis wind that is a 25–30% error injected before the first
+step, and it is now P-46 rather than a footnote.
+
+**Interpretation.** The physics measured over the last week is now reachable
+from real data, which it was not this morning. What this does **not** mean is
+that a real forecast has been run: the surface-field GRIB search has never
+touched HRRR, and on this project's record (P-20 through P-22) that is where
+the next defect will be.
+
+**Status.** Kept. P-01 accepted at the 2 km target, P-04 and P-05 closed, P-46
+opened. Register: 46 entries, 5 open. All suites green, including
+`test_forecast.py` 11/11 and `test_interpolate.py` 7/7.
+
+---
+
+## 2026-09-04 (later) — P-46 dies: three hypotheses, and the test was the defect
+
+**Context.** P-46 was opened this morning on a real measurement: a converted
+analysis started at rest over a 1500 m mountain developed 9.1 m/s of spurious
+wind in six hours, where a state the model built itself develops 0.004 m/s.
+Against a 20-40 m/s analysis wind that is a 25-30% error injected before the
+first step, so it was the highest-value open item.
+
+**Hypothesis 1, stated first: geopotential mismatch.** The interpolated theta
+reproduces the analysis's stratification but not the model's discrete
+hydrostatic integral, so the model's geopotential differs from the analysis's
+by an amount that varies horizontally — and a horizontally varying
+geopotential error is a pressure-gradient force with nothing balancing it.
+
+The measurement supported it, at first. The error's horizontal spread grew
+upward from 3 m at the ground to **140 m at the lid**, exactly the shape a
+column-by-column integration error would have.
+
+`hydrostatic_geopotential` is triangular, so it inverts exactly:
+
+    T[-1] = (phi[-1] - phi_s) / (R ln(p_s/p[-1]))
+    T[k]  = 2 (phi[k] - phi[k+1]) / (R ln(p[k+1]/p[k])) - T[k+1]
+
+| | geopotential spread | acceleration at rest |
+|---|---|---|
+| interpolated theta | 140.08 m | 2.70 m/s per hour |
+| exact hydrostatic inversion | **0.00 m** | **2.67 m/s per hour** |
+
+**The error went to zero and the acceleration did not move.** The hypothesis
+was wrong. The inversion also produced a statically unstable profile with an
+8.5 K sawtooth and went NaN in six hours — that `- T[k+1]` makes the inverse
+an alternating recursion, so an error at one level flips sign and persists
+upward. Kept in `interpolate.py` as `hydrostatic_theta`, unused, with the
+warning in its docstring, because the next person to have this idea should be
+able to read why it does not work.
+
+**Hypothesis 2: small-scale structure from the interpolation.** The sigma PGF
+is a difference of two large terms that cancel only when theta is smooth.
+
+| treatment | spurious wind after 6 h |
+|---|---|
+| interpolated, raw | 9.06 m/s |
+| + horizontal spectral filter | 9.06 m/s |
+| + one pass vertical smoothing | 9.06 m/s |
+| + three passes | 9.03 m/s |
+
+Nothing. Two hypotheses, both wrong, both eliminated by measurement rather
+than argument.
+
+**Hypothesis 3: the test.** The tendency breakdown had been sitting in the
+output the whole time — the acceleration was 2.70 m/s/h in du/dt and
+**35.45 in dv/dt**. The initial state has a meridional temperature gradient
+and no wind. That is not a balanced state the model is corrupting; it is an
+unbalanced state the model is correctly adjusting toward balance. 9 m/s over
+six hours is geostrophic adjustment.
+
+The decisive control: **on flat ground the same setup drifts 8.98 m/s.** There
+is no terrain, no conversion over terrain, and almost all of the drift is
+still there.
+
+**And the synthetic analysis was itself inconsistent.** It perturbed
+temperature by −1.5 K and geopotential height by −45 m of cos(k_y·y),
+independently. Those two are not in hydrostatic balance with each other; a
+real analysis is. Rebuilding the heights as the hydrostatic integral of the
+temperatures:
+
+| | inconsistent analysis | self-consistent |
+|---|---|---|
+| geopotential spread, 1500 m terrain | 140 m | **3.24 m** |
+| implied balanced wind | 100.4 m/s | 61.9 m/s |
+
+**What the conversion actually costs**, measured on a consistent analysis:
+
+| terrain | geopotential error (horizontal spread) | drift in 6 h at rest |
+|---|---|---|
+| flat | **0.01 m** | 8.98 m/s (all adjustment) |
+| 1500 m | 3.24 m | 10.19 m/s |
+| 2500 m | 4.19 m | 11.54 m/s (**+2.56** over flat) |
+
+**Interpretation.** P-46 was not a defect. The conversion is accurate to a
+centimetre on flat ground and four metres of geopotential height over 2500 m
+terrain, and terrain adds 2.6 m/s to a 9 m/s adjustment that a rest start
+demands on its own. Category E, the fourth test-design error of the project —
+and the first one found by the AI rather than by a human noticing an anomaly,
+which is worth recording given that the score on that was previously 3-1
+against.
+
+What it does *not* mean: the two rejected hypotheses were wasted. Hypothesis 1
+produced the exact-inversion operator and the measurement showing why exact is
+not the same as usable, and hypothesis 2 established that the conversion
+introduces no small-scale structure worth filtering. Both are now in the
+eliminated table rather than available to be re-proposed.
+
+**The tests were rewritten to measure the right thing.** The old decisive test
+asserted "spurious wind under 25 m/s" from a rest start, which passes for the
+wrong reason. It is replaced by two: one on the geopotential error, which is
+what the conversion is responsible for, and one measuring terrain's
+contribution against a flat control rather than against zero.
+`test_interpolate.py` 8/8.
+
+**Status.** P-46 eliminated. Register: 46 entries, 4 open — and every one of
+the four now needs either a network or an idea, not a measurement.
+
+---
+
+## 2026-09-04 (evening) — The archive machinery, and a 74 K trap in the old operator
+
+**Context.** P-07 is the only item in the register that gets permanently more
+expensive every day it stays open. Observations stay downloadable for years;
+the forecast that was valid for them is only makeable on the day. The driver
+port closed the blocker this morning, so this is the piece that turns a
+running model into evidence.
+
+**The design decision, stated before the code.** The archive stores raw
+observations verbatim and compressed, written **before** any parsing, QC or
+matching is attempted, with the forecast copied beside them. Matched pairs are
+derived. If the observation operator changes — and it will, because the
+elevation correction is a standard 6.5 K/km lapse rate that is wrong on
+exactly the calm clear nights when it is largest — every match can be
+recomputed from the raw payload and the forecast. A failure anywhere
+downstream must never cost the irreplaceable part.
+
+**A 74 K trap found on the way.** `GridInterpolator.at_observation` falls back
+to `field3d[0]` when an observation has no pressure — which is every surface
+observation, and index 0 in this project is the **model lid**. An ASOS
+thermometer would have been scored against the 200 hPa field.
+
+| | value returned for a 2 m thermometer |
+|---|---|
+| sigma operator (lowest level) | 286.6 K |
+| base class (`field3d[0]`, the lid) | 212.8 K |
+
+That is not a crash and not an obviously wrong number in isolation — it is a
+temperature. It would have appeared as a catastrophic, uniform cold bias and
+been read as a model failure. `SigmaInterpolator` overrides the method rather
+than extending it, and the test that catches it compares the two operators
+directly so the trap cannot come back.
+
+The operator also had to become column-aware: in sigma coordinates there is no
+shared 1D array of level pressures, so `vertical()` had nothing to interpolate
+against. Measured: the lowest level sits at 985 hPa over flat ground and
+821 hPa over 1500 m terrain, in the same run.
+
+**A defect of my own, and the failure mode is worth naming.** `verify.py`
+first used variable names of its own — `"temperature"`, `"u_wind"`,
+`"v_wind"` — while the fetchers, `config.CHANNELS` and `RANGE_LIMITS` all use
+the GRIB-style `TMP`, `UGRD`, `VGRD`. Every observation fell through to
+"variable not verified". The archive came out **empty while every other check
+passed**: raw observations stored, forecast copied, metadata written, no
+exception raised anywhere. Inventing a second vocabulary for something that
+already had one produces a pipeline that reports success and archives nothing.
+Category A in spirit — an interface assumption — though the interface was
+internal.
+
+**Result.** `test_sigma_operator.py` 7/7, `test_verify.py` 7/7. The archiver
+round-trips raw observations byte-for-byte, records lead time on every pair
+(skill decay is not recoverable from a pair alone), records the size of every
+elevation correction (so a bias caused by the operator can be told apart from
+a bias in the model), refuses to reach the network under `--report-only`,
+refuses a pre-sigma forecast file, and — tested explicitly — **adds nothing on
+a second run of the same day**. A daily job will be run twice; without that,
+every score would be silently weighted by how often someone re-ran the script.
+
+`tools/daily.sh` runs ingest → forecast → verify from cron: lock file (two
+12-hour forecasts competing for the same cores is what the 50% ceiling
+exists to prevent), dated logs kept because a 4 a.m. failure is only
+diagnosable from what it wrote at the time, first-failure exit code, and
+verification attempted even when the forecast step failed — a forecast that
+diverged at hour 8 still produced eight hours worth archiving.
+
+**Interpretation.** P-07 stays OPEN, and should. The machinery exists and is
+tested, but the archive has no data in it, and nothing here has met the live
+service. On this project's record that is where the next defect is: every
+interface defect so far (P-20 to P-24) passed a full offline suite and
+appeared on first contact.
+
+**Status.** Machinery kept. Register: 46 entries, 4 open.
+
+---
+
+## 2026-09-04 — Configuration change: model reasoning effort raised to high
+
+**Recorded because the study's subject is the AI, not only the model.** A
+change to how the collaborator is configured is a change to the instrument,
+and an instrument change part-way through an uncontrolled n=1 study has to be
+in the record or every before/after comparison in this log is quietly
+confounded.
+
+**What changed.** The reasoning effort setting was raised to **high** by the
+human collaborator on 2026-09-04. Session model identifier: `claude-opus-5`.
+The serving model can differ from the configured one and can change
+mid-session, so that identifier is what was configured, not a guarantee of
+what answered any particular turn.
+
+**What was in progress at the switch.** The sigma core complete through
+convective adjustment; the driver ported to sigma; the verification archiver
+built; P-46 eliminated. Register at 46 entries, 4 open.
+
+**What this does NOT license.** Any claim that work after this point is better
+than work before it. There is no control, no repeated trial, and no blind
+comparison — the tasks on either side of the switch are different tasks. The
+error taxonomy in `docs/AI_COLLABORATION.md` is the only quantitative record,
+and it is small enough that a difference of two or three defects is noise.
+
+**What it might reasonably be compared on, later, with all the above caveats.**
+Defects per session by category; how often a stated hypothesis survives
+measurement (currently roughly half); and the ratio of AI-proposed technique
+to human-proposed direction, which `docs/PROMPT_LOG.md` tracks.
+
+Anyone reading this log as evidence should treat 2026-09-04 as a seam and not
+pool across it without saying so.
+
+**Status.** Recorded. No code change.
+
+---
+
 ## Recording for the AI-collaboration study
 
 Each entry should also note, where applicable:

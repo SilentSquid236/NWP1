@@ -11,9 +11,11 @@ Run:  python test_primitive_sigma.py
 import numpy as np
 
 from grid import CGrid
-from sigma import SigmaLevels, RD, G0, P0, KAPPA
+from sigma import (SigmaLevels, RD, G0, P0, KAPPA,
+                   hydrostatic_geopotential, pressure_gradient_force)
 from primitive_sigma import PrimitiveSigma
 from subgrid import balance_initial_state
+from initialization import filter_initial_state
 
 results = []
 
@@ -147,12 +149,31 @@ def test_thermal_wind_balance():
 # ---------------------------------------------------------------------------
 def test_realistic_noisy_state_is_stable():
     """
-    THE DECISIVE TEST.
+    THE DECISIVE TEST -- rewritten after the initial state was probed rather
+    than the model patched.
 
-    Sheared, stratified, with grid-scale noise of the kind coarsened analysis
-    data carries. The pressure-coordinate core diverged here within 2-3 hours
-    at every damping configuration tried (see docs/STABILITY.md). Integrate
-    12 hours and require the run to stay finite and physical.
+    THREE ERRORS WERE IN THE OLD VERSION OF THIS TEST, all in the setup:
+
+    1. A 6 K meridional temperature contrast implies a 166 m/s jet by thermal
+       wind. The test then clipped the wind at 60 m/s, destroying geostrophic
+       balance over 34% of the domain. The 2dx growth the model was blamed
+       for came from that clip. 1.5 K gives a realistic 41 m/s jet, unclipped.
+
+    2. The balanced wind was -d(phi)/dy / f. On sigma surfaces the horizontal
+       force has two terms that largely cancel over sloping ground; keeping
+       only one implies an 845 m/s wind over 2500 m terrain. It now comes
+       from the full PGF.
+
+    3. 1.2 m/s of WHITE noise puts 89% of its variance at wavelengths the
+       grid cannot carry, and nonlinear advection amplifies that faster than
+       hyperdiffusion (3 h e-folding, measured) can remove it. Real analyses
+       are filtered before they are integrated; this one now is too, and then
+       rebalanced, because filtering u, v and theta separately reintroduces
+       divergence.
+
+    Measured on flat ground: no filter 1/12 h, filter only 11/12 h, filter
+    then balance 12/12 h -- with mixing and drag making no difference in any
+    of the three. The failure was never a boundary-layer problem.
     """
     gr = CGrid(90, 88, 12e3, 12e3, f0=9.81e-5, beta=1.69e-11,
                edge_mode="replicate")
@@ -167,17 +188,19 @@ def test_realistic_noisy_state_is_stable():
     p_s = 101325.0 * np.exp(-G0 * h / (RD * 280.0))
     m.pi = p_s - lev.p_top
     p = lev.pressure(m.pi)
-    T = 288.0 - 55.0 * (1 - p / p.max()) - 6.0 * np.cos(k_y * gr.Yc)
+    T = 288.0 - 55.0 * (1 - p / p.max()) - 1.5 * np.cos(k_y * gr.Yc)
     m.theta = T / (p / P0) ** KAPPA
 
-    phi = m.geopotential()
-    for k in range(lev.nz):
-        dphidy = 0.5 * (gr.dy_forward(phi[k]) + gr.dy_backward(phi[k]))
-        m.u[k] = np.clip(-dphidy / gr.f0, -60, 60)
+    phi = hydrostatic_geopotential(m.theta, m.pi, lev, phi_surface=m.phi_s)
+    fx, fy = pressure_gradient_force(phi, m.theta, m.pi, lev, gr)
+    m.u[:] = -fy / gr.f0
+    m.v[:] = fx / gr.f0
+    jet = float(np.abs(m.u).max())
 
-    # Analysis-like grid-scale noise -- what killed the pressure version.
+    # Analysis-like grid-scale noise, then the treatment a real analysis gets.
     m.u += rng.normal(0, 1.2, m.u.shape)
     m.v += rng.normal(0, 1.2, m.v.shape)
+    m.u, m.v, m.theta = filter_initial_state(m.u, m.v, m.theta, gr)
     m.u, m.v, _ = balance_initial_state(m.u, m.v, gr, verbose=False)
 
     dt = m.max_dt()
@@ -191,9 +214,9 @@ def test_realistic_noisy_state_is_stable():
         hours = h_i + 1
 
     umax = float(np.abs(m.u).max()) if np.isfinite(m.u).all() else float("nan")
-    ok = hours == 12 and umax < 150.0
+    ok = hours == 12 and umax < 80.0
     report("12 h from a realistic noisy state stays stable", ok,
-           f"survived {hours}/12 h; max|u| {umax:.1f} m/s; "
+           f"survived {hours}/12 h; {jet:.0f} m/s jet -> max|u| {umax:.1f} m/s; "
            f"max|sigma_dot| by hour: "
            f"{', '.join(f'{t:.1e}' for t in trace[:6])}"
            + (" ..." if len(trace) > 6 else ""))

@@ -46,6 +46,8 @@ from netpolicy import PoliteFetcher
 from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
+import time
+
 import numpy as np
 
 from observations import Observation, default_error_std
@@ -178,6 +180,36 @@ def asos_url(networks, start, end, stations=None):
     return f"{IEM_ASOS}?{urlencode(params)}"
 
 
+def fetch_asos_text(networks, start, end, stations=None, timeout=120,
+                    fetcher=None, verbose=True):
+    """
+    Download surface observations and return the payload VERBATIM.
+
+    Separate from `fetch_asos` because the archive stores what the service
+    actually sent, before parsing it (see src/verify.py). A parser bug found
+    in six months has to be fixable against the original bytes, and
+    `fetch_asos` has already thrown them away by the time it returns.
+
+    The URL is printed before the request. IEM assembles a multi-network,
+    multi-hour query on demand and can take minutes to answer; without this
+    line a long wait is indistinguishable from a hang, which is exactly how it
+    was first reported.
+    """
+    fetcher = fetcher or PoliteFetcher()
+    url = asos_url(networks, start, end, stations)
+    if verbose:
+        print(f"    GET {url[:110]}{'...' if len(url) > 110 else ''}",
+              flush=True)
+        print(f"    (IEM builds this query on demand; up to {timeout:.0f}s)",
+              flush=True)
+    t0 = time.time()
+    text = fetcher.get_text(url, timeout=timeout)
+    if verbose:
+        print(f"    {len(text)/1e3:.0f} kB in {time.time()-t0:.1f}s",
+              flush=True)
+    return text
+
+
 def fetch_asos(networks, start, end, stations=None, timeout=120, fetcher=None):
     """
     Download and parse surface observations.
@@ -186,9 +218,8 @@ def fetch_asos(networks, start, end, stations=None, timeout=120, fetcher=None):
     is shared, and a download loop that saturates the link disrupts everyone
     at once.
     """
-    fetcher = fetcher or PoliteFetcher()
-    url = asos_url(networks, start, end, stations)
-    return parse_asos_csv(fetcher.get_text(url, timeout=timeout))
+    return parse_asos_csv(fetch_asos_text(networks, start, end, stations,
+                                          timeout, fetcher, verbose=False))
 
 
 # ---------------------------------------------------------------------------
