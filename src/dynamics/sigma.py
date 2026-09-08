@@ -214,17 +214,33 @@ def pressure_gradient_force(phi, theta, pi, lev, grid, reference=None):
     return fx, fy
 
 
-def continuity(u, v, pi, lev, grid):
+def continuity(u, v, pi, lev, grid, top_flux=None):
     """
     Sigma-system continuity. Returns (dpi_dt, sigma_dot).
 
-        d(pi)/dt = -integral_0^1 div(pi V) dsigma
-        pi * sigma_dot(s) = -integral_0^s div(pi V) dsigma' - s * d(pi)/dt
+        d(pi)/dt = -integral_0^1 div(pi V) dsigma  +  F
+        pi * sigma_dot(s) = -integral_0^s div dsigma' - s d(pi)/dt + F
 
-    sigma_dot vanishes at sigma = 0 and sigma = 1 BY CONSTRUCTION here --
-    the second term is exactly what makes the top and bottom values cancel.
-    No correction is applied afterwards, which is the structural difference
-    from the pressure-coordinate version.
+    With F = 0 (the default) sigma_dot vanishes at sigma = 0 and sigma = 1 BY
+    CONSTRUCTION -- the second term is exactly what makes the top and bottom
+    values cancel. No correction is applied afterwards, which is the
+    structural difference from the pressure-coordinate version.
+
+    F is the MASS FLUX THROUGH THE LID, in Pa/s, and it is what makes a
+    radiative upper boundary possible. A rigid lid is F = 0: nothing crosses,
+    so an upward-propagating wave has nowhere to go and comes back down. With
+    F supplied by `radiation.radiative_top_flux`, the lid passes wave energy
+    instead of reflecting it.
+
+    The algebra is checked by the two end values. Writing the constant as F
+    (not F(1-s), which was the first guess) is what makes sigma_dot come out
+    as F at the top and exactly 0 at the ground:
+
+        s = 0:  -0 - 0 + F                     = F
+        s = 1:  -total - (-total + F) + F      = 0
+
+    The ground must stay closed. Mass may leave through the top; it may not
+    leak through the surface.
     """
     # Mass flux divergence per layer.
     pi_u = grid.h_to_u(pi) * u
@@ -233,14 +249,15 @@ def continuity(u, v, pi, lev, grid):
 
     ds = lev.dsigma.reshape(-1, 1, 1)
     total = (div * ds).sum(axis=0)                            # (ny, nx)
-    dpi_dt = -total
+    F = 0.0 if top_flux is None else np.asarray(top_flux, dtype=float)
+    dpi_dt = -total + F
 
     # Partial integral to each half level, top downward.
     partial = np.concatenate([np.zeros((1,) + div.shape[1:]),
                               np.cumsum(div * ds, axis=0)], axis=0)  # (nz+1,...)
 
     s_half = lev.sigma_half.reshape(-1, 1, 1)
-    pi_sigmadot = -partial - s_half * dpi_dt                  # (nz+1, ny, nx)
+    pi_sigmadot = -partial - s_half * dpi_dt + F              # (nz+1, ny, nx)
 
     with np.errstate(divide="ignore", invalid="ignore"):
         sigma_dot = np.where(pi > 0, pi_sigmadot / pi, 0.0)

@@ -27,6 +27,7 @@ NWP_Deployment_Package/
 |   |-- AI_COLLABORATION.md               # defect taxonomy A-F for the AI-to-build study
 |   |-- CAPABILITIES.md                   # what the model can and cannot do, stated up front
 |   |-- DATA_ASSIMILATION.md              # observation ingest and analysis design
+|   |-- MANIFEST.txt                      # (unannotated)
 |   |-- METHODOLOGY.md                    # how claims are established in this project
 |   |-- POSTPROCESSING.md                 # neural post-processing design
 |   |-- PROBLEMS.md                       # problem register: what is wrong, what fixed it, what ruled it out
@@ -57,12 +58,28 @@ NWP_Deployment_Package/
 |   |   |-- primitive_sigma.py            # THE CORE -- sigma primitive equations, prognostic p_s
 |   |   |-- probe_4000.py                 # hour-by-hour watch of the 4000 m failure
 |   |   |-- probe_failure.py              # step-by-step failure probe; locates the growing mode
+|   |   |-- probe_p50.py                  # (unannotated)
 |   |   |-- probe_shock.py                # measures the geopotential error the conversion introduces
 |   |   |-- probe_shock_consistent.py     # the same, on a hydrostatically self-consistent analysis
+|   |   |-- radiation.py                  # radiative upper boundary: wave flux through the lid
+|   |   |-- radiation_dt.py               # is the terrain failure a timestep problem? (no)
+|   |   |-- radiation_final.py            # the same, with transient-only radiation
+|   |   |-- radiation_probe.py            # where a reflected wave shows up, rigid vs radiative
+|   |   |-- radiation_vs_sponge.py        # development and terrain survival, both boundaries
 |   |   |-- rest_terrain_test.py          # motionless atmosphere over tall terrain
 |   |   |-- shallow_water.py              # 2D vector-invariant and advective forms (8/8)
 |   |   |-- sigma.py                      # terrain-following coordinate: continuity, PGF, slopes (7/7)
+|   |   |-- sponge_curve.py               # eddy energy curves -- suppression or saturation?
+|   |   |-- sponge_decision.py            # 12 h survival against sponge depth
+|   |   |-- sponge_depth_weather.py       # development against sponge depth
+|   |   |-- sponge_divergent.py           # damp only the divergent wind? (worse)
 |   |   |-- sponge_edge_test.py           # does the growth peak track the sponge base?
+|   |   |-- sponge_levels_lid.py          # levels x lid: can more levels buy both?
+|   |   |-- sponge_lid_weather.py         # development against lid height
+|   |   |-- sponge_minimum.py             # smallest sponge that survives both cases
+|   |   |-- sponge_rate_ladder.py         # development against sponge rate
+|   |   |-- sponge_running_ref.py         # frozen vs running sponge reference
+|   |   |-- sponge_three.py               # development for shallow sponges
 |   |   |-- subgrid.py                    # hyperdiffusion, SPPT, Helmholtz balancing (7/7)
 |   |   |-- surface.py                    # bulk aerodynamic drag, log law, Louis stability
 |   |   |-- sweep_boundary_layer.py       # mixing x drag x terrain x noise matrix
@@ -74,6 +91,7 @@ NWP_Deployment_Package/
 |   |   |-- test_interpolate.py           # suite for interpolate.py
 |   |   |-- test_primitive3d.py           # suite for primitive3d.py
 |   |   |-- test_primitive_sigma.py       # suite for primitive_sigma.py
+|   |   |-- test_radiation.py             # suite for radiation.py
 |   |   |-- test_shallow_water.py         # suite for shallow_water.py
 |   |   |-- test_sigma.py                 # suite for sigma.py
 |   |   |-- test_subgrid.py               # suite for subgrid.py
@@ -102,6 +120,7 @@ NWP_Deployment_Package/
 |-- tools/                             # maintenance scripts
 |   |-- checklayout.py                    # checks for src/src nesting, missing and duplicate modules
 |   |-- daily.sh                          # one day of the archive from cron: ingest, forecast, verify
+|   |-- manifest.py                       # (unannotated)
 |   |-- newlog.py                         # append a dated research-log entry from the template
 |   |-- problem.py                        # adds to and audits docs/PROBLEMS.md
 |   |-- pull.sh                           # update from GitHub over curl -- no git needed on the server
@@ -129,6 +148,7 @@ NWP_Deployment_Package/
 | `test_initialization.py` | spectral filter, noise threshold | 5/5 |
 | `test_convection.py` | dry convective adjustment | 5/5 |
 | `test_interpolate.py` | pressure -> sigma conversion | 8/8 |
+| `test_radiation.py` | radiative upper boundary | 7/7 |
 | `test_primitive_sigma.py` | the 3D core | 6/6 |
 | `test_primitive3d.py` | superseded pressure core | 8/8 |
 | `test_forecast.py` | end-to-end driver | 11/11 |

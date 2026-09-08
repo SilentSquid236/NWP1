@@ -1547,6 +1547,307 @@ pool across it without saying so.
 
 ---
 
+## 2026-09-05 — The sponge does not absorb weather selectively, and never did
+
+**Context.** P-02: growth over terrain peaks exactly at the sponge's lower
+edge and moves when the edge moves. Real, measured, and not what ends a run.
+The stated reason it could not simply be deepened was P-16 — an early sponge
+that relaxed toward the horizontal mean and flattened a jet.
+
+**Hypothesis, stated before the runs.** Gravity waves are divergent; balanced
+flow is rotational; `remove_divergence_spectral` splits them exactly. Damp
+only the divergent component and the layer can be deep without flattening
+anything.
+
+**Result: the hypothesis failed, and took the premise with it.**
+
+| sponge | kind | jet drift 24 h | reflection max\|du\| 6 h | peak level |
+|---|---|---|---|---|
+| 5 | plain | 0.24% | 36.39 | 5 |
+| 8 | plain | 0.22% | 21.26 | 8 |
+| 12 | plain | 0.22% | 15.08 | 18 |
+| 8 | divergent only | 0.22% | **55.47** | 0 (the lid) |
+| 12 | divergent only | 0.22% | 53.74 | 0 |
+
+Divergent-only absorbs *less* than plain: a mountain wave is not purely
+divergent, and its rotational part reflected off the lid untouched.
+
+But the same table shows a **12-level plain sponge does not flatten the jet at
+all** — 0.22% drift, identical to 5. The constraint inherited from P-16 no
+longer applied: that sponge relaxed toward the horizontal mean, this one
+relaxes toward a frozen reference, and for a steady jet the jet *is* the
+reference. The reason the sponge had to stay shallow had been assumed for
+four days and was false.
+
+**Which exposed the real question.** A frozen reference is exactly right for a
+jet that does not change and exactly wrong for one that does. A steady-jet
+test cannot see that. So: baroclinic development against sponge depth.
+
+| sponge | 0 | 2 | 3 | 5 | 8 | 12 |
+|---|---|---|---|---|---|---|
+| eddy energy x/day | **3.18** | 0.93 | 0.76 | 0.85 | 0.96 | 1.02 |
+
+**The default configuration turns growth into decay.** Not at twelve levels —
+at *two*.
+
+**A metric trap, caught before it was believed.** At sponge=2 the ratio
+collapses to 0.93 while max|v| is 12.8 against 12.7 with no sponge. Those two
+cannot both mean suppression: a wave that grew fast and saturated during day 1
+reports a ratio near 1 and looks identical to one that never grew. So the
+whole curve, not two points on it:
+
+| sponge | 6 h | 12 h | 24 h | 36 h | 48 h | |
+|---|---|---|---|---|---|---|
+| 0 | 6.5e+03 | 4.2e+03 | 3.7e+03 | 4.2e+03 | **1.2e+04** | grows |
+| 2 | 3.6e+03 | 2.9e+03 | 1.7e+03 | 1.3e+03 | 1.6e+03 | decays |
+| 3 | 2.8e+03 | 2.1e+03 | 1.0e+03 | 8.6e+02 | 7.9e+02 | decays |
+| 5 | 2.0e+03 | 1.3e+03 | 8.1e+02 | 7.1e+02 | 6.9e+02 | decays |
+
+It is suppression. Monotonic decay with any sponge, growth without. The curve
+also shows the no-sponge case oscillating by a factor of two between samples,
+which means the day-2-over-day-1 ratio was partly luck of sampling — the same
+diagnostic that rejected divergence damping, used for four days without anyone
+checking its blind spot.
+
+**Diagnosis.** The lid is at 200 hPa, so the sponge sits at **301 hPa** — in
+the upper troposphere. Baroclinic instability is a coupled mode between an
+upper and a lower wave; damping either end stops it, whatever it is damped
+toward. Rayleigh damping cannot distinguish a mountain wave from a baroclinic
+wave here because they occupy the same levels.
+
+**Four more attempts, all measured, none works.** Rate from 15 min to 6 h:
+0.85, 0.78, 0.82. Running low-pass reference instead of frozen: 0.80 at 6 h,
+0.61 at 1 h. Lid at 100 and 50 hPa: 0.97 and 1.89 — development recovers as
+predicted, but reflection climbs to 53 and 60, which is the no-sponge value.
+More levels to buy both: 26 levels diverged, 30 levels gave 2.45 development
+and 56.4 reflection — still not absorbing.
+
+The pattern is the same in every row: **whenever the sponge absorbs
+(reflection 21-36) development collapses; whenever development survives
+(1.89-2.45) the sponge is not absorbing.**
+
+**Interpretation.** This is not a tuning problem and there is no setting that
+resolves it. The fix is a radiative upper boundary condition, which acts on
+wave flux rather than amplitude and therefore has no such trade-off. Not
+attempted.
+
+What it does *not* mean: that current 12-hour forecasts are invalid. The
+curves diverge most after 24 h; at 12 h sponge=3 holds 2.1e+03 against
+4.2e+03. Affected, not invalidated — and the first thing to fix before
+extending past a day.
+
+**Change made, then reverted the same day.** The default was cut from 5 to 3
+on the reasoning that a shallower layer must do less damage. It does not — by
+the 48 h / 6 h ratio, three levels decays *faster* than five (0.28 against
+0.34), which was visible in the table I had just written and did not read
+carefully enough. The change regressed the decisive noisy case from 12/12 to
+11/12 and broke the Ekman spiral test, so it went back to 5. Both suites
+recovered on revert (6/6 each).
+
+Depth is not the mechanism, so trading depth buys nothing. The setting stays
+at 5 with the measurement in the code, so the next person to reach for it can
+see that it has already been tried.
+
+**Status.** P-49 opened, P-02 marked as the symptom of it. Register: 49
+entries, 5 open.
+
+**For the collaboration study.** Three failures worth counting. The stated
+hypothesis (divergent-only damping) was wrong — category F. And a constraint
+inherited from an earlier fix (P-16, "a deep sponge flattens the jet") was
+carried for four days without being re-measured after the thing it described
+had changed. That second one is not in the taxonomy yet: not a wrong
+hypothesis, but a *stale* one — a fact that was true when recorded and
+silently expired. Worth its own category if it recurs.
+
+The third is the cleanest: I changed a default on a reading contradicted by
+the table in the same commit. The measurement was correct, present, and
+misread — and only the regression suite caught it. Category F, but a
+sub-species worth naming: not a hypothesis that survived measurement and
+failed later, one that the measurement already refuted at the moment it was
+made.
+
+---
+
+## 2026-09-05 (later) — A radiative upper boundary: the mechanism works, the terrain case does not
+
+**Context.** P-49 established that no Rayleigh sponge can separate a mountain
+wave from a baroclinic wave, because amplitude is not what distinguishes them.
+The standard answer is a boundary that passes vertical wave flux instead of
+damping amplitude.
+
+**What was built.** `src/dynamics/radiation.py` — the hydrostatic
+Klemp-Durran / Bougeault condition, for each horizontal wavenumber:
+
+    w(k) = |k| phi'(k) / N
+
+converted to the mass flux this model's continuity equation wants, since at
+sigma = 0 the pressure is constant and omega_top = pi * sigmadot_top:
+
+    F(k) = -rho_top g (|k| / N) phi'(k)      [Pa/s]
+
+`continuity` gained a `top_flux` argument. The algebra needed care: the
+constant added to the partial integral must be F itself, not F(1-s), and the
+two end values are what check it — sigma_dot comes out as F at the lid and
+exactly 0 at the ground (measured 3.95e-20). Mass may leave through the top;
+it may never leak through the surface.
+
+**The sign was measured, not argued.** Get it backwards and the boundary is a
+wave SOURCE pumping energy in at exactly the rate it should let it out. With
+sign +1 the run goes non-finite within four hours; with sign -1 it does not.
+That is the test, and it is in the suite.
+
+**Result on the thing that mattered.** Eddy kinetic energy of a growing
+baroclinic wave, 48 h, ratio of 48 h to 6 h:
+
+| configuration | 6 h | 24 h | 48 h | ratio |
+|---|---|---|---|---|
+| sponge 5, rigid lid | 2.04e+03 | 8.06e+02 | 6.85e+02 | **0.34** decays |
+| no sponge, rigid lid | 6.51e+03 | 3.72e+03 | 1.19e+04 | 1.82 |
+| no sponge, **radiative** | 1.58e+04 | 6.68e+03 | 3.95e+04 | **2.50** |
+| sponge 5, radiative | 1.48e+03 | 5.74e+02 | 5.48e+02 | 0.37 |
+
+Better than a rigid lid, not merely unharmed — an amplitude e-folding of about
+**1.8 days** against 6.7 days for the rigid lid, and 1-3 days is what
+baroclinic waves actually do. The last row is worth noting too: with the
+sponge still on, the sponge dominates and the boundary buys nothing. They are
+not additive.
+
+**And it fails the case the sponge was there for.** 2500 m terrain, 12 h:
+
+| configuration | survived |
+|---|---|
+| sponge 5, rigid | 12/12 |
+| no sponge, rigid | 9/12 |
+| no sponge, radiative | **3/12** |
+
+**Two candidate causes, both measured, neither is it.**
+
+*The timestep.* The flux is explicit and acts on the thinnest layer in the
+column, so CFL was the obvious suspect. dt and dt/2 give 3/12 and 3/12 —
+identical. Not the timestep.
+
+*Radiating a steady anomaly.* Over a mountain the top-level geopotential
+perturbation is dominated by the terrain's own hydrostatic imprint, which is
+balanced and does not propagate. Radiating it pumps mass out of those columns
+continuously. So the condition now acts on the deviation from a 3-hour running
+low-pass — only the transient part radiates. That **fixed the resting case**
+(a balanced atmosphere over 1500 m terrain now drifts 1.4e-05 in mass and
+1.07 m/s in wind over 3 h) and improved development from 1.82 to 2.50. Terrain
+survival stayed at 3/12.
+
+**Interpretation.** The mechanism is right and the measurement supporting it is
+the strongest evidence in this log for any single change: the sponge decays
+weather at 0.34 and this grows it at 2.50, with a physically correct e-folding
+time. But it is not usable yet, and the honest statement is that the terrain
+failure has an unknown cause, not a suspected one — the two obvious
+explanations were tested and eliminated.
+
+**Status.** Kept, **off by default**. The sponge remains production with its
+cost recorded. P-50 opened for the terrain failure. `test_radiation.py` 7/7,
+including the sign measurement, the resting-atmosphere leak test, and a
+development test that requires growth where the sponge decays (36 h / 18 h:
+sponge 0.75, radiative 1.91).
+
+**A test-design note.** The first version of the development test compared
+24 h to 12 h and reported 0.61 against 0.73 — no discrimination at all, because
+both configurations are still shedding the initial transient at 12 h. The
+curves only separate once growth takes over. An assertion window chosen for
+speed rather than from the measured curve is not a test.
+
+The same mistake appeared once more in this session, in the other direction:
+the first radiative test asserted that the disturbance AT THE LID should be
+smaller, and it was larger (32.2 against 27.2 m/s). That is the expected
+behaviour — a rigid lid holds the wave still and a transparent one lets it
+through, so the top level is *more* active, not less. A reflected wave shows up
+below, which is where the measurement belongs.
+
+---
+
+## 2026-09-06 — Three causes behind one failure, and the analysis that found the third
+
+**Context.** P-50: the radiative lid dies over 2500 m terrain at 3/12 hours.
+The timestep and the terrain's steady imprint had both been eliminated the day
+before, so the cause was genuinely unknown.
+
+**The probe was spatial, because the suspect was.** Another module's docstring
+already said it: `remove_divergence_spectral` notes that the FFT assumes
+periodicity, the domain is not periodic, and the outermost cells carry the
+error — but it gets away with it because the lateral relaxation overwrites
+them. The radiation flux has no such protection; it goes straight into
+prognostic surface pressure. So the probe recorded flux at the edges against
+flux in the interior.
+
+| hour | \|F\| edge / interior |
+|---|---|
+| 1 | 1.49 |
+| 2 | 2.28 |
+| 3 | **42.32** |
+
+Interior flux was flat at 0.67-0.79 Pa/s the whole time. The boundary was not
+radiating a wave; it was amplifying its own transform error. Windowing before
+the transform and tapering after it fixed that — edge ratio down to 0.13.
+
+**Which exposed a second problem underneath.** With the edges quiet, the
+INTERIOR flux started growing: 1.25 → 4.59 Pa/s in an hour, death at hour 3 —
+sooner than before. The transfer is proportional to \|k\|, so the shortest waves
+get the most flux. A raised-cosine cutoff below 8 grid cells slowed it to 2.17
+but did not stop it. That cutoff is worth keeping on its own terms: the
+hydrostatic radiation condition is only valid where \|k\| << N/U, which fails
+long before the grid scale, so it removes exactly the wavenumbers the
+condition was never derived for.
+
+**Then I stopped tightening knobs and did the loop analysis.** Two failed
+adjustments in a row is the signal the project's own methodology says to stop
+on.
+
+    F  ->  dpi/dt  ->  pi  ->  phi_top  ->  F
+
+phi_top is the hydrostatic integral from the ground up, so it moves when pi
+moves, by about R T / p_s per pascal — 0.94 m²/s² per Pa here. With rho g / N
+about 164 and \|k\| about 5e-5 for a 120 km wave, the loop gain is 154 \|k\| per
+second: **an e-folding of about 130 seconds.** And the sign that radiates
+waves correctly is the sign that makes this loop grow, so it was never
+resolvable by choosing a sign. That number explains the growth rates observed
+and nothing else did.
+
+**The first fix for it was wrong, in an instructive way.** Subtracting the
+column's hydrostatic response to pi made things worse — flux 25 Pa/s, death an
+hour earlier. Over 2500 m terrain pi varies by 27000 Pa because of the
+*mountain*, so pi' is ±13000 Pa against a phi' of about 150 m²/s². That
+subtraction does not open the loop, it injects a terrain-shaped signal two
+orders of magnitude larger than the wave. The loop runs through *changes* in
+pi, so it is the change that has to be removed — pi against its own running
+low-pass, matching the treatment phi_top already had.
+
+**Result.** Flux bounded (1.52, 2.22, 1.11 Pa/s), wind steady at 39 m/s for
+three hours, and the run still ends at hour 4. Three causes found and fixed, a
+fourth remains, and nothing in the recorded diagnostics is running away before
+the end.
+
+**What improved anyway.** Development, the thing the boundary exists for, got
+better with every fix: the suite's 36 h / 18 h eddy-energy ratio went 1.91 →
+**3.12**, against the sponge's 0.75. All suites green — radiation 7/7, sigma
+7/7, sigma 3D core 6/6.
+
+**Interpretation.** A single symptom with three independent causes stacked
+behind it, each of which had to be removed before the next was visible. Two
+were found by measurement and one by arithmetic — and the arithmetic one was
+the only one that could not have been found by trying settings, because no
+setting fixes a loop whose two requirements have opposite signs.
+
+**Status.** Kept, off by default. P-50 stays open with a much sharper
+description than it had.
+
+**For the collaboration study.** The useful entry here is not a defect but a
+decision: after two failed adjustments in a row, switching from "try the next
+setting" to "write down the feedback loop and estimate its gain" is what
+produced the third cause. That is the same intervention the human made on
+2026-09-02 ("probing the error is a better idea then guess checking"), applied
+without being prompted this time. Worth noting for whether the habit
+transfers.
+
+---
+
 ## Recording for the AI-collaboration study
 
 Each entry should also note, where applicable:

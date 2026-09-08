@@ -35,6 +35,7 @@ from subgrid import hyperdiffusion, recommended_hyper_coeff, hyper_stability_dt
 from turbulence import vertical_mixing, richardson, mixing_stability_dt
 from surface import surface_drag, drag_stability_dt, ROUGHNESS
 from convection import dry_convective_adjustment
+from radiation import radiative_top_flux, top_flux_stability_dt
 
 
 class PrimitiveSigma:
@@ -42,7 +43,8 @@ class PrimitiveSigma:
                  hyper=None, stochastic=None, ref_pgf=True,
                  sponge_levels=5, sponge_rate=1.0 / 900.0, mixing=True,
                  drag=True, z0=0.1, theta_surface=None,
-                 convection=True):
+                 convection=True, radiative_top=False,
+                 radiation_sign=-1.0, radiation_tau=3 * 3600.0):
         self.grid = grid
         self.lev = levels
 
@@ -79,6 +81,26 @@ class PrimitiveSigma:
         # waves, but it flattens a jet -- legitimate structure -- which the
         # thermal-wind test caught when the pressure-coordinate version was
         # written that way.
+        # SPONGE DEPTH: LEFT AT 5, AND THE REASON IS A CORRECTION.
+        #
+        # Eddy kinetic energy of a growing baroclinic wave, 48 h, 48x48x20
+        # (P-49 in docs/PROBLEMS.md):
+        #
+        #   sponge |    6 h     12 h     24 h     48 h   | 48h/6h
+        #        0 | 6.5e+03  4.2e+03  3.7e+03  1.2e+04  |  1.83  grows
+        #        2 | 3.6e+03  2.9e+03  1.7e+03  1.6e+03  |  0.44  decays
+        #        3 | 2.8e+03  2.1e+03  1.0e+03  7.9e+02  |  0.28  decays
+        #        5 | 2.0e+03  1.3e+03  8.1e+02  6.9e+02  |  0.34  decays
+        #
+        # EVERY setting turns growth into decay, including two levels of
+        # twenty, so depth is not what causes the damage and reducing it does
+        # not reduce the damage -- three levels decays FASTER than five by
+        # the ratio that matters.
+        #
+        # The default was briefly cut to 3 on that mistaken reading. It
+        # regressed two suites (the decisive noisy case 12/12 -> 11/12, and
+        # the Ekman spiral) and improved nothing, so it is back at 5. The
+        # real fix is a radiative upper boundary, not a shallower blanket.
         self.sponge_levels = int(sponge_levels)
         self.sponge_rate = float(sponge_rate)
         self._sponge = np.zeros((levels.nz, 1, 1))
@@ -114,6 +136,26 @@ class PrimitiveSigma:
         # wave steepens. Overturning has to be removed by rearrangement.
         self.convection = bool(convection)
         self._conv_info = None
+
+        # RADIATIVE UPPER BOUNDARY (P-49). Off by default until it is measured
+        # on the production cases; the sponge stays until something better is
+        # demonstrated, not merely written.
+        #
+        # A rigid lid reflects because nothing crosses it. This lets vertical
+        # wave flux leave instead, using the hydrostatic radiation condition
+        # w(k) = |k| phi'(k) / N. It damps nothing, so it has no equivalent of
+        # the sponge's cost: balanced flow does not propagate vertically and
+        # therefore radiates nothing.
+        self.radiative_top = bool(radiative_top)
+        self.radiation_sign = float(radiation_sign)
+        self._top_flux = None
+        # Running low-pass of the lid geopotential. The boundary radiates the
+        # deviation from this, so a steady terrain-induced anomaly -- which
+        # has no intrinsic frequency and does not propagate -- radiates
+        # nothing. See radiation.radiative_top_flux.
+        self.radiation_tau = float(radiation_tau)
+        self._phi_top_ref = None
+        self._pi_ref = None
 
         self.time = 0.0
         self.step_count = 0
@@ -168,7 +210,15 @@ class PrimitiveSigma:
         gr, lev = self.grid, self.lev
 
         phi = hydrostatic_geopotential(theta, pi, lev, phi_surface=self.phi_s)
-        dpi_dt, sd = continuity(u, v, pi, lev, gr)
+
+        top_flux = None
+        if self.radiative_top:
+            top_flux = radiative_top_flux(phi, theta, pi, lev, gr,
+                                          sign=self.radiation_sign,
+                                          reference=self._phi_top_ref,
+                                          pi_reference=self._pi_ref)
+            self._top_flux = top_flux
+        dpi_dt, sd = continuity(u, v, pi, lev, gr, top_flux=top_flux)
         # Reference profile: the horizontal-mean temperature on each sigma
         # surface. Recomputed each call so it tracks the evolving state.
         T_ref = (theta * (lev.pressure(pi) / P0) ** KAPPA).mean(axis=(1, 2))
@@ -258,7 +308,12 @@ class PrimitiveSigma:
         if sd > 0:
             dt_v = safety * self.lev.dsigma.min() / sd
 
-        return float(min(dt_h, dt_v, hyper_stability_dt(gr, self.hyper)))
+        dt_top = np.inf
+        if self.radiative_top and self._top_flux is not None:
+            dt_top = top_flux_stability_dt(self._top_flux, self.pi, self.lev)
+
+        return float(min(dt_h, dt_v, dt_top,
+                         hyper_stability_dt(gr, self.hyper)))
 
     def step(self, dt):
         if self.sponge_levels > 0 and self._u_ref is None:
@@ -291,6 +346,16 @@ class PrimitiveSigma:
             self.theta, self.u, self.v, self._conv_info = \
                 dry_convective_adjustment(self.theta, self.u, self.v,
                                           self.pi, self.lev)
+
+        if self.radiative_top:
+            phi_top = self.geopotential()[0]
+            a = min(dt / self.radiation_tau, 1.0)
+            if self._phi_top_ref is None:
+                self._phi_top_ref = phi_top.copy()
+                self._pi_ref = self.pi.copy()
+            else:
+                self._phi_top_ref += a * (phi_top - self._phi_top_ref)
+                self._pi_ref += a * (self.pi - self._pi_ref)
 
         self.time += dt
         self.step_count += 1

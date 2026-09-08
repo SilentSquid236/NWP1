@@ -153,6 +153,9 @@ on itself.
 | 70 | "All files should be in the NWP_deployment_package folder" | COR | the archive had a wrapper directory and nested the package inside itself |
 | 71 | "whe nrunning the archive everything freezes" | **OBS** | three buffering/progress defects (P-47) and a raw-observation fetch bug (P-48) |
 | 72 | "Log that the model effort was switched to high I would also like all files here C:\\Users\\Epier\\Desktop\\NWP\\NWP_Deployment_Package" | **MET**, ADM | recorded the instrument change; synced the working copy |
+| 73 | "Lets get back into the project" | DIR | took P-02; found the sponge destroys baroclinic development at every setting (P-49) |
+| 74 | "Lets build the radiative boundary" | **DIR** | built it; development 0.34 -> 2.50, but tall terrain 12/12 -> 3/12 (P-50) |
+| 75 | "lets keep going" | DIR | three causes found behind P-50; development 1.91 -> 3.12, terrain still fails at hour 4 |
 
 **Observation.** Prompt 53 is 18 words and is the most consequential
 instruction in the project. Before it, nine candidate causes had been patched

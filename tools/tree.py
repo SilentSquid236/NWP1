@@ -46,6 +46,22 @@ NOTES = {
     "src/dynamics/turbulence.py": "Richardson-number vertical mixing",
     "src/dynamics/surface.py": "bulk aerodynamic drag, log law, Louis stability",
     "src/dynamics/convection.py": "dry convective adjustment (post-step, conservative)",
+    "src/dynamics/radiation.py": "radiative upper boundary: wave flux through the lid",
+    "src/dynamics/radiation_probe.py": "where a reflected wave shows up, rigid vs radiative",
+    "src/dynamics/radiation_vs_sponge.py": "development and terrain survival, both boundaries",
+    "src/dynamics/radiation_final.py": "the same, with transient-only radiation",
+    "src/dynamics/radiation_dt.py": "is the terrain failure a timestep problem? (no)",
+    "src/dynamics/sponge_divergent.py": "damp only the divergent wind? (worse)",
+    "src/dynamics/sponge_depth_weather.py": "development against sponge depth",
+    "src/dynamics/sponge_rate_ladder.py": "development against sponge rate",
+    "src/dynamics/sponge_running_ref.py": "frozen vs running sponge reference",
+    "src/dynamics/sponge_lid_weather.py": "development against lid height",
+    "src/dynamics/sponge_levels_lid.py": "levels x lid: can more levels buy both?",
+    "src/dynamics/sponge_curve.py": "eddy energy curves -- suppression or saturation?",
+    "src/dynamics/sponge_decision.py": "12 h survival against sponge depth",
+    "src/dynamics/sponge_minimum.py": "smallest sponge that survives both cases",
+    "src/dynamics/sponge_three.py": "development for shallow sponges",
+    "src/dynamics/sponge_edge_test.py": "does growth track the sponge base?",
     "src/dynamics/endgame_probe.py": "hour-by-hour watch of the tall-terrain failure",
     "src/dynamics/endgame_convection.py": "the same, with and without convection",
     "src/dynamics/sponge_edge_test.py": "does the growth peak track the sponge base?",
@@ -195,6 +211,7 @@ FOOTER = """```
 | `test_initialization.py` | spectral filter, noise threshold | 5/5 |
 | `test_convection.py` | dry convective adjustment | 5/5 |
 | `test_interpolate.py` | pressure -> sigma conversion | 8/8 |
+| `test_radiation.py` | radiative upper boundary | 7/7 |
 | `test_primitive_sigma.py` | the 3D core | 6/6 |
 | `test_primitive3d.py` | superseded pressure core | 8/8 |
 | `test_forecast.py` | end-to-end driver | 11/11 |
