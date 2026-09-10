@@ -222,6 +222,53 @@ def test_realistic_noisy_state_is_stable():
            + (" ..." if len(trace) > 6 else ""))
 
 
+# ---------------------------------------------------------------------------
+def test_mixing_knobs_are_connected():
+    """
+    A GUARD RAIL, NOT A PHYSICS TEST. It asserts that changing k_max changes
+    the answer.
+
+    The K_MAX ceiling used to be varied by assigning `turbulence.K_MAX` at
+    runtime, which does nothing: the default is bound into
+    `vertical_mixing`'s signature when the module is imported, so every call
+    keeps the import-time value. A ladder run that way returns IDENTICAL
+    numbers at every setting, and it did -- P-40 recorded "K_MAX 100 / 300 /
+    1000 -> 6/12, 6/12, 6/12" and read three identical survival counts as a
+    clean elimination rather than as a broken experiment (L12).
+
+    So: a neutral column with strong vertical shear, where Ri ~ 0 and the
+    eddy diffusivity is pinned at whatever ceiling it is given. If the knob
+    is connected, max K equals the ceiling and the two settings differ. If a
+    future refactor re-freezes the path, this fails instead of quietly
+    returning the same number twice.
+    """
+    import turbulence
+
+    def peak_K(**kw):
+        gr = CGrid(16, 16, 25e3, 25e3)
+        lev = SigmaLevels(20)
+        m = PrimitiveSigma(gr, lev, convection=False, **kw)
+        # Neutral (constant theta) => N^2 ~ 0 => Ri ~ 0 => f(Ri) = 1, so K is
+        # l^2 |S| and the ceiling is the only thing that can bind.
+        m.pi[:] = 101325.0 - lev.p_top
+        m.theta[:] = 300.0
+        # ~12 m/s of shear per level, uniform in the horizontal.
+        m.u[:] = np.arange(lev.nz)[:, None, None] * -12.0
+        m.tendencies(m.u, m.v, m.theta, m.pi)
+        return float(np.max(m._K_last)), m
+
+    k_lo, m_lo = peak_K(k_max=100.0)
+    k_hi, m_hi = peak_K(k_max=400.0)
+    k_def, m_def = peak_K()
+
+    ok = (abs(k_lo - 100.0) < 1e-9 and abs(k_hi - 400.0) < 1e-9
+          and k_hi > k_lo and m_def.k_max == turbulence.K_MAX)
+    report("k_max reaches the mixing scheme (P-40 / L12)", ok,
+           f"max K: {k_lo:.1f} at k_max=100, {k_hi:.1f} at k_max=400, "
+           f"default k_max {m_def.k_max:.0f} = turbulence.K_MAX "
+           f"{turbulence.K_MAX:.0f}")
+
+
 if __name__ == "__main__":
     print("\nSigma-coordinate 3D core\n" + "=" * 66)
     for fn in (test_rest_over_flat_ground,
@@ -229,6 +276,7 @@ if __name__ == "__main__":
                test_surface_pressure_is_prognostic,
                test_mass_conservation,
                test_thermal_wind_balance,
+               test_mixing_knobs_are_connected,
                test_realistic_noisy_state_is_stable):
         try:
             fn()

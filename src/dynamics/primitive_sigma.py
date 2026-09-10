@@ -32,6 +32,7 @@ from sigma import (SigmaLevels, hydrostatic_geopotential, continuity,
                    vertical_advection, pressure_gradient_force,
                    RD, CP, KAPPA, P0, G0)
 from subgrid import hyperdiffusion, recommended_hyper_coeff, hyper_stability_dt
+import turbulence
 from turbulence import vertical_mixing, richardson, mixing_stability_dt
 from surface import surface_drag, drag_stability_dt, ROUGHNESS
 from convection import dry_convective_adjustment
@@ -44,7 +45,8 @@ class PrimitiveSigma:
                  sponge_levels=5, sponge_rate=1.0 / 900.0, mixing=True,
                  drag=True, z0=0.1, theta_surface=None,
                  convection=True, radiative_top=False,
-                 radiation_sign=-1.0, radiation_tau=3 * 3600.0):
+                 radiation_sign=-1.0, radiation_tau=3 * 3600.0,
+                 k_max=None, ri_crit=None, mixing_length=None):
         self.grid = grid
         self.lev = levels
 
@@ -115,6 +117,20 @@ class PrimitiveSigma:
         # instability and without this has nothing to dissipate it.
         self.mixing = bool(mixing)
         self._K_last = None
+
+        # THE MIXING KNOBS LIVE HERE, ON THE INSTANCE -- NOT AS MODULE
+        # GLOBALS. If you are about to write `turbulence.K_MAX = x` to run a
+        # sensitivity ladder: it does nothing. The defaults are bound into
+        # `vertical_mixing`'s signature when the module is imported, so every
+        # call keeps the import-time value and the ladder returns identical
+        # numbers at every setting. That is exactly how P-40 recorded
+        # "K_MAX 100 / 300 / 1000 -> 6/12, 6/12, 6/12" as a clean elimination;
+        # re-run through this constructor it is 6/12, 8/12, 8/12 (2026-09-08).
+        # Pass k_max= / ri_crit= / mixing_length= here instead.
+        self.k_max = turbulence.K_MAX if k_max is None else float(k_max)
+        self.ri_crit = turbulence.RI_CRIT if ri_crit is None else float(ri_crit)
+        self.mixing_length = (turbulence.MIXING_LENGTH if mixing_length is None
+                              else float(mixing_length))
 
         # Surface drag. Mixing redistributes momentum within a column; only
         # drag REMOVES it. Without a sink the near-surface wind has nothing
@@ -261,7 +277,10 @@ class PrimitiveSigma:
             self._drag_info = info
 
         if self.mixing:
-            mu, mv, mth, K = vertical_mixing(u, v, theta, pi, lev)
+            mu, mv, mth, K = vertical_mixing(
+                u, v, theta, pi, lev,
+                ri_crit=self.ri_crit, k_max=self.k_max,
+                mixing_length=self.mixing_length)
             du = du + mu
             dv = dv + mv
             dth = dth + mth
