@@ -38,6 +38,75 @@ hypothesis, **G** missing physics, **H** performance, **I** logistics.
 
 # OPEN
 
+## P-40 — The eddy-diffusivity ceiling has never actually been tested
+**Category** E, G · **Status** OPEN · **First seen** 2026-09-08 ·
+**Reopened from ELIMINATED** 2026-09-08
+
+**Symptom.** A K_MAX ladder at 4000 m returned identical survival at every
+setting — 6/12 at 100, 300 and 1000 m²/s — and was recorded as an elimination.
+The ladder was not varying anything: it assigned `turbulence.K_MAX` at
+runtime, and the value the mixing scheme uses is bound into
+`vertical_mixing`'s signature at import time (P-51).
+
+**What is known.** Re-run so the ceiling actually reaches the scheme:
+
+| K_MAX (m²/s) | survived |
+|---|---|
+| 100 | 6/12 |
+| 300 | **8/12** |
+| 1000 | **8/12** |
+
+(2026-09-08.) So the ceiling is not innocent. It is worth two forecast hours
+at 4000 m, and it saturates somewhere between 300 and 1000, which is the
+shape a *binding* constraint has — it stops binding once it is high enough.
+
+Observed eddy diffusivities in a breaking mountain wave are 10² to 10³ m²/s,
+so 100 was low on physical grounds as well.
+
+On the case that exposed the bug — 2500 m terrain, radiative lid, no sponge —
+the ceiling moves things without fixing them:
+
+| K_MAX (m²/s) | peak \|v\| | survived |
+|---|---|---|
+| 100 | 44.1 | 3/12 |
+| 400 | 35.0 | 3/12 |
+| 1500 | 135.1 | 4/12 |
+
+(2026-09-08.) Note the third row: a *higher* ceiling with a larger peak wind.
+Whatever is ending that run is not what the ceiling controls, and P-50 remains
+its own problem.
+
+**Ruled out.** Nothing yet. This entry is back at the beginning.
+
+**Anything else that was measured this way is suspect.** Any conclusion in
+this register or the research log that rested on assigning
+`turbulence.K_MAX`, `turbulence.RI_CRIT` or `turbulence.MIXING_LENGTH` at
+runtime should be treated as unmeasured until it is re-run through the
+constructor. The two known cases are this entry and the L5 citation in
+`docs/LEARNING_LOG.md`; nothing has been found beyond them, and "nothing has
+been found" is not the same as "there is nothing".
+
+**What remains.**
+
+1. The ladder re-run at finer spacing between 100 and 300, since that is where
+   the two hours are bought.
+2. Whether the extra hours are dissipation or suppression. L2: a scheme that
+   buys stability by flattening the flow looks identical on a survival count.
+   The 4000 m case must be checked for a damped jet and a mixed-out
+   stratification before any of this is called an improvement, and the
+   prediction to write down first is that max|u| must NOT fall.
+3. Whether P-01 (Nh/U ≈ 1) moves at all once the ceiling is honest, or whether
+   8/12 is where a capped diffusion runs out regardless (L5 — a diffusion
+   loses a race against a growing mode, and a breaking wave is fast).
+
+**Why this is filed as a test-design defect and not only a code one.** The
+code defect is P-51 and it is fixed. The defect *here* is that three identical
+numbers were read as a clean result. Identical output at different settings is
+a bug report about the experiment; nothing in this register said so until it
+had already cost a candidate.
+
+---
+
 ## P-01 — Tall terrain fails above Nh/U ≈ 1
 **Category** G · **Status** ACCEPTED · **Scoped** 2026-09-04
 
@@ -65,7 +134,10 @@ kept as a statement of where the physics runs out rather than as work to do.
 
 **Ruled out by measurement** (P-30 to P-41): the sigma coordinate, the
 timestep, sponge depth, lid height, the initialization filter, the presence of
-convective adjustment, the eddy-diffusivity ceiling.
+convective adjustment, ~~the eddy-diffusivity ceiling~~ — the ceiling is back
+on the list of live candidates as of 2026-09-10, because the ladder that
+eliminated it was not varying anything (P-40, P-51). It is worth two forecast
+hours at 4000 m, which is the only measured movement this problem has had.
 
 **Not the answer.** Orographic gravity-wave drag. It parameterizes *subgrid*
 orography, and this mountain is 250 km wide on a 12 km grid — resolved by a
@@ -327,6 +399,58 @@ service, which is P-06 and is where this project's defects have always been.
 ---
 
 # FIXED
+
+## P-51 — A sensitivity ladder set a module global that nothing read
+**Category** D · **Status** FIXED · **Fixed** 2026-09-10
+
+**Symptom.** A K_MAX ladder returned peak |v| of 44.1 at both 100 and 400 —
+identical to one decimal place. Earlier, the same mechanism produced a
+recorded negative result: P-40's "K_MAX 100 / 300 / 1000 → 6/12, 6/12, 6/12".
+
+**Diagnosis.** Python binds default arguments once, when the `def` is
+executed:
+
+    def vertical_mixing(..., k_max=K_MAX, ...):
+
+`K_MAX` is read at import and frozen into the signature. `primitive_sigma`
+then called `vertical_mixing(u, v, theta, pi, lev)` with no `k_max`, so the
+model always used the value from the moment `turbulence` was first imported.
+`kmax_ladder.py` assigned `turbulence.K_MAX = kmax` on each pass, which
+changes the module attribute and nothing else. Every rung of the ladder ran
+the same experiment.
+
+Measured directly, 2026-09-10, on a neutral column with 12 m/s of shear per
+level:
+
+| how the ceiling was set | max K |
+|---|---|
+| `turbulence.K_MAX = 400`, default call | 100.0 |
+| `k_max=400` passed explicitly | 400.0 |
+
+`ri_crit` and `mixing_length` had exactly the same exposure and were fixed
+with it, though no experiment is known to have varied them this way.
+
+**Fix.** The three mixing parameters are now instance state on
+`PrimitiveSigma` (`k_max`, `ri_crit`, `mixing_length`), defaulted from the
+module values at construction and passed explicitly into `vertical_mixing` on
+every call. `lid_test.build_on` forwards `**model_kw` to the constructor, and
+`kmax_ladder.py` varies the ceiling that way instead of by assignment. The
+comment at the point where someone would reach for the global says what
+happens if they do, and quotes P-40.
+
+**Confirmed by.** `test_primitive_sigma.test_mixing_knobs_are_connected`: max
+K is 100.0 at `k_max=100` and 400.0 at `k_max=400`, and the constructed
+default equals `turbulence.K_MAX`. It is a guard rail, not a physics test —
+its whole job is to fail if the path is ever re-frozen, rather than let a
+ladder return the same number three times and be believed. Sigma core suite
+7/7 with it added.
+
+**Why category D and not E.** The experiment was designed correctly; the
+language semantics silently defeated it. What makes it expensive is that the
+failure mode of this defect is *plausible output* — three identical numbers
+look like a flat sensitivity, which is a publishable-shaped result.
+
+---
 
 ## P-47 — A running job was indistinguishable from a frozen one
 **Category** C, I · **Status** FIXED · **Fixed** 2026-09-04
@@ -871,9 +995,15 @@ exactly what disappears from a repository.
 | P-37 | terrain smoothing | no change |
 | P-38 | balanced surface pressure | no change |
 | P-39 | **the timestep, at 4000 m** | dt and dt/2 identical to 4 significant figures for 6 hours |
-| P-40 | **eddy-diffusivity ceiling** | K_MAX 100 / 300 / 1000 → 6/12, 6/12, 6/12 |
 | P-41 | **lid height** | 200 hPa 11/12, 100 hPa 10–11/12, 50 hPa 9–10/12 — neutral to worse |
 | P-46 | **initialization shock over terrain** | the conversion is accurate: geopotential error 0.01 m flat, 4.19 m over 2500 m terrain. The "shock" was a rest-start adjustment plus an inconsistent test analysis |
+
+**P-40 has been WITHDRAWN from this table and reopened.** It read
+"K_MAX 100 / 300 / 1000 → 6/12, 6/12, 6/12", and three byte-identical survival
+counts are not an elimination, they are a broken experiment: the ladder set a
+module global that nothing read (P-51). Re-run through the constructor it is
+6/12, **8/12**, **8/12**. Two forecast hours were available the whole time and
+the register said the candidate was dead.
 
 P-41 is a re-measurement. The original finding was recorded on a state now
 known to carry P-08's clipped jet, so it no longer counted as evidence and was

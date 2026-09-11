@@ -125,6 +125,8 @@ than the atmosphere. Train on analysis.
 |---|---|
 | `docs/AI_COLLABORATION.md` | the research study: AI-assisted model building, error taxonomy |
 | `docs/RESEARCH_LOG.md` | dated record of every experiment, including failures |
+| `docs/PROBLEMS.md` | the problem register: what is wrong now, what fixed it, what was ruled out |
+| `docs/LEARNING_LOG.md` | lessons, and the later moments where each one fired again |
 | `docs/METHODOLOGY.md` | standards of evidence — how we decide something works |
 | `docs/CAPABILITIES.md` | honest assessment of what the model can and cannot do |
 | `docs/STABILITY.md` | the open stability problem, with all measurements |
@@ -133,6 +135,12 @@ than the atmosphere. Train on analysis.
 
 New log entry: `python tools/newlog.py "Short title"`. Hypothesis before
 result.
+
+Before a commit: `python tools/problem.py check` (no fix asserted without a
+measurement), `python tools/manifest.py --check` (this copy is byte-for-byte
+what it should be), `python tools/checklayout.py` (no `src/src`), and
+`python tools/stale.py` (nothing has re-checked these numbers since the code
+under them moved). `python tools/tree.py` regenerates `docs/STRUCTURE.md`.
 
 ## What to expect
 

@@ -1132,9 +1132,20 @@ observed values in a breaking mountain wave are 10²–10³.
 
 | K_MAX (m²/s) | 100 | 300 | 1000 |
 |---|---|---|---|
-| survived | 6/12 | 6/12 | 6/12 |
+| survived | ~~6/12~~ 6/12 | ~~6/12~~ **8/12** | ~~6/12~~ **8/12** |
 
-Flat. **The ceiling is innocent.** Tenth candidate eliminated by measurement.
+~~Flat. **The ceiling is innocent.** Tenth candidate eliminated by
+measurement.~~
+
+**WITHDRAWN 2026-09-10.** The ladder was not varying the ceiling. It assigned
+`turbulence.K_MAX` at runtime, which the mixing scheme never reads, because
+the value is bound into `vertical_mixing`'s signature at import (P-51). Three
+identical survival counts were the *symptom* of that, and were read as a
+result. Re-run through the constructor the second and third rungs are 8/12,
+so the ceiling is worth two forecast hours and this candidate was never
+eliminated. The struck-through numbers are left in place because a wrong
+conclusion drawn from a broken measurement is part of the record; see P-40 and
+the 2026-09-10 entry.
 
 **3. Is the initial state balanced?** Evaluating the tendencies at t = 0,
 which is the check the clipped-jet episode should have had:
@@ -1875,6 +1886,109 @@ Each entry should also note, where applicable:
 **Interpretation.** <what it means, and what it does not>
 
 **Status.** <kept / reverted / open — and why>
+
+---
+
+## 2026-09-10 — The 8 September session lands in the repository, and two of its numbers do not survive
+
+**Context.** The work of 2026-09-08 existed only as notes outside the
+repository: the K_MAX ladder that returned identical numbers at every setting,
+the lesson drawn from it, and a staleness checker described but never written.
+The last commit on `main` was 2026-09-08 17:37 and contained none of it. This
+entry records bringing it in, which turned out not to be a transcription job.
+
+**Hypothesis (stated before anything was run).**
+
+1. The identical ladder results come from Python's default-argument binding:
+   `vertical_mixing(..., k_max=K_MAX)` freezes `K_MAX` at import, so
+   `turbulence.K_MAX = x` at runtime changes nothing the model reads. If that
+   is the mechanism, setting the global and calling with the default must
+   return the import-time ceiling exactly, while passing the value explicitly
+   must return the new one.
+2. The 8 September note that the codebase contains "5 dated measurements
+   against 19 undated" should reproduce, at least in direction and roughly in
+   magnitude, once a checker is written.
+
+**Method.**
+
+- A neutral column (constant θ, so N² ≈ 0 and the Richardson function is at
+  full strength) with 12 m/s of shear per level, run through
+  `turbulence.vertical_mixing` twice: once with `turbulence.K_MAX` assigned at
+  runtime and the default call, once with `k_max=` passed explicitly.
+- `tools/stale.py` written and run against the whole repository, with file
+  dates from git and again from filesystem mtimes.
+- The three mixing parameters moved to instance state on `PrimitiveSigma`;
+  `lid_test.build_on` given a `**model_kw` passthrough; `kmax_ladder.py`
+  changed to vary the ceiling through the constructor.
+- A guard-rail test added to `test_primitive_sigma.py`, and the suite re-run.
+
+**Result.**
+
+Hypothesis 1 — confirmed exactly:
+
+| how the ceiling was set | max K |
+|---|---|
+| `turbulence.K_MAX = 400`, default call | 100.0 |
+| `k_max=400` passed explicitly | 400.0 |
+
+So every rung of P-40's ladder ran the same experiment, and "6/12, 6/12, 6/12"
+was not an elimination. Re-run through the constructor on 2026-09-08 the same
+ladder gives 6/12, **8/12**, **8/12**. P-40 is back in OPEN; the code defect
+is P-51 and is FIXED.
+
+Hypothesis 2 — **did not survive.** `tools/stale.py` as committed reports, on
+this repository:
+
+| | count |
+|---|---|
+| measurements carrying a date | 432 |
+| measurements with no date within twelve lines | 476 |
+| dated measurements in files changed >14 days later, git dates | 0 |
+| the same, from filesystem mtimes on a fresh clone | 12 |
+
+Not 5 and 19. The direction holds — there are more undated numbers than dated
+ones — but the magnitudes are off by two orders of magnitude, because the
+earlier figures came from a version of the checker that no longer exists and
+whose scope is unknown. Nothing can be reconstructed from a number reported
+without the script that produced it.
+
+**Interpretation.** The staleness checker's first finding was about a claim in
+the note that proposed it, which is the tightest possible demonstration of the
+lesson it was built for (L7): a measurement about the project's measurements
+went stale in two days.
+
+What it does *not* mean: that the 8 September session was wrong. Its central
+finding — the knob was not connected, and a recorded negative result was
+therefore worthless — reproduces exactly and is the more important of the two.
+The count was a supporting detail stated with more precision than it had.
+
+There is a second correction. L5 ("a diffusion loses a race against a growing
+mode") cited P-40 as evidence that raising K_MAX does nothing. That evidence
+is withdrawn. The lesson's own argument is untouched — a rearrangement beats a
+faster diffusion because the wave steepens in less than the diffusive
+timescale — but a good pattern attracts confirming evidence and does not
+check it, and this one collected a number that was never real.
+
+**What this changes about the tall-terrain problem.** The eddy-diffusivity
+ceiling is worth two forecast hours at 4000 m and saturates between 300 and
+1000 m²/s, which is the shape of a constraint that binds and then stops
+binding. Before that is called an improvement it has to pass the L2 test: the
+prediction written down first is that max|u| must NOT fall, because a scheme
+that buys stability by flattening the flow looks identical on a survival
+count. That measurement has not been made.
+
+**Status.** Kept. P-51 FIXED with a guard rail; P-40 reopened with the re-run
+in it; `docs/LEARNING_LOG.md` and `tools/stale.py` now in the repository.
+
+**For the collaboration study.** One defect, category D (language semantics
+defeating a correct experimental design), detected by *a result being too
+clean* — two numbers agreeing to one decimal place. That detection route
+appears nowhere else in this project and nothing in the toolchain looks for
+it; it was noticed, not caught. Both stated hypotheses were tested before
+anything was rewritten, and one of them failed, which is the reason to write
+them down. The human intervention was one sentence long ("can you sync now")
+and administrative in tag, but it is what forced the reconciliation that found
+both corrections — a transfer that had been recorded as done, and was not.
 
 ---
 

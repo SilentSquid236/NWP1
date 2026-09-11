@@ -38,6 +38,24 @@ RI_CRIT = 0.25          # below this, shear overcomes stratification
 K_MAX = 100.0           # m^2/s ceiling on the eddy diffusivity
 MIXING_LENGTH = 150.0   # m
 
+# THESE THREE ARE DEFAULTS, NOT KNOBS. Do not set them at runtime.
+#
+# The values below are bound into the function signatures at IMPORT time, so
+# `import turbulence; turbulence.K_MAX = 400` changes nothing that has already
+# been imported -- the callers keep the value from the moment the module was
+# read. That is not a hypothetical: a K_MAX ladder run that way returned peak
+# |v| of 44.1 at both 100 and 400, identical to one decimal place, and before
+# that it produced a RECORDED NEGATIVE RESULT (P-40: 6/12, 6/12, 6/12 at 100 /
+# 300 / 1000) that was read as a clean elimination rather than as a broken
+# experiment. Re-run properly the same ladder gives 6/12, 8/12, 8/12
+# (2026-09-08).
+#
+# To vary any of them, pass the value down: PrimitiveSigma(..., k_max=...)
+# carries it as instance state and hands it to vertical_mixing on every call.
+# test_primitive_sigma.test_mixing_knobs_are_connected asserts that the path
+# actually works, so a future refactor that re-freezes it fails a suite instead
+# of quietly returning identical numbers.
+
 
 def richardson(u, v, theta, pi, lev):
     """

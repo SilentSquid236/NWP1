@@ -52,8 +52,15 @@ def prep(p_top, sponge_levels, nz=20, hgt=2500.0):
     return m, lev
 
 
-def build_on(lev, hgt, sponge_levels):
-    """Same initial state as probe_failure.build, on a chosen vertical grid."""
+def build_on(lev, hgt, sponge_levels, **model_kw):
+    """
+    Same initial state as probe_failure.build, on a chosen vertical grid.
+
+    Extra keywords go straight to PrimitiveSigma, which is how a sensitivity
+    ladder varies a scheme parameter -- k_max=, sponge_rate=, and so on.
+    Setting a module global instead does nothing; see the comment beside
+    self.k_max in primitive_sigma.py.
+    """
     from grid import CGrid
     from primitive_sigma import PrimitiveSigma
     from sigma import hydrostatic_geopotential, pressure_gradient_force
@@ -61,7 +68,8 @@ def build_on(lev, hgt, sponge_levels):
                edge_mode="replicate")
     h = hgt * np.exp(-(((gr.Xc - gr.Lx / 2) / 250e3) ** 2 +
                        ((gr.Yc - gr.Ly / 2) / 250e3) ** 2))
-    m = PrimitiveSigma(gr, lev, terrain=h, sponge_levels=sponge_levels)
+    m = PrimitiveSigma(gr, lev, terrain=h, sponge_levels=sponge_levels,
+                       **model_kw)
     k_y = 2 * np.pi / gr.Ly
     m.pi = 101325.0 * np.exp(-G0 * h / (RD * 280.0)) - lev.p_top
     p = lev.pressure(m.pi)
