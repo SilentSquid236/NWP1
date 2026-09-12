@@ -53,7 +53,9 @@ NWP_Deployment_Package/
 |   |   |-- instability_cross_section.png # figure: w and theta' through the mountain
 |   |   |-- instability_growth.png        # figure: max|u| against forecast hour
 |   |   |-- interpolate.py                # pressure levels -> sigma levels over terrain
+|   |   |-- kmax_binding.py               # P-40: does the eddy-diffusivity ceiling bind, and how
 |   |   |-- kmax_ladder.py                # eddy-diffusivity ceiling sensitivity
+|   |   |-- kmax_production.py            # P-40: the same ceiling on the 2500 m production case
 |   |   |-- lid_test.py                   # lid height and sponge depth against survival
 |   |   |-- noise_ladder.py               # initial-noise amplitude threshold
 |   |   |-- primitive3d.py                # pressure-coordinate 3D core  [SUPERSEDED by sigma]
@@ -153,16 +155,16 @@ that was is not recoverable, which is the whole argument for the column.
 
 | suite | covers | status | last run |
 |---|---|---|---|
-| `test_shallow_water.py` | 2D dynamics | 8/8 | 2026-09-10 |
-| `test_boundaries.py` | Davies relaxation, limited area | 6/6 | 2026-09-10 |
-| `test_sigma.py` | coordinate, PGF, continuity | 7/7 | 2026-09-10 |
-| `test_subgrid.py` | hyperdiffusion, SPPT, balancing | 7/7 | 2026-09-10 |
-| `test_surface.py` | drag, log law, Ekman spiral | 6/6 | 2026-09-10 |
-| `test_initialization.py` | spectral filter, noise threshold | 5/5 | 2026-09-10 |
-| `test_convection.py` | dry convective adjustment | 5/5 | — |
+| `test_shallow_water.py` | 2D dynamics | 8/8 | 2026-09-12 |
+| `test_boundaries.py` | Davies relaxation, limited area | 6/6 | 2026-09-12 |
+| `test_sigma.py` | coordinate, PGF, continuity | 7/7 | 2026-09-12 |
+| `test_subgrid.py` | hyperdiffusion, SPPT, balancing | 7/7 | 2026-09-12 |
+| `test_surface.py` | drag, log law, Ekman spiral | 6/6 | 2026-09-12 |
+| `test_initialization.py` | spectral filter, noise threshold | 5/5 | 2026-09-12 |
+| `test_convection.py` | dry convective adjustment | 5/5 | 2026-09-12 |
 | `test_interpolate.py` | pressure -> sigma conversion | 8/8 | — |
-| `test_radiation.py` | radiative upper boundary | 7/7 | — |
-| `test_primitive_sigma.py` | the 3D core | 7/7 | 2026-09-10 |
+| `test_radiation.py` | radiative upper boundary | 7/7 | 2026-09-12 |
+| `test_primitive_sigma.py` | the 3D core | 7/7 | 2026-09-12 |
 | `test_primitive3d.py` | superseded pressure core | 8/8 | — |
 | `test_forecast.py` | end-to-end driver | 11/11 | — |
 | `test_hrrr_search.py` | GRIB interface | 6/6 | — |

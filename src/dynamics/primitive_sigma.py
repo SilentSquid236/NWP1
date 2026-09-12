@@ -125,7 +125,9 @@ class PrimitiveSigma:
         # call keeps the import-time value and the ladder returns identical
         # numbers at every setting. That is exactly how P-40 recorded
         # "K_MAX 100 / 300 / 1000 -> 6/12, 6/12, 6/12" as a clean elimination;
-        # re-run through this constructor it is 6/12, 8/12, 8/12 (2026-09-08).
+        # re-run through this constructor the ladder separates, and the ceiling
+        # was worth two forecast hours (P-40; the numbers are in turbulence.py
+        # beside K_MAX, measured 2026-09-12).
         # Pass k_max= / ri_crit= / mixing_length= here instead.
         self.k_max = turbulence.K_MAX if k_max is None else float(k_max)
         self.ri_crit = turbulence.RI_CRIT if ri_crit is None else float(ri_crit)
