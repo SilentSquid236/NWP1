@@ -35,8 +35,37 @@ import numpy as np
 from sigma import RD, G0, P0, KAPPA
 
 RI_CRIT = 0.25          # below this, shear overcomes stratification
-K_MAX = 100.0           # m^2/s ceiling on the eddy diffusivity
+K_MAX = 200.0           # m^2/s ceiling on the eddy diffusivity
 MIXING_LENGTH = 150.0   # m
+
+# WHY K_MAX IS 200 AND NOT 100 (P-40, measured 2026-09-11/12)
+#
+# 4000 m terrain, 8-level sponge, clean and filtered, 12-hour ceiling:
+#
+#   K_MAX      100   110   125   150   200   250   300   1000
+#   survived  6/12  6/12  7/12  8/12  8/12  8/12  8/12   8/12
+#
+# A ramp between 100 and 150, flat above it. At 100 the ceiling was
+# truncating the diffusivity the scheme itself asked for on 0.11% of
+# interfaces -- about one in a thousand, in the breaking region -- and that
+# truncation cost two forecast hours. Above ~600 the formula never asks for
+# more, so the parameter is inert there: at K_MAX 1000 the realized maximum
+# is 605 and the clip fraction is 0.00%.
+#
+# It is NOT suppression, which is the failure mode that matters here (L2,
+# and how the first sponge failed in P-16). Compared at a common hour,
+# max|u| is 54.7 m/s at every setting and the jet is marginally STRONGER
+# with more mixing, 48.1 -> 48.5; mid-level N^2 is 2.214e-04 at every
+# setting to four figures. Nothing is being flattened.
+#
+# The production case pays nothing: 2500 m with a 5-level sponge is 12/12
+# at 100, 150 and 300, with max|u| 44.0 / 43.9 / 43.9 and identical jet and
+# stratification. 200 is chosen over 150 for margin, and is still at the
+# bottom of the 10^2-10^3 m^2/s observed in breaking mountain waves.
+#
+# What this does NOT explain: a higher ceiling does not reduce the
+# overturning fraction (0.369% -> 0.379%, slightly the wrong way), so the
+# mechanism behind the two hours is open. See P-40.
 
 # THESE THREE ARE DEFAULTS, NOT KNOBS. Do not set them at runtime.
 #
@@ -47,8 +76,8 @@ MIXING_LENGTH = 150.0   # m
 # |v| of 44.1 at both 100 and 400, identical to one decimal place, and before
 # that it produced a RECORDED NEGATIVE RESULT (P-40: 6/12, 6/12, 6/12 at 100 /
 # 300 / 1000) that was read as a clean elimination rather than as a broken
-# experiment. Re-run properly the same ladder gives 6/12, 8/12, 8/12
-# (2026-09-08).
+# experiment. Re-run properly, that ladder separates -- see the table
+# above.
 #
 # To vary any of them, pass the value down: PrimitiveSigma(..., k_max=...)
 # carries it as instance state and hands it to vertical_mixing on every call.

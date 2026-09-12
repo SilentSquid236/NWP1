@@ -38,72 +38,54 @@ hypothesis, **G** missing physics, **H** performance, **I** logistics.
 
 # OPEN
 
-## P-40 — The eddy-diffusivity ceiling has never actually been tested
-**Category** E, G · **Status** OPEN · **First seen** 2026-09-08 ·
-**Reopened from ELIMINATED** 2026-09-08
+## P-52 — A dead run is not detected until the end of the forecast hour
+**Category** E, H · **Status** OPEN · **First seen** 2026-09-12
 
-**Symptom.** A K_MAX ladder at 4000 m returned identical survival at every
-setting — 6/12 at 100, 300 and 1000 m²/s — and was recorded as an elimination.
-The ladder was not varying anything: it assigned `turbulence.K_MAX` at
-runtime, and the value the mixing scheme uses is bound into
-`vertical_mixing`'s signature at import time (P-51).
+**Symptom.** During the P-40 ladder, K_MAX = 110 spent **911 seconds of wall
+clock** in forecast hour 7 without the hour finishing. It was not slow
+physics. Inside that hour the wind reached **7176 m/s** and the adaptive
+timestep had collapsed from 14.8 s to a mean of 0.87 s.
 
-**What is known.** Re-run so the ceiling actually reaches the scheme:
+**Diagnosis.** Every ladder and sweep in this project tests for failure at the
+HOUR BOUNDARY:
 
-| K_MAX (m²/s) | survived |
-|---|---|
-| 100 | 6/12 |
-| 300 | **8/12** |
-| 1000 | **8/12** |
+    m.run(3600, dt=dt)
+    if not np.isfinite(m.u).all() or np.abs(m.u).max() > 150: break
 
-(2026-09-08.) So the ceiling is not innocent. It is worth two forecast hours
-at 4000 m, and it saturates somewhere between 300 and 1000, which is the
-shape a *binding* constraint has — it stops binding once it is high enough.
+`run()` itself only breaks on a non-finite surface pressure. A run that is
+blowing up but still finite therefore keeps integrating, and because
+`max_dt()` ratchets the timestep down as the wind grows — and never lets it
+back up — the dying hour gets slower and slower. The state was already
+meaningless at 150 m/s; the model then spent a quarter of an hour refining it.
 
-Observed eddy diffusivities in a breaking mountain wave are 10² to 10³ m²/s,
-so 100 was low on physical grounds as well.
+**Why it matters beyond wall clock.**
 
-On the case that exposed the bug — 2500 m terrain, radiative lid, no sponge —
-the ceiling moves things without fixing them:
+1. Every sweep in this project is wall-clock bound, and the runs that cost the
+   most are the ones whose output will be discarded. The 4000 m ladder spent
+   more time on its two failing rungs than on the six that survived.
+2. A survival count cannot distinguish "reached hour 8" from "reached hour 8
+   at a millisecond timestep". Those are not the same forecast, and nothing in
+   the harness currently reports the difference. That is L8.
 
-| K_MAX (m²/s) | peak \|v\| | survived |
-|---|---|---|
-| 100 | 44.1 | 3/12 |
-| 400 | 35.0 | 3/12 |
-| 1500 | 135.1 | 4/12 |
+**What is known.** dt, steps per hour and wall clock per hour are now recorded
+by `kmax_binding.py`, and an hour that exceeds a wall-clock budget is reported
+as STALLED rather than as survival. That is instrumentation in one script, not
+a fix.
 
-(2026-09-08.) Note the third row: a *higher* ceiling with a larger peak wind.
-Whatever is ending that run is not what the ceiling controls, and P-50 remains
-its own problem.
+**What remains.** The failure test belongs inside `run()`, as a ceiling on
+|u| checked with the same cadence as the adaptive dt re-check, so the
+integration stops when the state stops being a forecast. It needs a stated
+threshold and a switch, because a test that wants to watch a blow-up must be
+able to turn it off.
 
-**Ruled out.** Nothing yet. This entry is back at the beginning.
-
-**Anything else that was measured this way is suspect.** Any conclusion in
-this register or the research log that rested on assigning
-`turbulence.K_MAX`, `turbulence.RI_CRIT` or `turbulence.MIXING_LENGTH` at
-runtime should be treated as unmeasured until it is re-run through the
-constructor. The two known cases are this entry and the L5 citation in
-`docs/LEARNING_LOG.md`; nothing has been found beyond them, and "nothing has
-been found" is not the same as "there is nothing".
-
-**What remains.**
-
-1. The ladder re-run at finer spacing between 100 and 300, since that is where
-   the two hours are bought.
-2. Whether the extra hours are dissipation or suppression. L2: a scheme that
-   buys stability by flattening the flow looks identical on a survival count.
-   The 4000 m case must be checked for a damped jet and a mixed-out
-   stratification before any of this is called an improvement, and the
-   prediction to write down first is that max|u| must NOT fall.
-3. Whether P-01 (Nh/U ≈ 1) moves at all once the ceiling is honest, or whether
-   8/12 is where a capped diffusion runs out regardless (L5 — a diffusion
-   loses a race against a growing mode, and a breaking wave is fast).
-
-**Why this is filed as a test-design defect and not only a code one.** The
-code defect is P-51 and it is fixed. The defect *here* is that three identical
-numbers were read as a clean result. Identical output at different settings is
-a bug report about the experiment; nothing in this register said so until it
-had already cost a candidate.
+**A caution found while instrumenting this.** The first version of the guard
+integrated the hour in ten-minute chunks so it could check between them. That
+changes the answer: `run()` truncates its final step to land exactly on the
+requested duration, so chunking changes the step sequence, and at K_MAX = 110
+the chunked and whole-hour runs diverge — min Ri 0.012 against 0.022 at hour 6
+— and then fail differently. In a marginally stable regime, subdividing the
+integration differently is not a neutral act. The working guard rides along as
+a callback and only reads the clock.
 
 ---
 
@@ -399,6 +381,100 @@ service, which is P-06 and is where this project's defects have always been.
 ---
 
 # FIXED
+
+## P-40 — The eddy-diffusivity ceiling was binding, and was never tested
+**Category** E, G · **Status** FIXED · **Fixed** 2026-09-12 ·
+**Eliminated in error 2026-09-04, reopened 2026-09-08**
+
+**Symptom.** A K_MAX ladder at 4000 m returned identical survival at every
+setting — 6/12 at 100, 300 and 1000 m²/s — and was filed as an elimination.
+The ladder was not varying anything (P-51): it assigned `turbulence.K_MAX` at
+runtime, and the value the mixing scheme uses is bound into
+`vertical_mixing`'s signature at import.
+
+**The ladder, re-run through the constructor.** 4000 m terrain, 8-level
+sponge, clean and filtered, 12-hour ceiling (2026-09-11/12):
+
+| K_MAX (m²/s) | 100 | 110 | 125 | 150 | 200 | 250 | 300 | 1000 |
+|---|---|---|---|---|---|---|---|---|
+| survived | 6/12 | 6/12 | **7/12** | **8/12** | 8/12 | 8/12 | 8/12 | 8/12 |
+
+A monotone ramp between 100 and 150, and flat above it. **The earlier note
+that it "saturates somewhere between 300 and 1000" was an artifact of having
+only three rungs**; the whole effect is bought by the first 50 m²/s.
+
+**Dissipation or suppression — the part that decides whether the hours are
+worth anything.** A scheme can buy survival by dissipating what kills the run
+or by flattening the flow until nothing is left to break, and a survival count
+cannot tell them apart (L2; the sponge failed exactly this way in P-16 and
+P-49). Four predictions were written into `kmax_binding.py` and committed
+before any run finished. Compared at a COMMON hour (h6), not at each run's own
+last hour:
+
+| K_MAX | max\|u\| | jet | overturning | N² mid | clip% |
+|---|---|---|---|---|---|
+| 100 | 54.8 | 48.1 | 0.369% | 2.214e-04 | 0.11 |
+| 150 | 54.7 | 48.4 | 0.375% | 2.214e-04 | 0.02 |
+| 200 | 54.7 | 48.5 | 0.375% | 2.214e-04 | 0.01 |
+| 300 | 54.7 | 48.5 | 0.379% | 2.214e-04 | 0.00 |
+| 1000 | 54.7 | 48.5 | 0.378% | 2.214e-04 | 0.00 |
+
+- **P2 held, and it was the one written to be able to fail.** max|u| does not
+  fall as the ceiling rises — 54.7 at every setting — and the jet is if
+  anything marginally *stronger* with more mixing available, 48.1 → 48.5.
+  Nothing is being flattened. This is not suppression.
+- **P4 held exactly.** Mid-level stratification is 2.214e-04 at every setting,
+  to four significant figures. The column is not being mixed out.
+- **P3 FAILED.** The prediction was that more available mixing would reduce
+  the overturning fraction, since it is available precisely where Ri ≤ 0. It
+  does not: 0.369% → 0.379%, very slightly the wrong way, and the convective
+  adjustment fires at the same rate at every setting. **So the two hours are
+  not bought by suppressing the overturning, and what they ARE bought by is
+  not established.** See "what is not explained" below.
+- **P5 held.** At K_MAX = 1000 the realized diffusivity peaks at 605 m²/s and
+  the clip fraction is 0.00% throughout, so above roughly 600 the parameter is
+  inert by construction. That explains 1000 ≡ 300. It does not explain
+  150 ≡ 300, where the ceiling still binds.
+
+**What the clip column says.** At 100 the ceiling truncates the diffusivity
+the scheme itself asked for on 0.11% of interfaces; at 150 that falls to
+0.02%, and above ~600 the formula never asks for more. A cap biting on about
+one interface in a thousand, in the breaking region, was worth two forecast
+hours.
+
+**Fix.** The default ceiling is raised from 100 to 200 m²/s. 200 rather than
+150 for margin: the ramp is complete by 150, 200 measures identically to 150
+and 300 on every discriminator, and observed diffusivities in a breaking
+mountain wave are 10²–10³ m²/s, so 100 was low on physical grounds as well.
+
+**Confirmed by.** The ladder above, and by the production case being
+untouched — 2500 m terrain with a 5-level sponge, which is the terrain this
+project is actually for (P-01):
+
+| K_MAX | survived | max\|u\| | jet | min Ri | N² mid |
+|---|---|---|---|---|---|
+| 100 | 12/12 | 44.0 | 23.5 | 0.085 | 2.013e-04 |
+| 150 | 12/12 | 43.9 | 23.5 | 0.068 | 2.013e-04 |
+| 300 | 12/12 | 43.9 | 23.5 | 0.063 | 2.013e-04 |
+
+Suites re-run at the new default 2026-09-12, all green: `test_primitive_sigma` 7/7, `test_surface` 6/6, `test_initialization` 5/5, `test_convection` 5/5, `test_radiation` 7/7, `test_subgrid` 7/7, `test_sigma` 7/7, `test_boundaries` 6/6, `test_shallow_water` 8/8.
+
+**What is NOT explained, and is the honest residue of this entry.** P3's
+failure means the mechanism is open. More available diffusivity does not
+reduce overturning, does not change the stratification, does not change the
+wind, and yet moves survival by two hours. The most likely remaining
+explanation is that the extra diffusivity acts on MOMENTUM in the breaking
+layer — removing the shear that would otherwise concentrate into the runaway
+that ends the run — rather than on the buoyancy the overturning fraction
+measures. That is a hypothesis and it has not been tested. Testing it means
+looking at the momentum budget in the breaking layer, not at another ladder.
+
+**What this does not fix.** 4000 m still fails, at hour 9 rather than hour 7,
+and the failure looks the same at every ceiling. P-01 stands: Nh/U ≈ 1 is
+where this model's physics runs out, and the ceiling moved the boundary
+without removing it.
+
+---
 
 ## P-51 — A sensitivity ladder set a module global that nothing read
 **Category** D · **Status** FIXED · **Fixed** 2026-09-10

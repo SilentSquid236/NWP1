@@ -68,7 +68,22 @@ SKIP_DIRS = {".git", "data", "__pycache__", ".ipynb_checkpoints"}
 SUFFIXES = {".py", ".md", ".sh"}
 # Generated files. Their numbers are checksums and byte counts, which are
 # recomputed by the generator and cannot go stale in the sense meant here.
-SKIP_FILES = {"docs/MANIFEST.txt", "docs/STRUCTURE.md"}
+#
+# APPEND-ONLY RECORDS are excluded for a different reason, and it is the
+# tool's sharpest limitation. A research-log entry is frozen on the day it
+# is written; that is the point of the log. But appending TODAY's entry
+# updates the whole FILE's date, so every historical measurement in it then
+# looks like a number sitting in a file that moved. On 2026-09-12 that was
+# twelve of twelve hits -- all of them entries from August that nobody has
+# any business re-running. A check with a 100% false-positive rate gets
+# switched off, so these are out of scope until staleness can be scoped to
+# a SECTION rather than a file.
+#
+# PROBLEMS.md and LEARNING_LOG.md stay in scope deliberately: both are
+# edited in place when a status changes, so a number in them really can be
+# left behind by the code.
+SKIP_FILES = {"docs/MANIFEST.txt", "docs/STRUCTURE.md",
+              "docs/RESEARCH_LOG.md", "docs/PROMPT_LOG.md"}
 
 # An ISO date written anywhere: a comment, a log heading, a docstring.
 DATE = re.compile(r"(?<!\d)(20\d\d)-(\d\d)-(\d\d)(?!\d)")

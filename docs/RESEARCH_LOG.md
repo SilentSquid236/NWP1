@@ -1992,6 +1992,128 @@ both corrections — a transfer that had been recorded as done, and was not.
 
 ---
 
+## 2026-09-12 — The ceiling was binding on one interface in a thousand, and the prediction that failed was the useful one
+
+**Context.** P-40 was reopened on 2026-09-08 after the ladder that eliminated
+it turned out not to have varied anything (P-51). The re-run said the
+eddy-diffusivity ceiling was worth two forecast hours at 4000 m. Two forecast
+hours is the largest single movement this problem has ever had, which is
+exactly the kind of result that should be distrusted until it has been asked
+to fail.
+
+**Hypothesis, committed before any run finished** (in the docstring of
+`src/dynamics/kmax_binding.py`, commit 907c5bb, made while the ladder was
+still running):
+
+| | prediction |
+|---|---|
+| P1 | survival rises between 100 and 300 |
+| **P2** | **max\|u\| does NOT fall as the ceiling rises** — the one written to be able to fail |
+| P3 | the overturning fraction at a given hour falls as the ceiling rises |
+| P4 | mid-level stratification away from the mountain is unchanged |
+| P5 | the realized diffusivity never reaches 1000, so the ceiling stops binding and raising it further changes nothing |
+
+P2 is the discriminator. A ceiling that buys stability by flattening the jet
+is suppression, and the two hours would be worthless — which is precisely how
+the first sponge failed (P-16) and how P-49 still fails.
+
+**Method.** 4000 m terrain, 8-level sponge, clean and filtered, 12-hour
+ceiling, one run per rung at K_MAX = 100, 110, 125, 150, 200, 250, 300, 1000.
+Recorded hour by hour: max|u|, the free-troposphere jet, min Ri, N² in the
+mid-troposphere, realized max K, the fraction of interfaces the ceiling is
+actually clipping, the overturning fraction, and — added partway through, for
+reasons below — the mean timestep and the wall clock. Compared at a COMMON
+hour rather than at each run's own last hour, since a run that lives longer is
+otherwise being compared at a later and harder time.
+
+**Result — survival.**
+
+| K_MAX | 100 | 110 | 125 | 150 | 200 | 250 | 300 | 1000 |
+|---|---|---|---|---|---|---|---|---|
+| survived | 6/12 | 6/12 | 7/12 | 8/12 | 8/12 | 8/12 | 8/12 | 8/12 |
+
+A monotone ramp between 100 and 150 and flat above it. The earlier reading
+that it "saturates between 300 and 1000" was an artifact of three rungs.
+
+**Result — the discriminators, at hour 6.**
+
+| K_MAX | max\|u\| | jet | overturning | N² mid | clip% |
+|---|---|---|---|---|---|
+| 100 | 54.8 | 48.1 | 0.369% | 2.214e-04 | 0.11 |
+| 150 | 54.7 | 48.4 | 0.375% | 2.214e-04 | 0.02 |
+| 200 | 54.7 | 48.5 | 0.375% | 2.214e-04 | 0.01 |
+| 300 | 54.7 | 48.5 | 0.379% | 2.214e-04 | 0.00 |
+| 1000 | 54.7 | 48.5 | 0.378% | 2.214e-04 | 0.00 |
+
+P2 held: the wind is 54.7 m/s at every setting and the jet is marginally
+*stronger* with more mixing, not weaker. P4 held to four significant figures.
+P5 held — at K_MAX 1000 the realized diffusivity peaks at 605 and the ceiling
+never clips at all, so above ~600 the parameter is inert.
+
+**P3 failed, and it is the most useful line in the table.** More available
+mixing does not reduce the overturning; it goes very slightly the other way,
+and the convective adjustment fires at the same rate at every setting. The
+mechanism I proposed — that a higher ceiling mixes away the static instability
+faster — is wrong. Something else is buying the hours.
+
+**Interpretation.** The ceiling was truncating the diffusivity the scheme
+itself asked for, on about **one interface in a thousand**, in the breaking
+region, and that truncation cost two forecast hours. Above ~150 the formula
+rarely asks for more, and above ~600 it never does.
+
+What it does *not* mean: that we know why. Since the extra diffusivity changes
+neither the overturning fraction nor the stratification nor the wind, the
+remaining candidate is that it acts on MOMENTUM in the breaking layer —
+removing shear that would otherwise concentrate into the runaway that ends the
+run — rather than on buoyancy. That is a hypothesis, it is untested, and the
+way to test it is the momentum budget in that layer, not another ladder.
+
+**The production case is untouched.** 2500 m with a 5-level sponge, which is
+the terrain this project is for: 12/12 at 100, 150 and 300, max|u| 44.0 / 43.9
+/ 43.9, jet 23.5 at all three, N² identical. So the default can move without
+paying anything where it matters. Raised to 200 — clear of the ramp, identical
+on every discriminator to 150 and 300, and still at the bottom of the 10²–10³
+m²/s observed in breaking mountain waves.
+
+**A second defect, found by accident** (P-52). K_MAX = 110 spent 911 seconds
+of wall clock in forecast hour 7 without finishing. Inside that hour the wind
+reached **7176 m/s** with the timestep collapsed to a mean of 0.87 s. Every
+sweep in this project tests for failure at the hour boundary, and `run()`
+itself only stops on a non-finite surface pressure, so a run that is blowing
+up but still finite keeps integrating — and gets slower as it does, because
+the adaptive dt ratchets down and never back up. The ladder spent more time on
+its two failing rungs than on the six that survived.
+
+**And a caution about the instrument.** The first attempt at a stall guard
+integrated each hour in ten-minute chunks so it could check between them. That
+changed the answer: `run()` truncates its final step to land exactly on the
+requested duration, so chunking changes the step sequence, and at K_MAX = 110
+the chunked and whole-hour runs diverge (min Ri 0.012 against 0.022 at hour 6)
+and then fail differently. The regime is marginal enough that subdividing the
+integration differently is not a neutral act. The working guard is a callback
+that only reads the clock, and it was checked to reproduce the un-chunked run
+exactly before being trusted.
+
+**Status.** Kept. P-40 closed with the default at 200; P-52 opened; the
+mechanism behind the two hours left explicitly open rather than narrated.
+
+**For the collaboration study.** Four predictions were written down and
+committed before any result existed, and the one that failed is the one that
+produced knowledge: P3's failure is what turned "the ceiling dissipates the
+overturning" from a conclusion into an open question. The two that held (P2,
+P4) only licensed the change; they did not teach anything. Note also that
+the predictions were committed to git *while the runs were still going*,
+which is the cheapest possible way to stop a hypothesis from drifting toward
+the data — a habit worth keeping, and one that no tool enforces.
+
+Defects this session: one category E/H (P-52, failure detected only at hour
+boundaries), found not by a test but by noticing that a run was taking too
+long. That is the second defect in this project detected by something being
+anomalous rather than wrong — the first was P-51, found because two numbers
+agreed too well.
+
+---
+
 ## Template for new entries
 
 ```markdown
