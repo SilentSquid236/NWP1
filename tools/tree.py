@@ -109,6 +109,7 @@ NOTES = {
     "docs/METHODOLOGY.md": "how claims are established in this project",
     "docs/AI_COLLABORATION.md": "defect taxonomy A-F for the AI-to-build study",
     "docs/PROMPT_LOG.md": "every human prompt, classified -- the study's input record",
+    "docs/TOKEN_COST.md": "what the project costs -- billed vs API-equivalent",
     "docs/PROBLEMS.md": "problem register: what is wrong, what fixed it, what ruled it out",
     "docs/CAPABILITIES.md": "what the model can and cannot do, stated up front",
     "docs/STABILITY.md": "the stability investigation  [conclusion superseded]",
@@ -127,6 +128,7 @@ NOTES = {
     "tools/checklayout.py": "checks for src/src nesting, missing and duplicate modules",
     "tools/pull.sh": "update from GitHub over curl -- no git needed on the server",
     "tools/manifest.py": "writes and checks docs/MANIFEST.txt, file by file",
+    "tools/tokens.py": "token ledger: billed cost vs API-equivalent shadow price",
     "tools/stale.py": "flags measurements whose file moved after the number was taken",
 }
 

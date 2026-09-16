@@ -18,9 +18,11 @@ b660cbbe87e8813c      6530  docs/CAPABILITIES.md
 725b79323a380589     13790  docs/PROMPT_LOG.md
 5519fcfd8c630f97    104215  docs/RESEARCH_LOG.md
 78c3574bb1b0dd88      4845  docs/STABILITY.md
-8708df1b4b483985     14703  docs/STRUCTURE.md
+65fd09df0e467537     14957  docs/STRUCTURE.md
+a155ccce967d26bc      4340  docs/TOKEN_COST.md
 476755bb80b0f916    108424  docs/instability_cross_section.png
 88ef7fdf4b9da99c     48152  docs/instability_growth.png
+a28e068c10bff41e       628  docs/token_ledger.csv
 33df9e17c260f317      7600  netpolicy.py
 fd9669f1ba1bc850     10612  preflight.py
 9be258a19992967c       221  requirements.txt
@@ -120,4 +122,5 @@ c0cd9cb537fec9ba      3211  tools/manifest.py
 45e8d2a8e14a5c73      4712  tools/problem.py
 ca907a432feeb289      3823  tools/pull.sh
 529f044de435c29c     13001  tools/stale.py
-cfb7c43c819fc7af     16930  tools/tree.py
+d7010c8a2b0b7121     11084  tools/tokens.py
+a1c6e96a0eebd7c5     17093  tools/tree.py
