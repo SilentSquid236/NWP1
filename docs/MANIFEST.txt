@@ -5,20 +5,22 @@
 # sha256(16)          bytes  path
 fd97c1bd78429370       353  .gitattributes
 4176e5efd4bf709b       184  .gitignore
+a92eb1f05125fbab      6593  CLAUDE.md
+c65f7ed0c5c2999b      4020  CLAUDE_SCIENCE.md
 548cb1e52a71c688      9626  README.md
 3c52d469d37d7bcc      3095  config.py
 e066f001a5a7f149      3870  diagnose_herbie.py
-127f646346a15717      8319  docs/AI_COLLABORATION.md
+43fcb853b0274132      8530  docs/AI_COLLABORATION.md
 b660cbbe87e8813c      6530  docs/CAPABILITIES.md
 355e5e23e8bead63      8997  docs/DATA_ASSIMILATION.md
 1bc65de9fd15e3cf     24015  docs/LEARNING_LOG.md
 6026c87422e8fbd4      4956  docs/METHODOLOGY.md
 1eeb6616080945dd      6884  docs/POSTPROCESSING.md
 3188b5e5f207ce94     53133  docs/PROBLEMS.md
-725b79323a380589     13790  docs/PROMPT_LOG.md
-5519fcfd8c630f97    104215  docs/RESEARCH_LOG.md
+01be9303e61ca6d4     15106  docs/PROMPT_LOG.md
+9794ec81a78797c3    107234  docs/RESEARCH_LOG.md
 78c3574bb1b0dd88      4845  docs/STABILITY.md
-65fd09df0e467537     14957  docs/STRUCTURE.md
+94c1d89f7d559861     15739  docs/STRUCTURE.md
 a155ccce967d26bc      4340  docs/TOKEN_COST.md
 476755bb80b0f916    108424  docs/instability_cross_section.png
 88ef7fdf4b9da99c     48152  docs/instability_growth.png
@@ -27,6 +29,9 @@ a28e068c10bff41e       628  docs/token_ledger.csv
 fd9669f1ba1bc850     10612  preflight.py
 9be258a19992967c       221  requirements.txt
 624234f2122ddaab      8458  resources.py
+16bc0120160b2bd1      3504  skills/nwp-debug/SKILL.md
+365bc385c5748861      2253  skills/nwp-record-session/SKILL.md
+9ea6e59afbc6b805      2485  skills/nwp-sync/SKILL.md
 da1b861f071894c0      2122  src/autoregressive_dataset.py
 4c604ab52ade07de     10210  src/dynamics/README.md
 e93f3278d89603ba      1114  src/dynamics/__init__.py
@@ -115,6 +120,7 @@ c7de983ef36da0a5     10712  src/verification/test_verification.py
 e8a741fe8f81b71c     15590  src/verify.py
 5dfc378e30815a83      1725  test_env.py
 ba78b19cb97eba18      7406  test_netpolicy.py
+fa2c463e2ab0191d      6514  tools/apply_sync.py
 f33d109db3dfe8b1      4513  tools/checklayout.py
 ba20a9767527a4f7      4013  tools/daily.sh
 c0cd9cb537fec9ba      3211  tools/manifest.py
@@ -123,4 +129,4 @@ c0cd9cb537fec9ba      3211  tools/manifest.py
 ca907a432feeb289      3823  tools/pull.sh
 529f044de435c29c     13001  tools/stale.py
 d7010c8a2b0b7121     11084  tools/tokens.py
-a1c6e96a0eebd7c5     17093  tools/tree.py
+27b11236105bc24f     17763  tools/tree.py

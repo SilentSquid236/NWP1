@@ -18,6 +18,8 @@ SKIP_EXT = {".pyc", ".npy", ".npz", ".log"}
 
 NOTES = {
     # --- top level ---------------------------------------------------------
+    "CLAUDE.md": "READ FIRST -- brief for a fresh session: constraints, method, state",
+    "CLAUDE_SCIENCE.md": "how to bring the project into Claude Science",
     "config.py": "domain, channels, pressure levels, env-driven paths",
     "resources.py": "CPU governor: 50% ceiling, adapts to other users' load",
     "netpolicy.py": "token-bucket rate limiter, download cache, polite fetcher",
@@ -130,9 +132,16 @@ NOTES = {
     "tools/manifest.py": "writes and checks docs/MANIFEST.txt, file by file",
     "tools/tokens.py": "token ledger: billed cost vs API-equivalent shadow price",
     "tools/stale.py": "flags measurements whose file moved after the number was taken",
+    "tools/apply_sync.py": "applies a sync archive safely -- no nesting, never touches data/",
+    "docs/token_ledger.csv": "per-session token counts; measured and estimated kept apart",
+
+    "skills/nwp-debug/SKILL.md": "skill: diagnose before patching",
+    "skills/nwp-record-session/SKILL.md": "skill: research log, register, prompts, tokens",
+    "skills/nwp-sync/SKILL.md": "skill: patch route, pull.sh, apply_sync",
 }
 
 DIR_NOTES = {
+    "skills": "recurring procedures as SKILL.md -- how habits survive a new session",
     "src/dynamics": "the model itself",
     "src/verification": "observations and scoring -- never model output",
     "src/postproc": "learned correction of a finished forecast",

@@ -38,7 +38,14 @@ NWP_Deployment_Package/
 |   |-- TOKEN_COST.md                     # what the project costs -- billed vs API-equivalent
 |   |-- instability_cross_section.png     # figure: w and theta' through the mountain
 |   |-- instability_growth.png            # figure: max|u| against forecast hour
-|   `-- token_ledger.csv                  # (unannotated)
+|   `-- token_ledger.csv                  # per-session token counts; measured and estimated kept apart
+|-- skills/                            # recurring procedures as SKILL.md -- how habits survive a new session
+|   |-- nwp-debug/
+|   |   `-- SKILL.md                      # skill: diagnose before patching
+|   |-- nwp-record-session/
+|   |   `-- SKILL.md                      # skill: research log, register, prompts, tokens
+|   `-- nwp-sync/
+|       `-- SKILL.md                      # skill: patch route, pull.sh, apply_sync
 |-- src/
 |   |-- dynamics/                      # the model itself
 |   |   |-- README.md                     # orientation for this directory
@@ -127,6 +134,7 @@ NWP_Deployment_Package/
 |   |-- train_autoregressive.py           # emulator training loop  [SUPERSEDED by the physics core]
 |   `-- verify.py                         # verify a forecast against observations and archive the pairs
 |-- tools/                             # maintenance scripts
+|   |-- apply_sync.py                     # applies a sync archive safely -- no nesting, never touches data/
 |   |-- checklayout.py                    # checks for src/src nesting, missing and duplicate modules
 |   |-- daily.sh                          # one day of the archive from cron: ingest, forecast, verify
 |   |-- manifest.py                       # writes and checks docs/MANIFEST.txt, file by file
@@ -136,6 +144,8 @@ NWP_Deployment_Package/
 |   |-- stale.py                          # flags measurements whose file moved after the number was taken
 |   |-- tokens.py                         # token ledger: billed cost vs API-equivalent shadow price
 |   `-- tree.py                           # generates docs/STRUCTURE.md
+|-- CLAUDE.md                             # READ FIRST -- brief for a fresh session: constraints, method, state
+|-- CLAUDE_SCIENCE.md                     # how to bring the project into Claude Science
 |-- README.md                             # project overview and how to run it
 |-- config.py                             # domain, channels, pressure levels, env-driven paths
 |-- diagnose_herbie.py                    # five-section diagnostic for HRRR fetch failures
