@@ -1859,6 +1859,64 @@ transfers.
 
 ---
 
+## 2026-09-22 — Packaged for Claude Science, and two seams in the study
+
+**Context.** The project is moving to Claude Science, Anthropic's research
+workbench, where each project keeps its own memory and skills. A session there
+starts with none of this conversation. So the question was not "which files"
+but "what does a fresh session need in order not to repeat the mistakes this
+record documents."
+
+**What was built.**
+
+- `CLAUDE.md` — the brief a new session reads first: what the model is, the
+  five non-negotiable constraints, the method, current state, open problems,
+  where things live, what must pass before anything is called done, and the
+  specific things a new session gets wrong (index 0 is the lid; K_MAX is
+  instance state; the sponge relaxes toward a frozen reference).
+- Three skills under `skills/`: `nwp-debug` (probe-first diagnosis),
+  `nwp-record-session` (the bookkeeping), `nwp-sync` (moving work between
+  GitHub, the desktop and the server).
+- `CLAUDE_SCIENCE.md` — the import steps, and what does not come across.
+
+**Why skills, specifically.** The learning log's main finding was that most
+lessons in this project survive only as habits — nothing enforces them, and a
+habit is exactly what a fresh session lacks. A skill is a habit written down
+where the next session will load it. The three skills carry the lessons with
+the most callbacks: probe-don't-guess (L1), a fix must predict (L2), suspect
+the test (L3), identical results are a bug (L12), and the transfer failures
+that kept recurring silently.
+
+**Every claim in `CLAUDE.md` was checked against the code before it went in**:
+K_MAX 200 and Ri_crit 0.25 in `turbulence.py`; sponge 5 levels and radiative
+lid off by default in `primitive_sigma.py`; the domain bounds in `config.py`.
+A brief with a wrong fact in it is worse than no brief, because the new session
+has no way to know.
+
+**What could not be confirmed.** How Claude Science picks up an existing
+repository or a `CLAUDE.md` file is not documented in the announcement or the
+review checked. The import guide therefore makes its first step a test: ask the
+new session to list the five constraints, and paste `CLAUDE.md` in by hand if
+it cannot.
+
+**A constraint the move could have broken.** Claude Science can run on a Linux
+box, and the natural idea is to run it on the Xeon where the data is. That
+server forbids installing packages, which covers this app. The guide says so
+explicitly: install it on the Windows desktop.
+
+**Two seams in the study, both recorded.** The session model was changed to
+`claude-opus-5-5` this turn, and the environment is about to change. Both are
+in the "Instrument changes" table in `docs/AI_COLLABORATION.md`. Counts before
+and after should not be pooled without saying so.
+
+**The package is built on the unmerged P-40 branch** (`6d26e1e`) plus the
+token-ledger commit, so it carries the K_MAX default of 200 and P-52. Merging
+`p40/ceiling-ladder` into `main` first keeps GitHub and the package agreeing.
+
+**Status.** Kept.
+
+---
+
 ## Recording for the AI-collaboration study
 
 Each entry should also note, where applicable:

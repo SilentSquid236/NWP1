@@ -13,8 +13,11 @@ the ground truth. Both roles matter to the result.
 | date | change |
 |---|---|
 | 2026-09-04 | reasoning effort raised to **high**; session model `claude-opus-5` |
+| 2026-09-22 | session model changed to **`claude-opus-5-5`** by the human (`/model`) |
+| 2026-09-22 | project packaged to move to **Claude Science** — a new environment, not only a new model |
 
-The collaborator's configuration is part of the apparatus. Treat 2026-09-04 as
+The collaborator's configuration is part of the apparatus. Treat 2026-09-04 and
+2026-09-22 as
 a seam: the tasks either side of it are different tasks, there is no control
 and no blind comparison, so counts should not be pooled across it without
 saying so. See the dated entry in `docs/RESEARCH_LOG.md`.
