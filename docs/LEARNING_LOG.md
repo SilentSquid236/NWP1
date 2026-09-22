@@ -90,6 +90,16 @@ on. This is the strongest transfer in the project.
   ceiling buys hours by flattening the jet rather than by dissipating the
   breaking wave, max|u| falls, and the survival count alone cannot tell those
   apart.
+- **A** · 2026-09-12 — **the lesson paid out, and not in the way expected.**
+  Four predictions for the K_MAX ladder were written into the script's
+  docstring and committed to git *while the runs were still going*, so they
+  could not drift toward the data. P2 (max|u| must not fall) held and licensed
+  the change. **P3 failed** — more available mixing does not reduce the
+  overturning fraction — and that failure is the only thing the session
+  learned: it turned "the ceiling dissipates the overturning" from a
+  conclusion into an open question, and stopped a mechanism being narrated
+  into the register alongside a real measurement. The predictions that held
+  permitted a change; the one that failed produced knowledge.
 
 ---
 
@@ -116,8 +126,21 @@ which came out backwards.
   it was larger. That is correct behaviour — a transparent lid lets the wave
   through, so the top level is more active, not less.
 
+- **A** · 2026-09-12 — a new shape of the same lesson: not a test that reads
+  the model wrongly, but an instrument that **changes what it measures**. A
+  stall guard was written to integrate each forecast hour in ten-minute chunks
+  so it could check the clock between them. It works, and it is not neutral:
+  `run()` truncates its final step to land exactly on the requested duration,
+  so chunking changes the step sequence, and at K_MAX = 110 the chunked and
+  whole-hour runs diverged (min Ri 0.012 against 0.022 at hour 6) and then
+  failed differently. Caught because the number moved when only the harness
+  had changed. Replaced with a callback that reads the clock and touches
+  nothing, then checked against the un-chunked run before being trusted.
+
 **Transfer verdict.** Now the third hypothesis by habit rather than the last
-resort. Three of the four callbacks are the AI catching its own test.
+resort. Four of the five callbacks are the AI catching its own test, and the
+newest one is the harder case: the test was not misreading the model, it was
+quietly running a different model.
 
 ---
 
@@ -278,6 +301,25 @@ The mtime row is the tool's honest weakness and is why it prefers git: a fresh
 copy stamps every file at once, so everything looks as though it changed
 today. All twelve of those hits were files nobody had touched.
 
+**And the counts above already moved once, on 2026-09-12**, which is the joke
+this lesson keeps making at its own expense. Appending a research-log entry
+that day updated `RESEARCH_LOG.md`'s file date, and the checker promptly
+flagged twelve August measurements inside it as stale — every one of them an
+entry that is frozen by design and that nobody has any business re-running. A
+check with a 100% false-positive rate gets switched off, so append-only
+records are now out of scope, and the counts it reports are:
+
+| | 2026-09-10 | 2026-09-12 |
+|---|---|---|
+| dated measurements | 432 | 169 |
+| undated | 476 | 466 |
+| stale by git dates | 0 | 0 |
+
+The drop in "dated" is entirely the research and prompt logs leaving scope,
+not measurements disappearing. Recording both columns rather than overwriting
+the first, because a number that changed when the *instrument* changed and not
+the code is exactly the thing this file exists to keep visible.
+
 **The correction.** A note written on 2026-09-08 recorded these counts as
 "5 dated, 19 undated" and drew the conclusion that the project's measurements
 were almost entirely undated. Those figures came from an earlier version of
@@ -307,6 +349,15 @@ ratio had been partly sampling luck for four days.
   Moved to 36 h over 18 h **chosen from the measured curve**, which separates
   cleanly (0.75 against 3.12). An assertion window picked for speed rather
   than from the data is not a test.
+- **A** · 2026-09-12 — the survival count has a blind spot of its own, and it
+  cost fifteen minutes of wall clock before anyone looked. A K_MAX = 110 run
+  sat in forecast hour 7 for **911 seconds**: not slow physics, but a wind of
+  **7176 m/s** with the timestep collapsed from 14.8 s to 0.87 s. Every sweep
+  in this project tests for failure at the hour boundary, so a run that is
+  blowing up and still finite keeps integrating, and gets slower as it does.
+  "Reached hour 8" and "reached hour 8 at a millisecond timestep" are not the
+  same forecast and nothing reported the difference. Now P-52, with dt, steps
+  per hour and wall clock recorded beside the survival count.
 
 ---
 
@@ -380,13 +431,13 @@ Ekman test broke. Reverted the same day, both suites recovered.
 | lesson | origin | callbacks | H | A | T |
 |---|---|---|---|---|---|
 | L1 probe, don't guess-check | human, prompt 53 | 5 | 1 | 5 | 0 |
-| L2 a fix must predict | measurement | 4 | 0 | 3 | 1 |
-| L3 suspect the test | four test-design defects | 4 | 0 | 4 | 0 |
+| L2 a fix must predict | measurement | 5 | 0 | 4 | 1 |
+| L3 suspect the test | four test-design defects | 5 | 0 | 5 | 0 |
 | L4 check against a known answer | a 253 hPa bug | 2 | 0 | 1 | 1 |
 | L5 diffusion loses a race | hyperdiffusion vs noise | 1 | 0 | 1 | 0 |
 | L6 order is a measurement | filter/balance | 3 | 0 | 3 | 0 |
 | L7 constraints expire | a 4-day stale belief | 3 | 0 | 1 | 2 |
-| L8 metrics have blind spots | a saturation artifact | 1 | 0 | 1 | 0 |
+| L8 metrics have blind spots | a saturation artifact | 2 | 0 | 2 | 0 |
 | L9 offline suites miss interfaces | five interface defects | 3 | 0 | 2 | 1 |
 | L10 protect the irreplaceable | archive design | 2 | 0 | 2 | 0 |
 | L11 guard rails beat review | a default changed wrongly | 4 | 0 | 0 | 4 |
@@ -405,6 +456,14 @@ still be working in a month.
 **Two of the entries above now correct themselves** (L5's supporting number,
 L7's own counts), and both corrections came from re-running something rather
 than re-reading it. That is the pattern this file is for.
+
+**2026-09-12 adds a third kind of entry**: a prediction that failed on
+purpose. L2 has always said a fix must predict the outcome it was proposed to
+explain. What the K_MAX session shows is the sharper version — the prediction
+that FAILS is the one that pays. Two predictions held and merely licensed a
+default change; the third failed and is the reason the register now says the
+mechanism is unknown instead of asserting one. A session where every
+prediction holds has probably not asked anything.
 
 ---
 

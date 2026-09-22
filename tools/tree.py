@@ -18,6 +18,8 @@ SKIP_EXT = {".pyc", ".npy", ".npz", ".log"}
 
 NOTES = {
     # --- top level ---------------------------------------------------------
+    "CLAUDE.md": "READ FIRST -- brief for a fresh session: constraints, method, state",
+    "CLAUDE_SCIENCE.md": "how to bring the project into Claude Science",
     "config.py": "domain, channels, pressure levels, env-driven paths",
     "resources.py": "CPU governor: 50% ceiling, adapts to other users' load",
     "netpolicy.py": "token-bucket rate limiter, download cache, polite fetcher",
@@ -82,6 +84,8 @@ NOTES = {
     "src/dynamics/diagnose_growth.py": "energy budget by term / level / wavenumber",
     "src/dynamics/probe_failure.py": "step-by-step failure probe; locates the growing mode",
     "src/dynamics/probe_p50.py": "locates where the radiative lid fails over terrain",
+    "src/dynamics/kmax_binding.py": "P-40: does the eddy-diffusivity ceiling bind, and how",
+    "src/dynamics/kmax_production.py": "P-40: the same ceiling on the 2500 m production case",
     "src/dynamics/probe_shock.py": "measures the geopotential error the conversion introduces",
     "src/dynamics/probe_shock_consistent.py": "the same, on a hydrostatically self-consistent analysis",
     "src/dynamics/probe_4000.py": "hour-by-hour watch of the 4000 m failure",
@@ -107,6 +111,7 @@ NOTES = {
     "docs/METHODOLOGY.md": "how claims are established in this project",
     "docs/AI_COLLABORATION.md": "defect taxonomy A-F for the AI-to-build study",
     "docs/PROMPT_LOG.md": "every human prompt, classified -- the study's input record",
+    "docs/TOKEN_COST.md": "what the project costs -- billed vs API-equivalent",
     "docs/PROBLEMS.md": "problem register: what is wrong, what fixed it, what ruled it out",
     "docs/CAPABILITIES.md": "what the model can and cannot do, stated up front",
     "docs/STABILITY.md": "the stability investigation  [conclusion superseded]",
@@ -125,10 +130,18 @@ NOTES = {
     "tools/checklayout.py": "checks for src/src nesting, missing and duplicate modules",
     "tools/pull.sh": "update from GitHub over curl -- no git needed on the server",
     "tools/manifest.py": "writes and checks docs/MANIFEST.txt, file by file",
+    "tools/tokens.py": "token ledger: billed cost vs API-equivalent shadow price",
     "tools/stale.py": "flags measurements whose file moved after the number was taken",
+    "tools/apply_sync.py": "applies a sync archive safely -- no nesting, never touches data/",
+    "docs/token_ledger.csv": "per-session token counts; measured and estimated kept apart",
+
+    "skills/nwp-debug/SKILL.md": "skill: diagnose before patching",
+    "skills/nwp-record-session/SKILL.md": "skill: research log, register, prompts, tokens",
+    "skills/nwp-sync/SKILL.md": "skill: patch route, pull.sh, apply_sync",
 }
 
 DIR_NOTES = {
+    "skills": "recurring procedures as SKILL.md -- how habits survive a new session",
     "src/dynamics": "the model itself",
     "src/verification": "observations and scoring -- never model output",
     "src/postproc": "learned correction of a finished forecast",
@@ -230,16 +243,16 @@ that was is not recoverable, which is the whole argument for the column.
 
 | suite | covers | status | last run |
 |---|---|---|---|
-| `test_shallow_water.py` | 2D dynamics | 8/8 | 2026-09-10 |
-| `test_boundaries.py` | Davies relaxation, limited area | 6/6 | 2026-09-10 |
-| `test_sigma.py` | coordinate, PGF, continuity | 7/7 | 2026-09-10 |
-| `test_subgrid.py` | hyperdiffusion, SPPT, balancing | 7/7 | 2026-09-10 |
-| `test_surface.py` | drag, log law, Ekman spiral | 6/6 | 2026-09-10 |
-| `test_initialization.py` | spectral filter, noise threshold | 5/5 | 2026-09-10 |
-| `test_convection.py` | dry convective adjustment | 5/5 | — |
+| `test_shallow_water.py` | 2D dynamics | 8/8 | 2026-09-12 |
+| `test_boundaries.py` | Davies relaxation, limited area | 6/6 | 2026-09-12 |
+| `test_sigma.py` | coordinate, PGF, continuity | 7/7 | 2026-09-12 |
+| `test_subgrid.py` | hyperdiffusion, SPPT, balancing | 7/7 | 2026-09-12 |
+| `test_surface.py` | drag, log law, Ekman spiral | 6/6 | 2026-09-12 |
+| `test_initialization.py` | spectral filter, noise threshold | 5/5 | 2026-09-12 |
+| `test_convection.py` | dry convective adjustment | 5/5 | 2026-09-12 |
 | `test_interpolate.py` | pressure -> sigma conversion | 8/8 | — |
-| `test_radiation.py` | radiative upper boundary | 7/7 | — |
-| `test_primitive_sigma.py` | the 3D core | 7/7 | 2026-09-10 |
+| `test_radiation.py` | radiative upper boundary | 7/7 | 2026-09-12 |
+| `test_primitive_sigma.py` | the 3D core | 7/7 | 2026-09-12 |
 | `test_primitive3d.py` | superseded pressure core | 8/8 | — |
 | `test_forecast.py` | end-to-end driver | 11/11 | — |
 | `test_hrrr_search.py` | GRIB interface | 6/6 | — |

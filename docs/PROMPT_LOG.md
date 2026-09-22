@@ -156,6 +156,14 @@ on itself.
 | 73 | "Lets get back into the project" | DIR | took P-02; found the sponge destroys baroclinic development at every setting (P-49) |
 | 74 | "Lets build the radiative boundary" | **DIR** | built it; development 0.34 -> 2.50, but tall terrain 12/12 -> 3/12 (P-50) |
 | 75 | "lets keep going" | DIR | three causes found behind P-50; development 1.91 -> 3.12, terrain still fails at hour 4 |
+| 76 | "Log call backs to learning points ex. talking about writing down the loop and estimating gain" | **MET** | produced the learning log: lessons with origins and callbacks, marked H/A/T |
+| 77 | "Everything is good lets keep moving" | DIR | `tools/stale.py` for L7; P-50's fourth cause (top-level shear); P-40 reopened after the K_MAX binding bug |
+| 78 | "lets solve this desktop link issue" | ADM | the bridge was down on the desktop side; `tools/apply_sync.py` so transfers stop depending on it |
+| — | *gap: prompts from the 2026-09-10 to 09-12 sessions (the GitHub sync and the P-40 ladder) were not logged verbatim here; their effects are in `docs/RESEARCH_LOG.md` and the project's `sync-state` doc* | | |
+| 79 | "lets retry uploading the files" | ADM | bridge still unreachable; archive re-sent |
+| 80 | "can you connect now" | ADM | still unreachable; re-linking steps given |
+| 81 | "can we keep track of the total cost of tokens to see how how much this project costs at the end" | **MET** | `tools/tokens.py` and `docs/TOKEN_COST.md`; billed vs API-equivalent; the tokens are worth ~0.2x the subscription |
+| 82 | "can you package this project up to bring over to Claude science" | **ADM**, MET | `CLAUDE.md`, three skills, `CLAUDE_SCIENCE.md`; model switched to `claude-opus-5-5` the same turn |
 
 **Observation.** Prompt 53 is 18 words and is the most consequential
 instruction in the project. Before it, nine candidate causes had been patched
