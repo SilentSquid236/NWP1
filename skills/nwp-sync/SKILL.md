@@ -11,7 +11,7 @@ description: Use when moving NWP1 work between places — the GitHub repository,
 |---|---|---|
 | GitHub `SilentSquid236/NWP1` | code, `docs/`, `tools/`, `skills/` — **source of truth** | git on Windows; `git pull` (or `tools/pull.sh`) on the server |
 | Windows desktop `Desktop\NWP\NWP_Deployment_Package` | the clone with push credentials | git |
-| shared server (the Xeon), `/data5/pierce/NWP` | the working copy that runs; `data/` is at `NWP_Deployment_Package/data` inside it | `git pull` — git is on the server since 2026-09-22; `tools/pull.sh` (curl) is the fallback |
+| shared server (the Xeon), `/data5/pierce/AINWP` | the working copy that runs, and `data/` inside it (git-ignored) | `git pull` — git is on the server since 2026-09-22; `tools/pull.sh` (curl) is the fallback |
 
 `data/` exists only on the server and is **never overwritten** by any sync.
 
@@ -38,18 +38,16 @@ is fine.
 git has been on the server since 2026-09-22 (reported by the human; before
 that it was absent and `tools/pull.sh` was the only route).
 
-**Server layout, checked 2026-09-22.** Run git in **`/data5/pierce/NWP`** — not
-`/data5/pierce/Data5/NWP`, which is an old partial copy. `/data5/pierce/NWP`
-is already a git checkout: git 2.52.0, `origin` =
-`https://github.com/SilentSquid236/NWP1.git`, branch `main` tracking
-`origin/main`, clean apart from the untracked `NWP1-main/`,
-`NWP_Deployment_Package/` and `nwp.tar.gz` (all checked 2026-09-22). The
-conversion below is therefore **not needed there**; `git pull --ff-only` is.
-`NWP_DATA_ROOT` (in `~/.bashrc`) is
-`/data5/pierce/NWP/NWP_Deployment_Package/data`: the archive lives inside a
-nested copy of the package, which has its own `.git`. **Never delete, move or
-`git clean` that nested folder.** `manifest.py --check` in the root reports its
-files as EXTRA; that is expected and is not a reason to remove them.
+**Server layout (since 2026-09-22, late).** Run git in **`/data5/pierce/AINWP`**,
+a fresh clone: `origin` = `https://github.com/SilentSquid236/NWP1.git`, `main`
+tracking `origin/main`, git 2.52.0. Its data root is `/data5/pierce/AINWP/data`
+(git-ignored, and the default when `NWP_DATA_ROOT` is unset, so cron agrees).
+The previous root, `/data5/pierce/NWP`, is kept untouched as a record. Its
+archive is inside the nested `NWP_Deployment_Package/data`, which has its own
+`.git`. **Never delete, move or `git clean` anything there.** The first attempt
+to rebuild git ran in an empty `AINWP` and listed every tracked file as
+"deleted". That was the index describing files that were not there yet, not a
+loss: `git checkout -- .` in an empty folder fills it in.
 
 Kept for any copy that has no usable `.git` — convert it **in place, once**,
 never by deleting or re-cloning the directory:

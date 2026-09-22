@@ -2174,6 +2174,18 @@ sandbox.
 **Status.** Built and kept. P-56 open (the first observation-built forecast
 dies at 3.75 h). The pipeline has run end to end on the desktop only.
 
+**Addendum, same evening: a new server root.** Git on the server "got messed
+up" (prompt 106). The rebuild recipe was run in a new, empty folder,
+`/data5/pierce/AINWP`: a clean clone with every tracked file listed as
+"deleted", which was the index describing files not yet written, not a loss.
+The human made `AINWP` the project root (prompt 108) with its own data root,
+`AINWP/data` (prompt 109). `/data5/pierce/NWP` and its nested archive are kept
+untouched. A side effect worth recording: the old layout had a latent cron
+defect. Cron does not read `~/.bashrc`, so `NWP_DATA_ROOT` would have been
+unset under cron, and `daily.sh` would have fallen back to `$ROOT/data`, a
+different directory from the one every hand run used. In the new layout the
+default and the variable are the same path.
+
 ---
 
 ## Recording for the AI-collaboration study

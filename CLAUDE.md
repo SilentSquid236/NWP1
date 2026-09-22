@@ -128,14 +128,14 @@ terrain; 8/12 at 4000 m with the eddy-diffusivity ceiling at its new default of
 | `docs/STRUCTURE.md` | generated tree; reading order at the top |
 | `skills/` | the recurring procedures, as skills |
 
-**On the server** (checked 2026-09-22): the project root is
-**`/data5/pierce/NWP`**, and it already has a `.git`. The data root is **not**
-where older docs said: `~/.bashrc` line 44 sets
-`NWP_DATA_ROOT=/data5/pierce/NWP/NWP_Deployment_Package/data`, so the
-verification archive sits inside a nested copy of the package that has its
-own `.git`. **That nested folder looks like leftover junk and is not: removing
-it removes `data/`.** `NWP1-main/`, `nwp.tar.gz` and the copies under
-`/data5/pierce/Data5/` are older transfers. No crontab is installed.
+**On the server** (since 2026-09-22, late): the project root is
+**`/data5/pierce/AINWP`**, a fresh git clone of GitHub, and its data root is
+**`/data5/pierce/AINWP/data`** (git-ignored; `NWP_DATA_ROOT` in `~/.bashrc`
+says the same). Because that is also the default when `NWP_DATA_ROOT` is unset,
+cron — which does not read `~/.bashrc` — writes to the same archive. The old
+root **`/data5/pierce/NWP` is kept untouched as a record**: its archive is
+inside the nested `NWP_Deployment_Package/data`, so never delete, move or
+`git clean` it. `/data5/pierce/Data5/` holds even older partial copies.
 
 Every module has a `test_*.py` beside it. The suites are the specification.
 

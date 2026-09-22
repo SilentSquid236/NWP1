@@ -188,6 +188,10 @@ on itself.
 | 103 | "I would like to get weather mcp installed" | ADM | options compared; project constraints stated (desktop only; model output may not enter or score a run) |
 | 104 | "lets do weather-mcp" | ADM | Node.js was missing; setup steps given |
 | 105 | "its added with basic tools" | ADM | worked once `api.weather.gov` was allowlisted; Open-Meteo (model data) left blocked |
+| 106 | "Git got messed up lets re setup git on the xenon" | ADM | read-only diagnosis first; broken `.git` moved aside, not deleted; `data/` backed up before any git command |
+| 107 | *(pasted: step 2 run in `/data5/pierce/AINWP`: no `.git` to move, fresh repo, `main` tracking `origin/main`, every tracked file "deleted" — the folder had no files)* | **OBS** | nothing lost: the reset only filled git's index; the folder was simply empty. Checkout to populate it, after confirming the old root and `data/` |
+| 108 | "AINWP is the new folder its a clean slate" | **DIR** | project root moved to `/data5/pierce/AINWP`; old root kept as a record |
+| 109 | *(chose: new `AINWP/data`)* | DIR | data root beside the project; `~/.bashrc` to change; cron default now agrees |
 
 **Observation.** Prompt 53 is 18 words and is the most consequential
 instruction in the project. Before it, nine candidate causes had been patched

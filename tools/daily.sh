@@ -27,8 +27,11 @@
 #
 # Suggested crontab (UTC; soundings reach IEM a little after nominal time):
 #
-#   45 1,7,13,19 * * *  bash /data5/pierce/NWP/tools/daily.sh >/dev/null 2>&1
-#   30 3 * * *          bash /data5/pierce/NWP/tools/daily.sh verify >/dev/null 2>&1
+#   45 1,7,13,19 * * *  bash /data5/pierce/AINWP/tools/daily.sh >/dev/null 2>&1
+#   30 3 * * *          bash /data5/pierce/AINWP/tools/daily.sh verify >/dev/null 2>&1
+#
+# Cron does not read ~/.bashrc, so NWP_DATA_ROOT is unset there and DATA falls
+# back to $ROOT/data -- which is /data5/pierce/AINWP/data, the same place.
 #
 # Every path is absolute and derived from this script's location, a lock
 # stops two jobs competing for cores, output goes to a dated log that is kept,
