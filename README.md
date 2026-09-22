@@ -44,7 +44,7 @@ Set the data root per machine:
 # WSL
 export NWP_DATA_ROOT=/mnt/c/Users/Epier/Desktop/NWP/NWP_Deployment_Package/data
 # server
-export NWP_DATA_ROOT=/data5/pierce/Data5/NWP/data
+export NWP_DATA_ROOT=/data5/pierce/NWP/NWP_Deployment_Package/data   # as set in ~/.bashrc, checked 2026-09-22
 ```
 
 Add it to `~/.bashrc` on each so you don't have to think about it again.

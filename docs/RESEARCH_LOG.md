@@ -1917,6 +1917,116 @@ token-ledger commit, so it carries the K_MAX default of 200 and P-52. Merging
 
 ---
 
+## 2026-09-22 — First session in Claude Science; git reaches the server
+
+**Context.** The first session in the new environment (prompts 83–84). The
+import guide made its step 2 a test: if the new session cannot list the five
+constraints in `CLAUDE.md`, it has not picked up the context.
+
+**Hypothesis.** Stated in `CLAUDE_SCIENCE.md` before the move: the app might or
+might not load `CLAUDE.md` by itself, and the five-constraint test would show
+which.
+
+**Method.** Prompt 83 asked the session to read `claude.md`. It checked project
+memory, then looked for the file; it listed the constraints back from the file
+it found. The model id was read from the session runtime rather than assumed.
+
+**Result.**
+
+| check | outcome |
+|---|---|
+| `CLAUDE.md` loaded without being asked | **no** — project memory was empty and nothing had been read |
+| file at the path named | no `claude.md` at `Desktop\NWP\`; found at `NWP1\CLAUDE.md` (Windows paths are case-insensitive, so this was location, not case) |
+| five constraints listed back | all five |
+| model | `claude-opus-5-5`, matching the human's report |
+| skills | three imported; `nwp-sync` revised first (below) |
+| research record | read in place from the granted folder, not copied |
+| GitHub `main` | still `b97bc06` in the desktop clone; no `CLAUDE.md` or `skills/` there; `package/claude-science` unmerged |
+
+**git on the server (prompt 84).** The human reported git is now installed on
+the server. Constraint 2 in `CLAUDE.md` was rewritten rather than deleted, and
+the text that said git "cannot be" installed was corrected in `tools/pull.sh`
+and `tools/stale.py`. `skills/nwp-sync` gained an in-place conversion of the
+`pull.sh` copy to a git checkout. Writing it surfaced one new hazard: `data/` is
+in `.gitignore`, which keeps git from overwriting it but also means
+`git clean -x`/`-X` delete it and `git stash --all` removes it. "Ignored" had
+been doing the work of "protected", and it is not the same thing. The
+conversion recipe has **not been run** on the server; its status is that of
+P-06, written and not exercised. The server's git version was not reported.
+
+A side effect worth measuring later: `tools/stale.py` prefers commit dates, and
+on 2026-09-10 mtimes produced 12 false hits against 0 from git dates. Once the
+server copy is a checkout, the stale check there should stop reporting a
+whole transfer batch as changed.
+
+**Interpretation.** The step-2 test was needed; without it the session would
+have started with none of the constraints. It does not show the brief was
+inadequate: once read, it was sufficient. The constraints are now in project
+memory, which gives a prediction that can fail: **the next Claude Science
+session can state the five constraints before reading any file.**
+
+**Found in the record.** The Aggregate table in `docs/PROMPT_LOG.md` is stale.
+It lists DIR 22, OBS 13, ADM 10, MET 9, CON 8, COR 3. A regex count of the tag
+column over the 76 numbered rows present before this session (prompts to 82)
+gives DIR 28, ADM 15, MET 14, OBS 10, CON 7, COR 3. The difference in CON
+suggests either a tag the regex missed or a miscount in the table. It was left
+unedited for the human to resolve, because it feeds the study's main finding.
+
+**A defect the move exposed.** Running the pre-done checks on Windows for the
+first time, `tools/tree.py` and `tools/manifest.py` wrote `STRUCTURE.md` and
+`MANIFEST.txt` with CRLF line endings. `.gitattributes` requires LF
+everywhere; on Linux text mode writes LF by construction, so it had not
+shown. Both now write LF explicitly (`newline="\n"`; `write_bytes` in
+`manifest.py`, because `write_text(newline=)` needs Python 3.10 and the
+server's version was not checked). After the fix no `.py`, `.md`, `.sh`,
+`.txt` or `.csv` file in the tree contains CRLF. It is category A in the
+taxonomy, an unobserved platform convention, found by a check rather than by
+failing.
+
+**For the collaboration study.** The environment seam and the model seam fall
+on the same day but are not the same event: prompt 82's session already ran on
+`claude-opus-5-5` in the old environment, so exactly one session separates
+them. Prompt 84 is a CON that *removes* a constraint. It undoes prompt 15
+("sadly git is not on the server"), which killed the git-based transfer plan
+and led, via prompt 68, to `pull.sh`.
+
+**Addendum, same day: where the server copy actually is.** The first `git
+pull` was run in `/data5/pierce/Data5/NWP`, a path the AI inferred from the
+data root in `config.py`; it failed (`not a git repository`, and no
+`tools/manifest.py`). A read-only survey (`find`, `ls`, `~/.bashrc`, `crontab`,
+`manifest.py --check`) found:
+
+| item | finding |
+|---|---|
+| project root | `/data5/pierce/NWP` — top level, files dated 2026-09-22, manifest matches; **already has `.git`** (14:53). The nested `NWP_Deployment_Package/` is also complete (all four probe files) but dated 2026-09-04 |
+| data root | `NWP_DATA_ROOT=/data5/pierce/NWP/NWP_Deployment_Package/data` (`~/.bashrc` line 44) |
+| nested copies | `NWP_Deployment_Package/` (own `.git`, holds `data/`), `NWP1-main/`, `nwp.tar.gz` |
+| other strays | `/data5/pierce/Data5/{NWP,NWP1-main,data,src/data}`, `/data5/pierce/config.py` |
+| `manifest.py --check` in the root | 0 missing, 0 differing, 189 extra (the nested copies) |
+| crontab | none — `tools/daily.sh` has never been scheduled |
+
+The documented server data root (`/data5/pierce/Data5/NWP/data`, in
+`README.md` and `config.py`) did not exist; both now give the real value. The
+finding that matters most: the verification archive sits inside a directory
+that every earlier lesson about nesting (P-24) would mark for deletion. The
+AI's inference of the root was wrong, and it was a guess stated as "most
+likely" rather than checked; the survey should have come first. That is L1
+(probe, don't guess) applied to a path instead of a model.
+
+**Server git state** (read-only: `git --version`, `remote -v`, `branch -vv`,
+`log`, `status`): git 2.52.0; `origin` is the GitHub repository; `main` at
+`44068f2` tracking `origin/main`, with PRs #2 (`package/claude-science`) and #3
+(`p40/ceiling-ladder`) merged; working tree clean except the untracked
+`NWP1-main/`, `NWP_Deployment_Package/` and `nwp.tar.gz`. So no conversion was
+needed and `git pull --ff-only` works from the root.
+
+**Correction to the table above:** "`package/claude-science` unmerged" was
+wrong. It was read from the desktop clone, which had not been fetched since
+`b97bc06`; GitHub had merged it. A local clone is a snapshot of the remote as
+of its last fetch, not the remote.
+
+---
+
 ## Recording for the AI-collaboration study
 
 Each entry should also note, where applicable:

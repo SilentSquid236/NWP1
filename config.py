@@ -5,7 +5,9 @@ Everything is driven by environment variables so the exact same code runs
 unchanged in WSL and on the Xeon server. Set NWP_DATA_ROOT per machine:
 
     WSL:    export NWP_DATA_ROOT=/mnt/c/Users/Epier/Desktop/NWP/NWP_Deployment_Package/data
-    Server: export NWP_DATA_ROOT=/data5/pierce/Data5/NWP/data
+    Server: export NWP_DATA_ROOT=/data5/pierce/NWP/NWP_Deployment_Package/data
+            (the value in ~/.bashrc there, checked 2026-09-22; the data sits
+            inside a nested copy of the package -- do not remove it)
 
 If unset, it defaults to ./data relative to this file.
 """

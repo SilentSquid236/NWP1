@@ -27,7 +27,12 @@ however good it is otherwise.
   already installed (numpy, torch, herbie, cfgrib are there). Do not suggest
   workarounds. **This includes installing Claude Science itself on that
   server** — run it on the Windows desktop instead, or ask the admin first.
-- **git is not on the server.** `tools/pull.sh` fetches over curl and tar.
+- **git is on the server since 2026-09-22** (it was absent until then). Code
+  moves by `git pull` on the server; `tools/pull.sh` (curl + tar) is the
+  fallback. The server only pulls — GitHub is the source of truth. `data/` is
+  git-ignored, so **`git clean -x`/`-X` and `git stash --all` would take it
+  away: never run them there.** git arriving does not relax the no-installs
+  rule. Procedure: `skills/nwp-sync`.
 - **Never exceed 50% of the server's cores** unless told otherwise, adapting to
   other users' load (`resources.py`). Never saturate shared bandwidth
   (`netpolicy.py`, 8 MB/s default).
@@ -72,6 +77,11 @@ via `src/forecast.py`. A verification archiver (`src/verify.py`) and a daily
 cron pipeline (`tools/daily.sh`) exist and have **never touched the live
 network**.
 
+Since 2026-09-22 the work runs in **Claude Science** (desktop app, Windows) with
+the model `claude-opus-5-5`; the three skills are imported there and the key
+facts in this file are in its project memory. That move is a seam in the study
+(`docs/AI_COLLABORATION.md`, "Instrument changes").
+
 Measured capability: 12/12 forecast hours on flat ground, 1000 m and 2500 m
 terrain; 8/12 at 4000 m with the eddy-diffusivity ceiling at its new default of
 200 m²/s. The agreed terrain target was 2 km and is met.
@@ -101,6 +111,15 @@ terrain; 8/12 at 4000 m with the eddy-diffusivity ceiling at its new default of
 | `docs/TOKEN_COST.md` | what the project costs, billed vs API-equivalent |
 | `docs/STRUCTURE.md` | generated tree; reading order at the top |
 | `skills/` | the recurring procedures, as skills |
+
+**On the server** (checked 2026-09-22): the project root is
+**`/data5/pierce/NWP`**, and it already has a `.git`. The data root is **not**
+where older docs said: `~/.bashrc` line 44 sets
+`NWP_DATA_ROOT=/data5/pierce/NWP/NWP_Deployment_Package/data`, so the
+verification archive sits inside a nested copy of the package that has its
+own `.git`. **That nested folder looks like leftover junk and is not: removing
+it removes `data/`.** `NWP1-main/`, `nwp.tar.gz` and the copies under
+`/data5/pierce/Data5/` are older transfers. No crontab is installed.
 
 Every module has a `test_*.py` beside it. The suites are the specification.
 

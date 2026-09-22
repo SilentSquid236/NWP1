@@ -53,13 +53,15 @@ def write():
     rows = [f"{digest(p)}  {p.stat().st_size:>8}  "
             f"{p.relative_to(ROOT).as_posix()}" for p in files()]
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(
+    # bytes, not write_text: text mode writes CRLF on Windows (.gitattributes
+    # says LF everywhere), and write_text(newline=) needs Python 3.10.
+    OUT.write_bytes((
         "# Manifest of every source, doc and tool file in the project.\n"
         "# Regenerate with: python tools/manifest.py\n"
         "# Check a copy with: python tools/manifest.py --check\n"
         "#\n"
         "# sha256(16)          bytes  path\n"
-        + "\n".join(rows) + "\n")
+        + "\n".join(rows) + "\n").encode("utf-8"))
     print(f"wrote {OUT.relative_to(ROOT)} — {len(rows)} files")
     return 0
 

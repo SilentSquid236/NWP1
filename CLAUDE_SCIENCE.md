@@ -12,6 +12,21 @@ repository or a `CLAUDE.md` context file is picked up is **not** documented in
 either source. The steps below are written to work whichever way it turns out
 to behave, and step 2 is the one to check first.
 
+## Status after the first Claude Science session (2026-09-22)
+
+| step | outcome |
+|---|---|
+| 1. project | exists |
+| 2. context | **not picked up automatically** — project memory was empty at start. `CLAUDE.md` was found on request at `Desktop\NWP\NWP1\CLAUDE.md`, the five constraints were listed back, and they, the method and the known pitfalls were written into project memory |
+| 3. skills | `nwp-debug`, `nwp-record-session`, `nwp-sync` imported as personal skills; `nwp-sync` first revised for git on the server |
+| 4. research record | not copied in: the session reads `docs/` in place from the granted folder `Desktop\NWP\NWP1` |
+| 5. record the move | row in "Instrument changes"; research-log entry of the same date |
+
+The working copy on the desktop is `NWP1\`. `NWP_Deployment_Package\` is the
+git clone; it had not been fetched and still showed `main` at `b97bc06`. GitHub
+itself had already merged `package/claude-science` (#2) and
+`p40/ceiling-ladder` (#3): the server's `main` is at `44068f2`.
+
 ## Do not install it on the shared server
 
 The Xeon has an admin policy against installing new packages, and that covers

@@ -164,6 +164,14 @@ on itself.
 | 80 | "can you connect now" | ADM | still unreachable; re-linking steps given |
 | 81 | "can we keep track of the total cost of tokens to see how how much this project costs at the end" | **MET** | `tools/tokens.py` and `docs/TOKEN_COST.md`; billed vs API-equivalent; the tokens are worth ~0.2x the subscription |
 | 82 | "can you package this project up to bring over to Claude science" | **ADM**, MET | `CLAUDE.md`, three skills, `CLAUDE_SCIENCE.md`; model switched to `claude-opus-5-5` the same turn |
+| *— environment change: Claude Science (desktop app, Windows), model `claude-opus-5-5`; see "Instrument changes" in `docs/AI_COLLABORATION.md` —* | | | |
+| 83 | "Start by reading claude.md" | ADM | the import guide's context test: `CLAUDE.md` had not been loaded; found at `NWP1\CLAUDE.md`, five constraints listed back and saved to project memory |
+| 84 | "git is now on the server you can import everything over and make a note about the app change and the model is now opus 5.5" | **CON**, ADM | constraint 2 rewritten; `nwp-sync` gained a git route and a `data/` hazard (`git clean -x`); three skills imported; instrument-change row and research-log entry |
+| 85 | "If I use git pull what folder do I need to be in" | ADM | AI inferred `/data5/pierce/Data5/NWP` from `config.py` — wrong |
+| 86 | *(pasted: `git pull` → "fatal: not a git repository"; `tools/manifest.py` not found)* | **OBS** | inference refuted; read-only survey requested instead of the conversion |
+| 87 | *(pasted: `find` over `/data5/pierce`)* | **OBS** | five partial or nested copies; `/data5/pierce/NWP` and its nested `NWP_Deployment_Package/` both complete; the outer one chosen as root (top level, newer) |
+| 88 | *(pasted: `~/.bashrc`, `ls`, `.git`, crontab, manifest check)* | **OBS** | root already a git repo; the archive lives in the nested `NWP_Deployment_Package/data`; no crontab |
+| 89 | *(pasted: git 2.52.0, `origin`, `main` at `44068f2` tracking `origin/main`, three untracked copies)* | **OBS** | conversion unnecessary; `git pull --ff-only` works; "package unmerged" corrected (stale desktop clone) |
 
 **Observation.** Prompt 53 is 18 words and is the most consequential
 instruction in the project. Before it, nine candidate causes had been patched

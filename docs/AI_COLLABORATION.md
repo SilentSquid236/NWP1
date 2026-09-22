@@ -15,6 +15,7 @@ the ground truth. Both roles matter to the result.
 | 2026-09-04 | reasoning effort raised to **high**; session model `claude-opus-5` |
 | 2026-09-22 | session model changed to **`claude-opus-5-5`** by the human (`/model`) |
 | 2026-09-22 | project packaged to move to **Claude Science** — a new environment, not only a new model |
+| 2026-09-22 | **first session in Claude Science** (desktop app, Windows; memory, skills and the repository read from a granted local folder). Model `claude-opus-5-5`, as reported by the human and confirmed from the session runtime. `CLAUDE.md` was not loaded automatically; it was read on request |
 
 The collaborator's configuration is part of the apparatus. Treat 2026-09-04 and
 2026-09-22 as

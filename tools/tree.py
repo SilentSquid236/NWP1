@@ -298,7 +298,7 @@ def main():
     body = "\n".join(walk(root))
     out = HEADER + "NWP_Deployment_Package/\n" + body + "\n" + FOOTER
     path = os.path.join(root, "docs", "STRUCTURE.md")
-    with open(path, "w", encoding="utf-8") as f:
+    with open(path, "w", encoding="utf-8", newline="\n") as f:  # LF on Windows too
         f.write(out)
     print(out)
     # Count the tree, not the header sentence that explains the marker --
