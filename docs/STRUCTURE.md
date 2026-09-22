@@ -151,6 +151,7 @@ NWP_Deployment_Package/
 |   `-- verify_pending.py                 # verifies every archived forecast whose window has closed, once
 |-- tools/                             # maintenance scripts
 |   |-- apply_sync.py                     # applies a sync archive safely -- no nesting, never touches data/
+|   |-- bench_threads.py                  # numpy vs torch thread scaling on model-sized arrays, before any port
 |   |-- checklayout.py                    # checks for src/src nesting, missing and duplicate modules
 |   |-- daily.sh                          # one forecast cycle from cron (obs -> analysis -> forecast); `verify` mode scores closed windows
 |   |-- manifest.py                       # writes and checks docs/MANIFEST.txt, file by file

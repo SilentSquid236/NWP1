@@ -127,6 +127,7 @@ NOTES = {
     "tools/tree.py": "generates docs/STRUCTURE.md",
     "tools/problem.py": "adds to and audits docs/PROBLEMS.md",
     "tools/daily.sh": "one forecast cycle from cron (obs -> analysis -> forecast); `verify` mode scores closed windows",
+    "tools/bench_threads.py": "numpy vs torch thread scaling on model-sized arrays, before any port",
     "src/ingest_obs.py": "one cycle's initial state from observations at or before the cycle time",
     "src/verify_pending.py": "verifies every archived forecast whose window has closed, once",
     "src/analysis/sources.py": "one adapter per observation source; missing sources skipped and logged",

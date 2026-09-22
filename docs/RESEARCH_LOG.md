@@ -2186,6 +2186,48 @@ unset under cron, and `daily.sh` would have fallen back to `$ROOT/data`, a
 different directory from the one every hand run used. In the new layout the
 default and the variable are the same path.
 
+**The model uses one core, and always has** (prompt 111). The dynamics is
+element-wise NumPy (stencils, `np.roll`-style differences), and NumPy runs
+those on a single thread. The thread caps `resources.py` sets (`OMP_…`,
+`MKL_…`, reported as "torch threads 10 max") bound BLAS and torch, neither of
+which the core calls. So the "50 % of cores" rule has never been the binding
+limit, and the log line suggests a parallelism that does not exist. The
+desktop's 1.36 min per forecast hour was therefore a single-core number, and
+the 1.5 h budget should be judged against single-core speed on the Xeon.
+Nothing changed; measure first (the log's steps/s line), then decide.
+
+**First server run, 2026-09-22 18Z** (`AINWP`, 13 min end to end, status 3):
+
+| | |
+|---|---|
+| machine | 104 cores, 376 GB (so the "50 %" cap is 52 cores; one is used) |
+| ingest | ~2 min; ETOPO terrain fetched from the server (0–1161 m) |
+| first guess | no soundings at 18Z and no earlier run in `AINWP`: standard atmosphere. **Initial max\|u\| 6.2 m/s** — the jet is simply absent |
+| speed | dt 17.1 s, 2.1 steps/s, so **1.7 min per forecast hour**; 24 h ≈ 40 min, inside the 1.5 h budget on one core |
+| outcome | max\|u\| 6.3 → 7.4 → 10.1 → 18.3 → 14.6 → 37.7 m/s over hours 1–6, then **435 m/s at 6.31 h**, stopped mid-hour |
+
+So P-56 has two cases: a realistic 12Z state (46 m/s jet, 10 soundings)
+dying at 3.75 h, and a near-calm 18Z state dying at 6.31 h. What the two share
+is the observation-built lower atmosphere, ETOPO terrain and single-frame
+(frozen) edges. What they do not share is a strong upper flow. **A calm start
+blowing up rules out "the jet is too strong" as the cause.** The HRRR-seeded
+runs that reached 12/12 h differed in all three shared respects, so a
+discriminating run is needed before any change.
+
+**Where a forecast hour goes** (prompt 113; desktop, cProfile, 1 h from the
+2026-09-21 12Z analysis, 87.6 s in `step`). There is no single hotspot. The
+largest own-time entries are `np.roll` 11.0 s, `hyperdiffusion` 10.3 s,
+`tendencies` 10.1 s, `richardson` 7.1 s, `pressure_gradient_force` 5.1 s,
+`vertical_advection` 5.0 s, and a long tail of small stencils. A 5-point
+Laplacian on one 20 × 97 × 110 field takes 2.24 ms with `np.roll` and 1.29 ms
+with slicing (1.7×), a single-core gain available without threads. Whether
+threads help depends on how torch scales on arrays this small (213k values)
+when every one of thousands of operations per hour pays thread start-up.
+`tools/bench_threads.py` measures exactly that on the server. **Prediction,
+written before it runs:** torch will be ≤ 1.5× NumPy at 1 thread and will not
+exceed 3× at any thread count for the Laplacian and the vertical cumsum. It
+fails if some thread count gives > 3× on all three operations.
+
 ---
 
 ## Recording for the AI-collaboration study

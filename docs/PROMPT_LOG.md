@@ -192,6 +192,10 @@ on itself.
 | 107 | *(pasted: step 2 run in `/data5/pierce/AINWP`: no `.git` to move, fresh repo, `main` tracking `origin/main`, every tracked file "deleted" — the folder had no files)* | **OBS** | nothing lost: the reset only filled git's index; the folder was simply empty. Checkout to populate it, after confirming the old root and `data/` |
 | 108 | "AINWP is the new folder its a clean slate" | **DIR** | project root moved to `/data5/pierce/AINWP`; old root kept as a record |
 | 109 | *(chose: new `AINWP/data`)* | DIR | data root beside the project; `~/.bashrc` to change; cron default now agrees |
+| 110 | *(pasted: server `test_analysis` 20/20, `test_forecast` 11/11; first cycle started in the background; `tail` found no log yet)* | **OBS** | first server run of the new code; `tail` raced the script's first write |
+| 111 | "I notice it only uses 1 cpu" | **OBS** | expected, and never stated anywhere: the core is element-wise NumPy, which runs on one core; `resources.py`'s "10 threads" is a cap on BLAS/torch, which the dynamics does not call |
+| 112 | *(pasted: server cycle 2026-09-22 18Z log, forecast section)* | **OBS** | first server run: ingest ~2 min, terrain fetched, 2.1 steps/s (1.7 min per forecast hour); diverged at 6.31 h from a near-calm start — P-56 now has two cases |
+| 113 | "if we can run at a speed faster tahn 40 minutes we can use more cores than 1" | **CON**, DIR | permission to use more than one core for speed; profiled first, and a thread-scaling benchmark written for the server before any port |
 
 **Observation.** Prompt 53 is 18 words and is the most consequential
 instruction in the project. Before it, nine candidate causes had been patched
