@@ -87,6 +87,8 @@ the chunked and whole-hour runs diverge — min Ri 0.012 against 0.022 at hour 6
 integration differently is not a neutral act. The working guard rides along as
 a callback and only reads the clock.
 
+**Update 2026-09-22.** `forecast.run_forecast` now checks for non-finite values and |u| > 150 m/s at the progress cadence (~200 checks per run), not only on the hour. It stopped P-56 at 3.75 h, mid-hour. The same check still does not exist inside `PrimitiveSigma.run()`, which the sweep scripts use.
+
 ---
 
 ## P-01 — Tall terrain fails above Nh/U ≈ 1
@@ -379,6 +381,54 @@ must never cost the raw observations.
 service, which is P-06 and is where this project's defects have always been.
 
 ---
+
+## P-53 — Observation-only initial state and frozen lateral boundaries
+**Category** G, I · **First seen** 2026-09-22 · **Status** OPEN
+
+**Symptom.** Not a failure yet: a design with a known cost. With no model output allowed and nothing observed after the cycle time, the lateral boundaries can only be held to the initial analysis. At ~20 m/s air crosses ~860 km in 12 h of a ~1300 km domain, so error from the frozen edges should reach much of the interior by hour 12.
+
+**What is known.** Initial state from every reliable observation at the cycle time (`src/analysis/`); upper air from the previous run's forecast where soundings are missing; analysis area extended beyond the domain. Measurement to make: forecast error against distance from the nearest edge, by lead time (research log 2026-09-22, prediction P5).
+
+**Ruled out.** none yet.
+
+---
+
+
+## P-54 — The radiosonde fetcher's request is rejected by IEM
+**Category** A · **First seen** 2026-09-22 · **Status** OPEN
+
+**Symptom.** `fetchers.raob_url()` sends `ts1`/`ts2` and several `station` values in one request. IEM now answers HTTP 422: it requires `sts`/`ets` (ISO, start before end), accepts one 4-character station per request, and wants the `K` prefix (`KOKX`). Every radiosonde fetch would have failed on the server.
+
+**What is known.** Measured on the desktop, 2026-09-22 12Z the day before: with one request per station, 10 of 21 active IDs in and around the domain returned data; Albany, Wallops, CAR and ILN (12Z) and both Canadian sites returned nothing. `NORTHEAST_RAOB` also omits RNK (Blacksburg), which is inside the domain. Fix: new request builder in `src/analysis/sources.py`, one station per request, station list from IEM's RAOB network table.
+
+**Ruled out.** none yet.
+
+---
+
+
+## P-55 — daily.sh looks for the ingested frames in the wrong directory
+**Category** I · **First seen** 2026-09-22 · **Status** OPEN
+
+**Symptom.** Predicted, not yet observed: `tools/daily.sh` gives `forecast.py --run-dir $DATA/tensors/analysis_<stamp>`, but `ingest_hrrr.py` writes to `config.TENSOR_DIR` = `$DATA/tensors_3d/analysis_<stamp>`. The forecast step should fail with 'No live_hrrr_f*.npz', and verify be skipped.
+
+**What is known.** Found by reading the two paths side by side, 2026-09-22, while the first hand run (P-07) was in progress. Confirm or refute from that run's log. The new per-cycle script derives both paths from one variable.
+
+**Ruled out.** none yet.
+
+---
+
+
+## P-56 — The first observation-built forecast diverges at 3.75 h
+**Category** F?, G? · **First seen** 2026-09-22 · **Status** OPEN
+
+**Symptom.** 2026-09-21 12Z from observations only, 24 h requested: max|u| 46 m/s for 3 h, then 372 m/s at 3.75 h, stopped inside the hour by the new guard. Desktop, 12 km grid, ETOPO terrain 0–1161 m.
+
+**What is known.** Probe (`src/analysis/probe_obs_blowup.py`, 5-min snapshots): the runaway is the meridional wind at level 17 of 20 (near the ground), first growing by more than 20 % between 2.50 and 2.59 h, 14 cells from the edge, over 812 m of terrain in northern Maine. Only 2 points grew by more than 5 m/s, in a ~5.5 Δx pattern. The initial divergence did not reach the filter's target (4.7e-4 → 9.2e-5 1/s). Next: record every field around (row 82, col 89) from 2.0 h, check the static stability of that column in the initial state (the surface blend adds increments to the lowest 1000 m), and compare with an HRRR-seeded run of the same cycle (`--source hrrr`), which has survived 12 h before.
+
+**Ruled out.** the edges: max|u| was pinned at the lid by the frozen boundary, and the runaway began 14 cells inside it.
+
+---
+
 
 # FIXED
 

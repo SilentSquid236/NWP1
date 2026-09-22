@@ -1,105 +1,138 @@
 #!/usr/bin/env bash
 #
-# One day of the archive: ingest, forecast, verify.
+# One forecast cycle: observations -> analysis -> forecast -> archive.
+# And, separately, verification of the cycles whose windows have closed.
 #
-#   tools/daily.sh                 # today's 00Z run
-#   tools/daily.sh 2026-09-04T00   # a specific run
+#   bash tools/daily.sh                         # latest cycle, 24 h, observations
+#   bash tools/daily.sh 2026-09-21T12           # a specific cycle (00/06/12/18Z)
+#   bash tools/daily.sh 2026-09-21T12 12        # ... 12 hours long
+#   bash tools/daily.sh 2026-09-21T12 24 hrrr   # the old HRRR-seeded baseline
+#   bash tools/daily.sh verify                  # verify every closed window
 #
-# Written to be run from cron on the shared server. Cron gives you a bare
-# environment, no terminal, and no memory of the last run, so:
+# It is a BASH script: `python tools/daily.sh` fails at the first line of
+# shell (prompt 92).
 #
-#   * every path is absolute, derived from this script's own location
-#   * a LOCK FILE stops two runs overlapping. A 12-hour forecast takes longer
-#     than the gap between some cron schedules, and two copies competing for
-#     the same cores on a shared machine is exactly what the 50% ceiling in
-#     resources.py exists to avoid.
-#   * output goes to a dated log, kept, because a failure at 4 a.m. is only
-#     diagnosable from what it wrote at the time
-#   * python runs with -u. Without it Python BLOCK-BUFFERS stdout whenever it
-#     is not a terminal, so a redirected log stays empty for many minutes and
-#     a running job is indistinguishable from a frozen one. That is not a
-#     cosmetic detail: it is how the first real run got reported as a freeze.
-#   * the exit code is the FIRST failure, not the last command's
+# WHAT CHANGED ON 2026-09-22 (prompts 94-101, P-53, P-55)
 #
-# WHY THIS RUNS EVERY DAY AND THE OTHER SCRIPTS DO NOT (P-07)
+#   * The run starts from OBSERVATIONS at its own cycle time (src/ingest_obs.py)
+#     and holds its edges to that analysis. No HRRR unless asked for.
+#   * Four cycles a day, 12-24 h each, and each run inside 1.5 h of wall
+#     clock: the forecast gets a deadline computed from what is left of the
+#     budget after ingest, and writes the hours it reached.
+#   * Verification is NOT part of a run -- the observations it needs do not
+#     exist yet. `daily.sh verify` scores every run whose window has closed.
+#   * One variable, RUNDIR, gives every step its directory. The old script
+#     handed the forecast $DATA/tensors/... while ingest wrote to
+#     $DATA/tensors_3d/... (P-55).
 #
-# Verification needs forecasts and observations paired in time. A day not
-# archived cannot be recovered later: the observations remain downloadable,
-# but the forecast that was valid for them was never made. Missing a day
-# costs a day of evidence permanently.
+# Suggested crontab (UTC; soundings reach IEM a little after nominal time):
 #
-# Suggested crontab entry (03:30 local, after the 00Z HRRR is complete):
+#   45 1,7,13,19 * * *  bash /data5/pierce/NWP/tools/daily.sh >/dev/null 2>&1
+#   30 3 * * *          bash /data5/pierce/NWP/tools/daily.sh verify >/dev/null 2>&1
 #
-#   30 3 * * *  /path/to/NWP_Deployment_Package/tools/daily.sh >/dev/null 2>&1
-#
+# Every path is absolute and derived from this script's location, a lock
+# stops two jobs competing for cores, output goes to a dated log that is kept,
+# python runs unbuffered (-u), and the exit code is the FIRST failure.
 # Nothing here needs root, and nothing installs anything.
 
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-RUN="${1:-$(date -u +%Y-%m-%dT00)}"
-STAMP="$(echo "$RUN" | tr -d ':-' | tr 'T' '_')"
-
 DATA="${NWP_DATA_ROOT:-$ROOT/data}"
+TENSORS="$DATA/tensors_3d"          # == config.TENSOR_DIR; the ONE place runs live
 LOGDIR="$DATA/logs"
 LOCK="$DATA/daily.lock"
-LOG="$LOGDIR/daily_$STAMP.log"
-RUNDIR="$DATA/tensors/analysis_$STAMP"
+BUDGET_MIN="${NWP_CYCLE_BUDGET_MIN:-90}"
+RESERVE_MIN=8                       # after the forecast: writing, archiving
 
 mkdir -p "$LOGDIR" "$DATA"
 
-# Lock. `set -o noclobber` makes this atomic without needing flock, which is
-# not present everywhere.
-if ! (set -o noclobber; echo "$$ $(date -u +%FT%TZ)" > "$LOCK") 2>/dev/null; then
-    echo "another run is active (lock: $LOCK, holder: $(cat "$LOCK" 2>/dev/null))"
+latest_cycle() {
+    # The newest 00/06/12/18Z cycle at least 100 min old, so its soundings
+    # and hourly reports have had time to reach the archive.
+    local t h
+    t="$(date -u -d '-100 min' +%Y-%m-%dT%H)"
+    h="${t:11:2}"
+    printf '%sT%02d' "${t:0:10}" $(( (10#$h / 6) * 6 ))
+}
+
+MODE="cycle"
+if [ "${1:-}" = "verify" ]; then
+    MODE="verify"
+    RUN="$(date -u +%Y-%m-%dT%H)"
+else
+    RUN="${1:-$(latest_cycle)}"
+fi
+HOURS="${2:-24}"
+SOURCE="${3:-obs}"
+STAMP="$(echo "$RUN" | tr -d ':-' | tr 'T' '_')"
+LOG="$LOGDIR/${MODE}_$STAMP.log"
+
+if ! (set -o noclobber; echo "$$ $MODE $RUN $(date -u +%FT%TZ)" > "$LOCK") 2>/dev/null; then
+    echo "another job is active (lock: $LOCK, holder: $(cat "$LOCK" 2>/dev/null))"
     exit 75          # EX_TEMPFAIL: try again later, do not alarm
 fi
 trap 'rm -f "$LOCK"' EXIT INT TERM
 
-# How to see where a step is, while it runs:
-#     tail -f "$LOG"                     # what it has printed
-#     kill -USR1 $(pgrep -f forecast.py) # traceback, run continues
-#
 STATUS=0
+T0=$(date +%s)
 step() {
     local name="$1"; shift
-    echo "=== $name  $(date -u +%FT%TZ)" >> "$LOG"
-    if "$@" >> "$LOG" 2>&1; then
+    echo "=== $name  $(date -u +%FT%TZ)  (+$(( ($(date +%s) - T0) / 60 )) min)" >> "$LOG"
+    "$@" >> "$LOG" 2>&1
+    local rc=$?
+    if [ $rc -eq 0 ]; then
         echo "    ok" >> "$LOG"
     else
-        local rc=$?
         echo "    FAILED rc=$rc" >> "$LOG"
         [ "$STATUS" -eq 0 ] && STATUS=$rc
-        return $rc
     fi
+    return $rc
 }
 
 {
-    echo "daily archive run for $RUN"
+    echo "NWP1 $MODE for $RUN"
     echo "root   $ROOT"
     echo "data   $DATA"
 } >> "$LOG"
 
-# 1. Ingest. --hours 13 gives a 12-hour forecast one boundary frame per hour
-#    plus the initial state.
-step ingest python -u "$ROOT/src/ingest_hrrr.py" \
-    --start "$RUN" --hours 13 --stride 4 || true
+if [ "$MODE" = "verify" ]; then
+    step verify python -u "$ROOT/src/verify_pending.py"
+    echo "=== done  $(date -u +%FT%TZ)  status=$STATUS" >> "$LOG"
+    exit "$STATUS"
+fi
 
-# 2. Forecast. Runs even if some hours are missing -- a shorter forecast is
-#    still worth archiving; no forecast at all is not.
-step forecast python -u "$ROOT/src/forecast.py" \
-    --run-dir "$RUNDIR" --hours 12 --output-every 1 || true
+echo "cycle  $RUN, $HOURS h, source $SOURCE, budget $BUDGET_MIN min" >> "$LOG"
 
-# 3. Verify and archive. THIS IS THE STEP THAT CANNOT BE DEFERRED, so it is
-#    attempted even if the forecast step reported a failure: a forecast that
-#    diverged at hour 8 still produced eight hours worth archiving.
-if [ -f "$RUNDIR/forecast.npz" ]; then
-    step verify python -u "$ROOT/src/verify.py" \
-        --forecast "$RUNDIR/forecast.npz" --run-time "$RUN" || true
+# 1. Initial state.
+if [ "$SOURCE" = "hrrr" ]; then
+    RUNDIR="$TENSORS/analysis_$STAMP"
+    step ingest python -u "$ROOT/src/ingest_hrrr.py" \
+        --start "$RUN" --hours "$(( HOURS + 1 ))" --stride 4 || true
 else
-    echo "=== verify  SKIPPED: no forecast.npz produced" >> "$LOG"
+    RUNDIR="$TENSORS/obs_$STAMP"
+    step ingest python -u "$ROOT/src/ingest_obs.py" --cycle "$RUN" || true
+fi
+echo "rundir $RUNDIR" >> "$LOG"
+
+# 2. Forecast, inside what is left of the budget.
+USED_MIN=$(( ($(date +%s) - T0) / 60 ))
+LEFT_MIN=$(( BUDGET_MIN - USED_MIN - RESERVE_MIN ))
+if [ "$LEFT_MIN" -lt 5 ]; then
+    echo "=== forecast  SKIPPED: ingest used $USED_MIN of $BUDGET_MIN min" >> "$LOG"
+    [ "$STATUS" -eq 0 ] && STATUS=1
+else
+    # rc 2 = deadline cut the run short, 3 = diverged; both still write the
+    # hours reached, and both count as the run's status.
+    step forecast python -u "$ROOT/src/forecast.py" \
+        --run-dir "$RUNDIR" --hours "$HOURS" --output-every 1 \
+        --deadline-min "$LEFT_MIN" || true
+fi
+
+if [ ! -f "$RUNDIR/forecast.npz" ]; then
+    echo "=== no forecast.npz in $RUNDIR -- nothing to verify later" >> "$LOG"
     [ "$STATUS" -eq 0 ] && STATUS=1
 fi
 
-echo "=== done  $(date -u +%FT%TZ)  status=$STATUS" >> "$LOG"
+echo "=== done  $(date -u +%FT%TZ)  +$(( ($(date +%s) - T0) / 60 )) min  status=$STATUS" >> "$LOG"
 exit "$STATUS"

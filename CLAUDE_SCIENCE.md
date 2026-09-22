@@ -83,7 +83,7 @@ workaround to find.
 
 In priority order, matching the problem register:
 
-1. **P-07 / P-06** — run `tools/daily.sh` on the server once, by hand, and
+1. **P-07 / P-06** — run `bash tools/daily.sh` on the server once (it is a bash script; `python tools/daily.sh` fails with a SyntaxError), by hand, and
    bring back the log. The verification archive is the only item that gets
    permanently more expensive each day it stays empty, and the live fetch paths
    have never been exercised.

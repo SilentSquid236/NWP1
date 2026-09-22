@@ -2027,6 +2027,155 @@ of its last fetch, not the remote.
 
 ---
 
+## 2026-09-22 — No HRRR: every run starts from observations at its own cycle time
+
+**Context.** Prompts 94–102. The human redirected the model away from HRRR
+entirely, in seven short steps that are worth keeping in order, because the
+AI's first reading of them was wrong and was corrected by the fourth:
+
+1. "lets not use the hrrr but real data like radar surface obs soundings etc..."
+2. Asked what should feed the lateral boundaries: "the model will have to
+   interpolate values from surface observation radar data and soundings near
+   the area".
+3. "take in all data sources it can that are reliable ... If a source isnt
+   availbe that hour then the model will skip it and use the data it has."
+4. Four cycles, 00/06/12/18Z, each 12–24 h long.
+5. Each run finishes in under 1.5 hours.
+6. "the model should be based off inital conditions so the 00z run uses 00z
+   conditions and models from there" — **this corrected the AI**, which had
+   read (2) as boundaries built from observations *during* the forecast window,
+   i.e. a hindcast, and had planned around a run that could only start a day
+   late.
+7. Where soundings can't be found, use the previous run's forecast. After the
+   forecast window, check the forecast against surface observations.
+
+**Decision, as built.**
+
+| | before | now |
+|---|---|---|
+| initial state | HRRR analysis | every reliable observation valid at the cycle time; missing sources skipped and logged |
+| upper air with no soundings (06Z, 18Z, missing sites) | — | the previous run's forecast valid at that time; cold start from a standard atmosphere if there is none |
+| lateral boundaries | hourly HRRR analyses | held to the initial analysis for the whole run (nothing observed later may enter) |
+| terrain | HRRR surface height | a static DEM (ETOPO via NOAA ERDDAP), fetched once |
+| verification | ASOS after the run | surface observations, once the forecast window has closed; the cycle-time analysis scored only on withheld stations |
+| budget | none | 1.5 h wall clock per run at ≤ 50 % of cores, verification excluded |
+
+`ingest_hrrr.py` is kept, not deleted, and reachable with `--source hrrr`, so an
+HRRR-seeded run remains available as a baseline for the same day.
+
+**What this costs, stated before building it.** Frozen edges are the price of
+a true forecast from observations. Air crosses about 860 km in 12 h at 20 m/s,
+and the domain is about 1300 km across, so by hour 12 much of the interior is
+downstream of an edge that stopped changing at hour 0. Scores at long lead
+times will partly measure the boundaries, not the dynamics. The analysis
+extends beyond the model domain so observed upstream air at least starts at
+the edges. This is written down now so that a poor 24 h score is not later
+read as a dynamics failure.
+
+**First contact with the live services** (desktop, 2026-09-22; P-06 is about
+exactly this):
+
+| service | finding |
+|---|---|
+| IEM RAOB | **the fetcher's request is rejected.** `raob_url()` sends `ts1`/`ts2`; the service now requires `sts`/`ets` (HTTP 422), accepts **one station per request** (4-character limit), and wants the `K` prefix (`KOKX`). |
+| IEM RAOB availability, 2026-09-21 12Z | of 21 active IDs in the domain plus a ~3° ring, 10 returned data: APX, BUF, DTX, GSO, GYX, IAD, MHX, OKX, PIT, RNK. CAR and ILN had 00Z but not 12Z; Albany (`KALB`/`KALY`/`_ALY`), Wallops and both Canadian sites (`CWMJ`, `CWQI`) returned nothing at either time. **Inside the domain: 6 soundings, not the 8 the docs assume.** RNK (Blacksburg) is inside the domain and missing from `NORTHEAST_RAOB`. |
+| IEM ASOS | `sts`/`ets` accepted; one hour for 20 US and Canadian networks = 665 rows, 56 kB, 0.4 s; `mslp` and `alti` available. The network list contains look-alikes that are other countries (`DE__ASOS`, `MA__ASOS`, `MD__ASOS`, `PA__ASOS`) — selected by exact name, not prefix. |
+| NDBC | 191 met-reporting buoys and fixed stations within 1° of the domain; 5-day files ~67 kB each. |
+| NOAA ERDDAP `etopo180` | plain CSV of terrain height; no library needed. |
+
+The RAOB result is one more interface defect found only on first contact with
+a live service, in code that every offline test passed (category A).
+
+**A prediction about the run in progress.** `tools/daily.sh` passes the
+forecast `--run-dir $DATA/tensors/analysis_<stamp>`, but `ingest_hrrr.py`
+writes to `config.TENSOR_DIR` = `$DATA/tensors_3d/analysis_<stamp>`. Predicted,
+before the log comes back: ingest succeeds, **forecast fails with "No
+live_hrrr_f*.npz in .../tensors/analysis_20260922_00"**, verify is SKIPPED, and
+the run ends `status=1`. If the forecast step instead finds its files, this
+reading of the two paths is wrong.
+
+**Predictions for the observation-built runs** (written 2026-09-22, before any
+analysis code exists; each is checked on 2026-09-21 12Z and 2026-09-21 18Z
+unless stated):
+
+| # | prediction | fails if |
+|---|---|---|
+| P1 | leave-one-out sounding temperature error, averaged over the soundings available: ≤ 2.0 K RMS at 500 hPa, ≤ 3.0 K at 850 hPa | either is exceeded |
+| P2 | 500 hPa heights integrated hydrostatically from the surface-pressure anchor and the analysed virtual temperature match the soundings' reported heights to ≤ 30 m RMS | > 30 m (the integration or the anchor is wrong) |
+| P3 | surface temperature at withheld ASOS stations (every fifth) after elevation correction: ≤ 2.5 K RMS | > 2.5 K |
+| P4 | a forecast from the obs-built state, prepared by the same filter and rebalance, survives 12/12 h at stride-4 spacing; 24 h is a guess of ≥ 18 h | fails before hour 12 |
+| P5 | at 12 h lead, surface-temperature error within 200 km of the edges exceeds the interior's | the interior is as bad or worse, which would mean the edges are not what limits skill |
+| P6 | removing one source (buoys) changes the surface analysis by < 0.5 K everywhere more than 300 km from every buoy | a larger change far away, which would mean the influence radius is too large |
+| P7 | the 18Z run, with no soundings, takes its upper air from the 12Z run's 6 h forecast and says so in its metadata; its 500 hPa temperature differs from the 12Z analysis by < 3 K RMS | it silently cold-starts, or differs by more |
+
+P6 and P7 are the ones that can fail for reasons other than skill: they test
+that the plumbing does what it claims.
+
+**Results, 2026-09-22** (desktop, 12 threads of 24; live observations for
+2026-09-21 12Z and 18Z; each prediction checked as written above):
+
+| # | result | verdict |
+|---|---|---|
+| P1 | leave-one-out over the 6 in-domain soundings: 500 hPa **1.71 K**; 850 hPa **3.81 K** (BUF +5.9, GYX +6.5, the other four within 2.2) | 500 holds; **850 fails** |
+| P2 | 500 hPa height from the pressure anchor vs reported: **8.4 m** RMS (6 soundings) | holds |
+| P3 | withheld ASOS temperature: **1.02 K** RMS, bias +0.25 (71 stations, 12Z); 1.74 K, bias −0.70 at 18Z | holds |
+| P4 | 24 h requested; **diverged at 3.75 h** (max\|u\| 372 m/s), stopped inside the hour by the new guard | **fails** |
+| P5 | no run reached 12 h | not assessed |
+| P6 | with buoys removed, surface T changes by ≤ **0.21 K** more than 300 km from every buoy (max 5.25 K near them) — but only 9 % of the grid is that far from a buoy, so the test is weak | holds, weakly |
+| P7 | the 12Z run died before +6 h, so the 18Z run had no usable forecast; it logged that and **fell to a standard atmosphere** | not assessed; see below |
+
+**P4, located before anything was changed** (`src/analysis/probe_obs_blowup.py`,
+5-minute snapshots): max\|u\| sat at 46.1 m/s for 3.5 h (at the lid, 2 cells
+from the edge, pinned by the frozen boundary). The runaway was the
+**meridional wind**, first growing by > 20 % between 2.50 and 2.59 h at
+**level 17 of 20 (near the ground)**, 14 cells from the edge, over **812 m of
+terrain** in northern Maine; only 2 points grew by > 5 m/s, with a ~5.5 Δx
+pattern along the row. So it is interior, low-level, over terrain and near
+grid scale, and **not** edge-driven. It is the same shape as P-50, whose
+runaway was also v. The initialisation reported that the divergence did not
+reach its target (4.7e-4 → 9.2e-5 s⁻¹). Opened as P-56; nothing has been
+tuned.
+
+**The P7 finding changed the code.** A standard atmosphere has no jet and no
+gradients. When the previous forecast cannot supply +6 h and there are no
+soundings at the cycle, the first guess is now the previous run's
+**analysis** (6 h old, built from real soundings), and the label says so.
+The human's rule ("if upper air soundings cant be found use the previous runs
+forecast") says nothing about a previous run that died. This is the AI's
+extension of it, flagged for confirmation.
+
+**Defects found on the way, all in code that had passed its tests:**
+
+1. The buddy check compared a sounding's 250 hPa temperature with a
+   neighbour's 1000 hPa one (pressure-blind), and on 2026-09-21 12Z rejected
+   every upper-air value it had buddies for.
+2. After that fix, it still accepted a "consensus" of one neighbouring
+   sounding's many significant levels (KRNK vs KGSO) — it now counts stations,
+   not values.
+3. The raob request rejected by IEM (P-54).
+4. `daily.sh` run directory (P-55; predicted from the code and fixed before
+   the log came back, so still unconfirmed on the server).
+
+Items 1 and 2 would have hit verification against soundings as well.
+
+**Cost.** Ingest 131–148 s, of which NDBC's ~200 sequential 5-day files take
+~120 s. Forecast 1.36 min per forecast hour on 12 km (10 threads), so 24 h is
+~33 min. A 24 h cycle is ~36 min on the desktop; the server is not measured.
+Deferred verification of 3 h: 3077 pairs, **TMP RMSE 2.23 K, bias −1.47 K;
+u 2.47, v 2.19 m/s**. Its QC buddy check is O(n²) and took ~5 min on 50 000
+observations. That is outside the run budget, but it grows with window length.
+
+**Not run here.** `src/verification/test_verification.py` crashes inside
+`numpy.corrcoef` in this desktop sandbox; plain `numpy.corrcoef` crashes the
+same way (a delay-loaded DLL), so that suite is not assessed on the desktop.
+`tools/daily.sh` could not be syntax-checked: Git's bash cannot start in the
+sandbox.
+
+**Status.** Built and kept. P-56 open (the first observation-built forecast
+dies at 3.75 h). The pipeline has run end to end on the desktop only.
+
+---
+
 ## Recording for the AI-collaboration study
 
 Each entry should also note, where applicable:

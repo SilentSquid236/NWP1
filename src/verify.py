@@ -74,8 +74,15 @@ import fetchers
 
 # Networks covering the Northeast domain. ASOS only: automated, hourly,
 # quality-controlled at source, and dense enough to score a 12 km grid.
+#
+# Widened 2026-09-22 to every state and province the domain touches: the old
+# list stopped at Pennsylvania, so the southern and western thirds of the
+# domain (DE, MD, VA, WV, OH) and all of Canada were never scored. Stations
+# outside the domain are dropped by the operator, not by this list.
 NORTHEAST_NETWORKS = ["ME_ASOS", "NH_ASOS", "VT_ASOS", "MA_ASOS", "RI_ASOS",
-                      "CT_ASOS", "NY_ASOS", "NJ_ASOS", "PA_ASOS"]
+                      "CT_ASOS", "NY_ASOS", "NJ_ASOS", "PA_ASOS", "DE_ASOS",
+                      "MD_ASOS", "VA_ASOS", "WV_ASOS", "OH_ASOS",
+                      "CA_ON_ASOS", "CA_QC_ASOS", "CA_NB_ASOS", "CA_NS_ASOS"]
 
 # What we verify, and against which model field.
 #

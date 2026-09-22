@@ -47,6 +47,20 @@ NWP_Deployment_Package/
 |   `-- nwp-sync/
 |       `-- SKILL.md                      # skill: patch route, pull.sh, apply_sync
 |-- src/
+|   |-- analysis/
+|   |   |-- testdata/
+|   |   |   |-- asos_2026092112_sample.csv # live IEM ASOS payload, every 10th row
+|   |   |   |-- ndbc_41025_5day_sample.txt # live NDBC 5-day file, head
+|   |   |   |-- ndbc_active_sample.xml    # live NDBC station list, 25 stations
+|   |   |   |-- raob_KIAD_2026092112.csv  # live IEM sounding, Sterling VA
+|   |   |   |-- raob_KOKX_2026092112.csv  # live IEM sounding, Upton NY
+|   |   |   `-- raob_network.geojson      # live IEM RAOB station table, analysis box
+|   |   |-- barnes.py                     # successive-correction analysis of increments against a first guess
+|   |   |-- build.py                      # first guess, sounding superobs, Barnes increments, hydrostatic heights
+|   |   |-- geo.py                        # the forecast's grid, bilinear sampling, ETOPO terrain via ERDDAP
+|   |   |-- probe_obs_blowup.py           # P-56: where the first observation-built forecast dies
+|   |   |-- sources.py                    # one adapter per observation source; missing sources skipped and logged
+|   |   `-- test_analysis.py              # suite for analysis.py
 |   |-- dynamics/                      # the model itself
 |   |   |-- README.md                     # orientation for this directory
 |   |   |-- balance_check.py              # initial-state balance and Nh/U by terrain height
@@ -127,16 +141,18 @@ NWP_Deployment_Package/
 |   |-- autoregressive_dataset.py         # training pairs for the emulator; numeric f-hour sort  [SUPERSEDED]
 |   |-- forecast.py                       # end-to-end driver, sigma core over real terrain
 |   |-- ingest_hrrr.py                    # Herbie fetch, domain cut, stride coarsening -> .npz
+|   |-- ingest_obs.py                     # one cycle's initial state from observations at or before the cycle time
 |   |-- nwp_emulator_3d.py                # Conv3d state-to-state emulator  [SUPERSEDED -- bounded by its teacher]
 |   |-- test_forecast.py                  # driver suite (11/11)
 |   |-- test_hrrr_search.py               # GRIB search-string suite (6/6)
 |   |-- test_verify.py                    # suite for verify.py
 |   |-- train_autoregressive.py           # emulator training loop  [SUPERSEDED by the physics core]
-|   `-- verify.py                         # verify a forecast against observations and archive the pairs
+|   |-- verify.py                         # verify a forecast against observations and archive the pairs
+|   `-- verify_pending.py                 # verifies every archived forecast whose window has closed, once
 |-- tools/                             # maintenance scripts
 |   |-- apply_sync.py                     # applies a sync archive safely -- no nesting, never touches data/
 |   |-- checklayout.py                    # checks for src/src nesting, missing and duplicate modules
-|   |-- daily.sh                          # one day of the archive from cron: ingest, forecast, verify
+|   |-- daily.sh                          # one forecast cycle from cron (obs -> analysis -> forecast); `verify` mode scores closed windows
 |   |-- manifest.py                       # writes and checks docs/MANIFEST.txt, file by file
 |   |-- newlog.py                         # append a dated research-log entry from the template
 |   |-- problem.py                        # adds to and audits docs/PROBLEMS.md

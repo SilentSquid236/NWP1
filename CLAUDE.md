@@ -36,8 +36,12 @@ however good it is otherwise.
 - **Never exceed 50% of the server's cores** unless told otherwise, adapting to
   other users' load (`resources.py`). Never saturate shared bandwidth
   (`netpolicy.py`, 8 MB/s default).
-- **HRRR may seed a forecast and may never verify one.** Verification is ASOS,
-  mesonets, radiosondes and radar. Never model output.
+- **No model output enters a forecast or scores one** (since 2026-09-22; before
+  that, HRRR could seed). Each run starts from observations valid at its own
+  cycle time; where soundings are missing, the upper air comes from this
+  model's own previous forecast. Nothing observed after the cycle time enters
+  the run. Verification is against observations only, after the forecast
+  window has closed. `--source hrrr` survives only as a labelled baseline.
 - **`data/` is never overwritten** by any sync or tool. It holds the
   verification archive, the one thing here that cannot be recreated.
 
@@ -72,10 +76,17 @@ Full list with origins and callbacks: `docs/LEARNING_LOG.md`.
 
 The sigma core is complete through boundary layer (Richardson mixing, surface
 drag), dry convective adjustment, initialization filtering, a pressure-to-sigma
-converter, and a radiative upper boundary. It is reachable from real HRRR data
-via `src/forecast.py`. A verification archiver (`src/verify.py`) and a daily
-cron pipeline (`tools/daily.sh`) exist and have **never touched the live
-network**.
+converter, and a radiative upper boundary.
+
+**Since 2026-09-22 a run starts from observations, not HRRR.** Four cycles a
+day (00/06/12/18Z), 12–24 h each, each inside 1.5 h of wall clock:
+`tools/daily.sh` → `src/ingest_obs.py` (every reliable source at or before the
+cycle time; missing ones skipped) → `src/forecast.py` (edges held to the
+initial analysis; deadline; in-hour blow-up stop) → archive. Verification is a
+separate job once the window has closed: `bash tools/daily.sh verify` →
+`src/verify_pending.py`. The observation fetchers have now met the live
+services from the desktop (P-54 found and fixed); the server has not run any
+of it yet.
 
 Since 2026-09-22 the work runs in **Claude Science** (desktop app, Windows) with
 the model `claude-opus-5-5`; the three skills are imported there and the key
@@ -90,8 +101,11 @@ terrain; 8/12 at 4000 m with the eddy-diffusivity ceiling at its new default of
 
 | | |
 |---|---|
-| P-07 | **the verification archive has no data** — the only time-sensitive item; a day not archived is gone |
-| P-06 | observation fetchers and the surface-field GRIB search have never met the live service |
+| P-07 | **the verification archive on the server has no data** — the only time-sensitive item; a day not archived is gone |
+| P-56 | **the first observation-built forecast diverges at 3.75 h**: v at level 17, over 812 m terrain in northern Maine; located, not yet explained |
+| P-53 | observation-only initial state with frozen edges — a design with a known cost (error spreads in from the edges) |
+| P-55 | the old `daily.sh` gave the forecast the wrong run directory (predicted; fixed; unconfirmed on the server) |
+| P-06 | fetchers met the live services from the desktop on 2026-09-22 (P-54 found there); the server has not run them |
 | P-49 | every Rayleigh sponge setting turns growing baroclinic weather into decaying weather |
 | P-50 | the radiative lid (fixes P-49's development: 0.34 → 3.12) still dies over tall terrain; fourth cause is top-level shear the sponge was masking |
 | P-52 | a blowing-up run is only detected at forecast-hour boundaries, so it slows down instead of stopping |
@@ -102,8 +116,10 @@ terrain; 8/12 at 4000 m with the eddy-diffusivity ceiling at its new default of
 | | |
 |---|---|
 | `src/dynamics/` | the model; `primitive_sigma.py` is the core |
-| `src/forecast.py` | end-to-end driver: HRRR → sigma → forecast |
-| `src/verify.py` | observations → matched pairs → archive |
+| `src/analysis/` | observation analysis: `sources.py` (one adapter per source), `build.py` (first guess, Barnes, heights), `geo.py` (grid, ETOPO terrain) |
+| `src/ingest_obs.py` | one cycle's initial state from observations |
+| `src/forecast.py` | driver: analysis → sigma → forecast (obs or `--source hrrr` frames) |
+| `src/verify.py`, `src/verify_pending.py` | observations → matched pairs → archive, once a window has closed |
 | `docs/PROBLEMS.md` | what is wrong, what fixed it, what was ruled out and how |
 | `docs/RESEARCH_LOG.md` | dated entries: hypothesis before the result, then the numbers |
 | `docs/LEARNING_LOG.md` | lessons, and where each came back |
@@ -137,7 +153,11 @@ recorded with `tools/tokens.py --add`.
 
 ## Things a new session gets wrong
 
-- Index 0 in every vertical array is the **model lid**, not the ground.
+- Index 0 in every vertical array is the **model lid**, not the ground. On the
+  analysis's PRESSURE levels (`config.PRESSURE_LEVELS`) index 0 is 1000 hPa —
+  the opposite way round.
+- The analysis grid helpers are `src/analysis/geo.py`, not `grid.py`:
+  `src/dynamics/grid.py` (CGrid) is on the same import path.
 - The eddy-diffusivity ceiling and Ri_crit are **instance state**
   (`PrimitiveSigma(k_max=...)`). Setting `turbulence.K_MAX` does nothing.
 - The sponge relaxes toward a **frozen reference**, not the horizontal mean.

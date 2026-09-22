@@ -1,6 +1,13 @@
 # Data Assimilation Layer — Design
 
-Status: design draft. No code written yet.
+Status: **superseded in part on 2026-09-22.** HRRR is no longer the
+background. Each run (00/06/12/18Z) builds its initial state from every
+reliable observation valid at the cycle time (`src/analysis/`); where
+soundings are missing the upper-air first guess is this model's previous
+forecast; the lateral boundaries are held to that initial analysis. The
+original design below is kept because its concepts (innovations, H, QC,
+error_std, staging) still hold; read "HRRR background" as "first guess".
+See the research log entry of that date.
 
 ## Purpose
 
@@ -185,7 +192,10 @@ made by an instrument.
 A regression test (`test_no_model_sources`) asserts that no model-derived
 source appears in the observation stream, so this cannot erode quietly.
 
-**Where HRRR is still required:** lateral boundary conditions. A bounded
+**Where HRRR was thought to be required (superseded 2026-09-22):** lateral
+boundary conditions. The project now holds the edges to the initial analysis
+instead, accepting that error spreads inward from them, so that no model
+output enters a run. A bounded
 domain needs values supplied at its edges every timestep, and that must come
 from a larger-domain model. Initial conditions can become observation-driven
 through DA cycling (background = own previous forecast), leaving HRRR as a

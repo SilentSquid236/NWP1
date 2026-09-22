@@ -24,17 +24,22 @@ measured rather than assumed (see docs/RESEARCH_LOG.md, 2026-09-02):
 Measured on the idealised equivalent: no filter 1/12 h, filter only 11/12 h,
 filter then rebalance 12/12 h.
 
-WHAT DEPENDS ON HRRR, AND WHAT DOES NOT
+WHAT THE FORECAST IS BUILT FROM (since 2026-09-22)
 
-  initial conditions   HRRR, at cold start. Once DA cycling exists this
-                       becomes our own previous forecast corrected by
-                       observations, and HRRR is only a first guess.
-  boundary conditions  HRRR, permanently. A bounded domain must be told what
-                       arrives at its edges every timestep. Unavoidable
-                       without going global; every operational regional model
-                       works this way.
-  verification truth   NEVER HRRR. Observations only -- ASOS, mesonets,
-                       radiosondes.
+  initial conditions   OBSERVATIONS valid at the cycle time (src/analysis/,
+                       written by src/ingest_obs.py as obs_analysis_f00.npz).
+                       Where soundings are missing, the upper air is this
+                       model's previous forecast. No HRRR.
+  boundary conditions  the initial analysis, HELD FIXED for the whole run.
+                       Nothing observed after the cycle time may enter, so
+                       there is nothing else to relax toward. A single
+                       driving frame is exactly that: BoundaryDriver returns
+                       it at every time.
+  verification truth   observations only, after the forecast window closes.
+
+  --source hrrr        the old path (live_hrrr_f*.npz from ingest_hrrr.py,
+                       hourly HRRR analyses at the edges) is still readable,
+                       as a labelled baseline and nothing more.
 
 The forecast in between is ours: our equations, our numerics, our errors.
 """
@@ -79,10 +84,37 @@ from subgrid import StochasticPerturbation, balance_initial_state
 # HRRR state -> model state
 # ---------------------------------------------------------------------------
 
+FEATURE_KEYS = ("features", "hrrr_features")
+
+
 def load_state(path):
-    """Load one ingested HRRR field set (.npz)."""
+    """
+    Load one ingested field set (.npz): an observation analysis written by
+    src/ingest_obs.py (key "features") or an HRRR frame (key "hrrr_features").
+    """
     z = np.load(path, allow_pickle=False)
-    return z["hrrr_features"], {k: z[k] for k in z.files if k != "hrrr_features"}
+    key = next((k for k in FEATURE_KEYS if k in z.files), None)
+    if key is None:
+        raise KeyError(f"{path} has none of {FEATURE_KEYS}; it has {z.files}")
+    return z[key], {k: z[k] for k in z.files if k not in FEATURE_KEYS}
+
+
+def driving_frames(run_dir):
+    """
+    The frames for a run, observation analysis first.
+
+    An observation run has ONE frame, obs_analysis_f00.npz, and so frozen
+    boundaries; an HRRR run has live_hrrr_f00..fNN. A directory holding both
+    is refused -- which source drove a forecast must never be a guess.
+    """
+    run_dir = Path(run_dir)
+    key = lambda q: int(q.stem.split("_f")[-1])
+    obs = sorted(run_dir.glob("obs_analysis_f*.npz"), key=key)
+    hrrr = sorted(run_dir.glob("live_hrrr_f*.npz"), key=key)
+    if obs and hrrr:
+        raise SystemExit(f"{run_dir} holds both observation and HRRR frames; "
+                         f"refusing to guess which drives the run")
+    return (obs, "observations") if obs else (hrrr, "hrrr")
 
 
 def hrrr_channels(fields, channels=None):
@@ -212,13 +244,30 @@ class Relaxation3D:
         return self.inner.interior_fraction
 
 
+U_CEILING = 150.0     # m/s -- the range limit on observed wind; beyond it
+                      # the state is not weather and the run is over (P-52)
+
+
 def run_forecast(model, driver, relax, duration, dt=None, output_every=None,
-                 progress=True):
+                 progress=True, deadline_s=None, info=None):
     """
     Integrate with boundary relaxation, collecting output states.
 
-    Returns a list of (valid_seconds, u, v, theta) snapshots.
+    Returns a list of (valid_seconds, u, v, theta, pi) snapshots.
+
+    Two ways to stop early, both recorded in `info["stopped"]`:
+
+      deadline  wall clock since the call exceeded `deadline_s`. The hours
+                already reached are kept, so a cut-short run can still be
+                archived and verified (the 1.5 h budget, prompt 98).
+      diverged  checked at the progress cadence, not only on the hour: a
+                non-finite value or |u| > U_CEILING. P-52 was a run that kept
+                refining a meaningless state for a quarter of an hour; with a
+                fixed dt it would not slow down, but it would still spend the
+                rest of its budget on nothing.
     """
+    info = {} if info is None else info
+    info["stopped"] = "completed"
     dt = dt or model.max_dt()
     n_steps = int(np.ceil(duration / dt))
     dt = duration / n_steps
@@ -249,6 +298,20 @@ def run_forecast(model, driver, relax, duration, dt=None, output_every=None,
         model.step(dt)
         relax.apply(model, driver.at(model.time))
 
+        if k % every_n == 0:
+            umax = float(np.nanmax(np.abs(model.u)))
+            if not np.isfinite(model.u).all() or umax > U_CEILING:
+                print(f"\n  DIVERGED at t+{model.time/3600:.2f} h "
+                      f"(max|u| {umax:.0f} m/s) -- stopping", flush=True)
+                info["stopped"] = f"diverged at {model.time/3600:.2f} h"
+                break
+            if deadline_s is not None and time.time() - t_start > deadline_s:
+                print(f"\n  DEADLINE reached at t+{model.time/3600:.2f} h "
+                      f"after {(time.time()-t_start)/60:.1f} min -- stopping",
+                      flush=True)
+                info["stopped"] = f"deadline at {model.time/3600:.2f} h"
+                break
+
         if progress and k and k % every_n == 0:
             el = time.time() - t_start
             rate = (k + 1) / el
@@ -273,8 +336,10 @@ def run_forecast(model, driver, relax, duration, dt=None, output_every=None,
                       f"max|sigma_dot| {np.abs(model.sigma_dot()).max():.2e}")
             if not np.isfinite(model.u).all():
                 print("  FORECAST DIVERGED -- stopping")
+                info["stopped"] = f"diverged at {model.time/3600:.2f} h"
                 break
 
+    info["wall_s"] = time.time() - t_start
     return snapshots
 
 
@@ -299,19 +364,26 @@ def main():
                         "almost certainly blow up; useful only for showing "
                         "why the balancing step exists.")
     p.add_argument("--out", default=None, help="Where to write forecast .npz")
+    p.add_argument("--deadline-min", type=float, default=None,
+                   help="Stop integrating after this many minutes of wall "
+                        "clock and write the hours reached (cycle budget)")
     args = p.parse_args()
 
     run_dir = Path(args.run_dir)
-    files = sorted(run_dir.glob("live_hrrr_f*.npz"),
-                   key=lambda q: int(q.stem.split("_f")[-1]))
+    files, source = driving_frames(run_dir)
     if not files:
-        print(f"No live_hrrr_f*.npz in {run_dir}. Run ingest_hrrr.py first.")
+        print(f"No obs_analysis_f*.npz or live_hrrr_f*.npz in {run_dir}. "
+              f"Run src/ingest_obs.py (or ingest_hrrr.py) first.")
         return 1
 
     print("NWP forecast")
     print(config.describe())
     print(resources.describe(RESOURCE_PLAN))
-    print(f"  driving frames : {len(files)} from {run_dir}\n")
+    print(f"  driving frames : {len(files)} from {run_dir} ({source})")
+    if len(files) == 1:
+        print("  boundaries     : held at the initial state for the whole run "
+              "(nothing observed later may enter)")
+    print()
 
     levels = PressureLevels(config.PRESSURE_LEVELS)
     # Number of SIGMA levels, deliberately the same count as the analysis has
@@ -392,8 +464,16 @@ def main():
     print(f"  timestep       : {model.max_dt():.1f} s "
           f"(external wave ~290 m/s sets this)\n")
 
+    info = {}
     snaps = run_forecast(model, driver, relax, args.hours * 3600,
-                         output_every=args.output_every * 3600)
+                         output_every=args.output_every * 3600,
+                         deadline_s=(None if args.deadline_min is None
+                                     else 60.0 * args.deadline_min),
+                         info=info)
+    if not snaps:
+        print(f"\nNo forecast hour completed ({info.get('stopped')}); "
+              f"nothing written.")
+        return 1
 
     out = Path(args.out or (run_dir / "forecast.npz"))
     np.savez_compressed(
@@ -407,11 +487,20 @@ def main():
         p_top=lev.p_top,
         terrain=terrain,
         lat=meta0.get("lat"), lon=meta0.get("lon"),
+        run_time=meta0.get("run_time", np.array("")),
+        source=np.array(source),
+        hours_requested=args.hours,
+        stopped=np.array(info.get("stopped", "")),
+        wall_s=info.get("wall_s", np.nan),
     )
-    print(f"\nWrote {len(snaps)} snapshots -> {out}")
-    print("Next: verify against observations "
-          "(src/verification) and archive the matches.")
-    return 0
+    print(f"\nWrote {len(snaps)} snapshots -> {out}  ({info.get('stopped')}, "
+          f"{info.get('wall_s', float('nan'))/60:.1f} min)")
+    print("Next: verify once the forecast window has closed "
+          "(src/verify_pending.py).")
+    stopped = info.get("stopped", "")
+    # Output is written in every case; the code says how the run ended, so the
+    # cycle script's log shows a cut-short or diverged run as such.
+    return 0 if stopped == "completed" else (2 if stopped.startswith("deadline") else 3)
 
 
 if __name__ == "__main__":

@@ -172,6 +172,22 @@ on itself.
 | 87 | *(pasted: `find` over `/data5/pierce`)* | **OBS** | five partial or nested copies; `/data5/pierce/NWP` and its nested `NWP_Deployment_Package/` both complete; the outer one chosen as root (top level, newer) |
 | 88 | *(pasted: `~/.bashrc`, `ls`, `.git`, crontab, manifest check)* | **OBS** | root already a git repo; the archive lives in the nested `NWP_Deployment_Package/data`; no crontab |
 | 89 | *(pasted: git 2.52.0, `origin`, `main` at `44068f2` tracking `origin/main`, three untracked copies)* | **OBS** | conversion unnecessary; `git pull --ff-only` works; "package unmerged" corrected (stale desktop clone) |
+| 90 | "can you do step 1" | ADM | desktop clone fetched; branch `sync/2026-09-22-server-git`, commit `3533cbf` (14 files), not pushed |
+| 91 | "looks good" | ADM | acknowledged; push and merge left to the human |
+| 92 | *(pasted: `python tools/daily.sh` → SyntaxError at `set -uo pipefail`)* | **OBS** | a bash script run with python; the guide's "run `tools/daily.sh`" did not say `bash` — now does |
+| 93 | "why is it downloading the hrrr" | ADM | explained: initial state + hourly lateral boundaries; boundaries are analyses valid in the forecast window, so scores will flatter a real-time forecast |
+| 94 | "lets not use the hrrr but real data like radar surface obs soundings etc..." | **DIR** | observation-driven initial state proposed; boundaries identified as the part obs cannot supply (`docs/DATA_ASSIMILATION.md` already says so); decision put to the human |
+| 95 | "the model will have to interpolate values from surface observation radar data and soundings near the area" | **DIR** | answer to the boundary question; read by the AI as boundaries from obs during the window (a hindcast) — wrongly, see 99 |
+| 96 | "The model should essentially take in all data sources it can that are reliable and model the atmosphere. If a source isnt availbe that hour then the model will skip it and use the data it has." | **DIR** | source registry with per-cycle availability; missing sources skipped and logged |
+| 97 | "for now we will only have 00z 06z 12z 18z  so each run can fully process 12-24 hours out" | **DIR** | four cycles a day, 12–24 h each |
+| 98 | "each run should be finished under 1.5 hours" | **CON** | wall-clock deadline per run |
+| 99 | "the model should be based off inital conditions so the 00z run uses 00z conditions and models from there" | **COR**, DIR | corrected the hindcast reading of 95: a true forecast, nothing observed after the cycle time; edges held to the initial analysis |
+| 100 | "if upper air soundings cant be found use the previous runs forecast" | **DIR** | 06Z/18Z and missing sites take the upper air from the previous run |
+| 101 | "After the forcasted time is over the model will be checked against surface observations for accuracy" | **MET** | verification deferred until the window closes, against surface obs, outside the 1.5 h budget |
+| 102 | *(plan approved)* | ADM | build started |
+| 103 | "I would like to get weather mcp installed" | ADM | options compared; project constraints stated (desktop only; model output may not enter or score a run) |
+| 104 | "lets do weather-mcp" | ADM | Node.js was missing; setup steps given |
+| 105 | "its added with basic tools" | ADM | worked once `api.weather.gov` was allowlisted; Open-Meteo (model data) left blocked |
 
 **Observation.** Prompt 53 is 18 words and is the most consequential
 instruction in the project. Before it, nine candidate causes had been patched

@@ -4,3 +4,4 @@ date,model,input,cache_read,cache_write,output,basis,note
 2026-09-06,claude-opus-5,210000,11900000,297500,252000,estimated,"boundary layer, convection, driver, verification (10 prompts x 14 steps, 85k ctx)"
 2026-09-12,claude-opus-5,192000,12160000,266000,243200,estimated,"radiation, sponge study, docs, sync (8 prompts x 16 steps, 95k ctx)"
 2026-09-22,claude-opus-5-5,60,2466759,135064,27762,measured,"first Claude Science session: context test, git on server, skills imported (from the app DB, before the closing reply)"
+2026-09-22,claude-opus-5-5,394,50021225,432980,194468,measured,"same session, observation-analysis build, weather-mcp setup (frame total minus the earlier row)"
