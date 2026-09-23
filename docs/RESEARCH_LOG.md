@@ -2346,8 +2346,9 @@ well under the 52-core ceiling.
 
 *Test C* (HRRR start, one frame, so frozen edges; HRRR terrain at stride 4 =
 10 km, 127 × 122): **diverged at 3.16 h.** max|u| went 53.6 → 65 → 68.6 →
-177 m/s, then non-finite. The initial divergence was 1.85e-3 → 5.1e-4 s⁻¹
-after filtering, five times the observation state's.
+177 m/s, then non-finite. The initial divergence was 1.85e-3 → 5.06e-4 s⁻¹
+after filtering: about 20× the same cycle's observation state (18Z,
+9.74e-5 → 2.53e-5), and about 5.5× the 2026-09-21 12Z one (→ 9.21e-5).
 
 **Correction to this entry and to P-56, found by checking the record rather
 than memory.** I wrote above that "the HRRR-seeded runs that reached 12/12 h"
