@@ -2397,6 +2397,42 @@ Test C does not separate the two, because its terrain was unsmoothed.
 by default (`--max-slope`), with the number of passes logged. The HRRR path
 is left unsmoothed, as a baseline.
 
+**Next two runs, predictions written first** (prompt 116):
+
+- **Live server cycle**, the latest 00/06/12/18Z with slope limiting on,
+  24 h requested. It passes hour 6 (every unsmoothed real run died by 6.31 h)
+  and stops between hours 12 and 16 with the second failure mode (theta
+  minimum falling first). It fails if it dies before hour 6.
+- **Locating the hour-13 failure** (desktop, test S state, 10-minute
+  snapshots). If the frozen edges drive it, the first runaway is within ~15
+  cells of an edge, or on the inflow (western) side. It fails if the first
+  growth is deep in the interior, far from every edge.
+
+**Located: the prediction holds.** Test S state, 5-minute snapshots,
+diverged at 13.72 h (22 min, desktop). The first > 20 % growth came between
+**11.59 and 11.67 h**: u from 50 to 64.5 m/s at level 15, row 84, **col 10,
+10 cells from the western edge**. That is exactly the inner boundary of the
+10-cell relaxation zone, on the inflow side of a westerly flow. In those
+5 minutes 667 points grew by > 5 m/s (u) and 473 (v), at edge distances of
+9–10 cells minimum and 19 median, in a ~3.7 Δx pattern. theta changed by up
+to 6.7 K and pi by 6.2 hPa: a violent, near-grid-scale event, not a slow
+drift. max|v| then grew steadily, 23 → 28 → 39 → 48 → 62 m/s over
+11.75–13.42 h.
+
+**Mechanism, stated before anything is changed.** For 11 h the interior
+evolves (the cold air visible in the falling theta minimum is advected
+eastward), while the relaxation zone keeps pulling the western edge back to
+the hour-0 state. On an inflow boundary, that is a growing mismatch
+concentrated where the relaxation weight goes from full to zero, which is
+where it broke. A frozen edge is only harmless while the interior still
+resembles hour 0. This is the cost P-53 predicted, arriving as an
+instability rather than a slow error.
+
+Candidate responses, none tried yet, all consistent with "nothing observed
+later may enter": a gentler and wider relaxation for a frozen driver, or
+relaxation only where flow enters, with the outflow edge left free. Each
+needs its own prediction before its run.
+
 
 ---
 

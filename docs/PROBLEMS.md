@@ -439,6 +439,8 @@ service, which is P-06 and is where this project's defects have always been.
 
 **Early failure explained (test S, 2026-09-23).** ETOPO at 12 km reaches a slope of 0.0536 (model measure), against 0.0086 for the steepest idealised terrain that survived. Smoothed to 0.0083 (11 passes, peak 1161 → 881 m), the same state survived to 13.7 h instead of 3.75 h. Ingest now limits slope to 0.0086 by default. **What remains** is a second failure at hours 13–14, seen on both flat and smoothed terrain: theta minimum falling and sigma_dot growing from hour ~9. Frozen edges are the first suspect.
 
+**Second failure located (2026-09-23).** The first growth came at 11.59–11.67 h, 10 cells from the western (inflow) edge: the inner boundary of the 10-cell relaxation zone. It is violent (theta ±6.7 K and pi 6.2 hPa in 5 min) and near grid scale. Mechanism: the frozen edge pulls the inflow boundary back to hour 0 while the interior has moved on. Candidates: a gentler/wider relaxation for a frozen driver, or inflow-only relaxation. Not yet tested.
+
 ---
 
 
