@@ -17,9 +17,9 @@ b660cbbe87e8813c      6530  docs/CAPABILITIES.md
 1bc65de9fd15e3cf     24015  docs/LEARNING_LOG.md
 6026c87422e8fbd4      4956  docs/METHODOLOGY.md
 1eeb6616080945dd      6884  docs/POSTPROCESSING.md
-f4df5a538299fb6e     58357  docs/PROBLEMS.md
-cdde2755dc3072ba     21340  docs/PROMPT_LOG.md
-2b29730a39ecd227    133338  docs/RESEARCH_LOG.md
+94f746f32e5ad018     59421  docs/PROBLEMS.md
+b5b1ee438ce30281     21684  docs/PROMPT_LOG.md
+48a9941d41d6f2a9    137254  docs/RESEARCH_LOG.md
 78c3574bb1b0dd88      4845  docs/STABILITY.md
 5e21eadfcb3af580     17345  docs/STRUCTURE.md
 a155ccce967d26bc      4340  docs/TOKEN_COST.md
@@ -34,11 +34,11 @@ f7863cb789e8bc6d      9672  README.md
 47aa4cc3ad27488e      5656  skills/nwp-sync/SKILL.md
 2a320286a0e4e36d      4159  src/analysis/barnes.py
 499407dc4a32f1d4     19147  src/analysis/build.py
-d76596feed45d49d      6292  src/analysis/geo.py
+7303a3c285f7ccc4      7321  src/analysis/geo.py
 b6393b189c4acceb      5162  src/analysis/probe_obs_blowup.py
 50cc15ad137812aa      3642  src/analysis/probe_terrain_b.py
 278a0618d15fb0ee     23632  src/analysis/sources.py
-5519aa0e0be07893     15928  src/analysis/test_analysis.py
+f09d6c9781c6af9b     16590  src/analysis/test_analysis.py
 bb8007b0358768a7      5716  src/analysis/testdata/asos_2026092112_sample.csv
 c803c5c247a1315d     11280  src/analysis/testdata/ndbc_41025_5day_sample.txt
 56b9789ccc829e04      5335  src/analysis/testdata/ndbc_active_sample.xml
@@ -113,7 +113,7 @@ b9ad5d54a3e1dd79      4813  src/dynamics/vertical.py
 11ea32d1050e29c3      7067  src/dynamics/visualize_instability.py
 e00f1f400c533801     21790  src/forecast.py
 6d3ddbafa4ac2307     20865  src/ingest_hrrr.py
-14f51e70ce0180a3      8721  src/ingest_obs.py
+69b14ed26fdc09f9      9258  src/ingest_obs.py
 dd33655f87aa1ed4       906  src/nwp_emulator_3d.py
 6889b97f7e3244f1       200  src/postproc/__init__.py
 7f55be875ea6eade      6545  src/postproc/bias_correction.py

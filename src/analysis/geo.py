@@ -122,6 +122,29 @@ def block_average(lat, lon, val, domain, ny, nx):
     return s / n
 
 
+def limit_slope(terrain, domain, max_slope=0.0086):
+    """
+    Smooth terrain until its slope is at most `max_slope` (the model's own
+    measure, sigma.terrain_slope). Returns (terrain, passes, slope).
+
+    WHY 0.0086 (P-56). It is the steepest idealised terrain this core has
+    been measured to survive 12/12 h over (2500 m ridge). Raw ETOPO at 12 km
+    reaches 0.0536, and every real-terrain run died within 4 h; the same
+    state smoothed to 0.0083 lived to 13.7 h. Operational models filter their
+    orography for the same reason.
+    """
+    sys.path.insert(0, str(ROOT / "src" / "dynamics"))
+    from grid import CGrid
+    from sigma import smooth_terrain, terrain_slope
+    ny, nx = terrain.shape
+    dy, dx = spacing_m(domain, ny, nx)
+    g = CGrid(nx, ny, dx, dy, edge_mode="replicate")
+    if terrain_slope(terrain, g) <= max_slope:
+        return terrain, 0, terrain_slope(terrain, g)
+    out, n, s = smooth_terrain(terrain, g, target_slope=max_slope, max_passes=200)
+    return np.clip(out, 0.0, None), n, s
+
+
 def load_terrain(domain, ny, nx, cache_dir, fetcher=None, verbose=True):
     """
     Terrain (m) on the grid: from the cache, or fetched once from ERDDAP.

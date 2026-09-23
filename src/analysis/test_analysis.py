@@ -327,6 +327,17 @@ def test_driving_frames_refuses_mixed_sources():
            src == "observations" and len(files) == 1 and mixed, f"{src}, refused mixed: {mixed}")
 
 
+def test_slope_limit_reaches_target():
+    ny, nx = geo.grid_shape(config.DOMAIN, 40_000)
+    lat, lon = geo.cell_centres(config.DOMAIN, ny, nx)
+    ridge = 1500.0 * np.exp(-((lon + 74.0) / 0.4) ** 2)          # a steep ridge
+    out, n, s = geo.limit_slope(ridge, config.DOMAIN, 0.0086)
+    flat, n0, _ = geo.limit_slope(np.zeros((ny, nx)), config.DOMAIN, 0.0086)
+    report("terrain is smoothed to the slope limit; flat terrain is untouched (P-56)",
+           s <= 0.0086 and n > 0 and n0 == 0 and abs(out.mean() - ridge.mean()) < 5.0,
+           f"{n} passes -> slope {s:.4f}, peak {ridge.max():.0f} -> {out.max():.0f} m")
+
+
 def test_verification_waits_for_the_window():
     import tempfile
     from verify_pending import pending
@@ -360,7 +371,7 @@ if __name__ == "__main__":
                test_forecast_stops_inside_the_hour_on_blowup,
                test_forecast_deadline_keeps_hours_reached,
                test_driving_frames_refuses_mixed_sources,
-               test_verification_waits_for_the_window):
+               test_verification_waits_for_the_window, test_slope_limit_reaches_target):
         try:
             fn()
         except Exception as e:

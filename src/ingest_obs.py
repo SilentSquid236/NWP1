@@ -127,6 +127,9 @@ def main():
     p.add_argument("--spacing-km", type=float, default=12.0)
     p.add_argument("--no-previous", action="store_true",
                    help="ignore the previous run (cold start)")
+    p.add_argument("--max-slope", type=float, default=0.0086,
+                   help="smooth terrain to at most this slope (P-56); "
+                        "0 disables")
     args = p.parse_args()
 
     cycle = None
@@ -181,8 +184,15 @@ def main():
 
     ny, nx = geo.grid_shape(domain, args.spacing_km * 1000.0)
     terrain, tsrc = geo.load_terrain(domain, ny, nx, config.DATA_ROOT / "static")
+    raw_max = terrain.max()
+    if args.max_slope > 0:
+        terrain, n_pass, slope = geo.limit_slope(terrain, domain, args.max_slope)
+        smooth_msg = (f"; slope limited to {slope:.4f} in {n_pass} passes, "
+                      f"peak {raw_max:.0f} -> {terrain.max():.0f} m")
+    else:
+        smooth_msg = "; NOT slope-limited (--max-slope 0)"
     print(f"  terrain        : {terrain.min():.0f}-{terrain.max():.0f} m on "
-          f"{ny}x{nx} ({tsrc})")
+          f"{ny}x{nx} ({tsrc}){smooth_msg}")
 
     prev, prev_rh, prev_an, prev_msg = (None, None, None, "cold start requested") \
         if args.no_previous else previous_run(cycle)

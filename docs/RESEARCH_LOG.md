@@ -2326,6 +2326,77 @@ diagnostic only, in directories named `*_test*`, never archived or verified):
   frozen edges are harmless over terrain, C survives 12 h; if C dies early,
   the frozen edges are part of P-56 after all.
 
+**Tests on the server, 2026-09-23 00Z–01Z** (prompt 115).
+
+*Benchmark.* torch 2.8.0 against NumPy on 20 × 97 × 110 float64:
+
+| threads | Laplacian | element-wise chain | vertical cumsum |
+|---|---|---|---|
+| 1 | 1.0× | 1.3× | 1.4× |
+| 8 | **13.8×** | 6.6× | **6.4×** |
+| 26 | 12.4× | **8.9×** | 3.2× |
+
+**The prediction (≤ 3× for the Laplacian and the cumsum) failed**, and
+decisively. At 8 threads all three operations are 6–14× faster, so a torch
+port of the core is worth doing. 8 threads is the sweet spot for the stencils,
+well under the 52-core ceiling.
+
+*Test B* did not run: `probe_terrain_b.py` had not been pushed. It is now in
+26eb43a.
+
+*Test C* (HRRR start, one frame, so frozen edges; HRRR terrain at stride 4 =
+10 km, 127 × 122): **diverged at 3.16 h.** max|u| went 53.6 → 65 → 68.6 →
+177 m/s, then non-finite. The initial divergence was 1.85e-3 → 5.1e-4 s⁻¹
+after filtering, five times the observation state's.
+
+**Correction to this entry and to P-56, found by checking the record rather
+than memory.** I wrote above that "the HRRR-seeded runs that reached 12/12 h"
+differed from the observation runs. **There were no such runs.** The
+2026-09-04 entry says so plainly: the sigma core became reachable from real
+data that day, but "a real forecast has [not] been run". Every 12/12 result
+in this project is on idealised states over idealised terrain. Test C is the
+first forecast this core has ever made from a real analysis, and it dies
+sooner than the observation runs. So P-56 is not an observation problem: **no
+real state over real terrain has survived.** The flat-ground run (12 h) is
+the only real-state run that has. That is lesson L3 (suspect the test before
+the model) applied to a baseline: the comparison run P-56 was measured
+against had never happened.
+
+**Mechanism, written down before the next run.** The project measured, on
+2026-09-0x, that survival over idealised terrain tracks slope (forced ascent
+w = U × slope), not height: 2500 m with a maximum slope of 0.0086 survived
+12/12. Real terrain at 12 km is far steeper. ETOPO block-averaged has a **maximum
+slope of 0.0536** by the model's own measure (`sigma.terrain_slope`,
+one-sided differences, the measure the 0.0086 was taken with; 0.0316 with
+centred differences), **6.2× beyond anything shown to survive**. The two
+failure points sit on slopes of 0.011 and 0.013 (centred).
+
+Test S: the same 2026-09-21 12Z observations (blend on), over ETOPO smoothed
+with the model's own `smooth_terrain` until the maximum slope is ≤ 0.0086,
+analysis rebuilt on that terrain. **Prediction: it passes hour 6.** It fails
+if it dies before hour 5, with v at a low level over terrain again. If it
+passes, the operational answer is to smooth real orography the way
+operational centres do, and the slope limit becomes a measured parameter.
+
+**Test S result: the prediction holds.** `smooth_terrain` needed 11 passes to
+bring the maximum slope from 0.0536 to 0.0083; the highest cell fell from
+1161 to 881 m, and the domain mean did not change. The run held max|u| at
+46.1 m/s and **survived to 13.70 h** (unsmoothed: 3.75 h), 21.4 min on the
+desktop. **Slope is the mechanism of the early failure.**
+
+It still died, and the way it died matches the flat-ground run: minimum theta
+drifting down from hour 8 (275.2 → 271.2 K by hour 13), max|sigma_dot|
+growing roughly fourfold from hour 9, then a runaway at 13.7 h. Two runs, one
+flat and one smoothed, both fail between hours 13 and 14, well after the
+edges have had time to act on the interior (air crosses ~860 km in 12 h).
+That makes the frozen edges the first suspect for this SECOND failure mode.
+Test C does not separate the two, because its terrain was unsmoothed.
+
+**Kept:** ingest now limits the slope of the terrain it writes, to 0.0086
+by default (`--max-slope`), with the number of passes logged. The HRRR path
+is left unsmoothed, as a baseline.
+
+
 ---
 
 ## Recording for the AI-collaboration study

@@ -197,6 +197,7 @@ on itself.
 | 112 | *(pasted: server cycle 2026-09-22 18Z log, forecast section)* | **OBS** | first server run: ingest ~2 min, terrain fetched, 2.1 steps/s (1.7 min per forecast hour); diverged at 6.31 h from a near-calm start — P-56 now has two cases |
 | 113 | "if we can run at a speed faster tahn 40 minutes we can use more cores than 1" | **CON**, DIR | permission to use more than one core for speed; profiled first, and a thread-scaling benchmark written for the server before any port |
 | 114 | "lets do that" | DIR | P-56 test A (surface blend off; refuted), then flat ground (survives 12 h: terrain implicated) and below-ground extrapolation (refuted), each predicted first |
+| 115 | *(pasted: server `bench_threads.py`, test C log, test B missing)* | **OBS** | torch 6–14× at 8 threads (prediction refuted: port worth it); test C (HRRR, frozen edges) died at 3.16 h, which exposed that no real-data forecast had ever survived; slope mechanism written down; test S (slope-limited terrain) then ran: 3.75 → 13.7 h |
 
 **Observation.** Prompt 53 is 18 words and is the most consequential
 instruction in the project. Before it, nine candidate causes had been patched
