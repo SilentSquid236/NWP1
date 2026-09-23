@@ -135,6 +135,7 @@ NOTES = {
     "src/analysis/barnes.py": "successive-correction analysis of increments against a first guess",
     "src/analysis/geo.py": "the forecast's grid, bilinear sampling, ETOPO terrain via ERDDAP",
     "src/analysis/probe_obs_blowup.py": "P-56: where the first observation-built forecast dies",
+    "src/analysis/probe_terrain_b.py": "P-56 test B: same observations over HRRR terrain (diagnostic only)",
     "src/analysis/testdata/asos_2026092112_sample.csv": "live IEM ASOS payload, every 10th row",
     "src/analysis/testdata/ndbc_41025_5day_sample.txt": "live NDBC 5-day file, head",
     "src/analysis/testdata/ndbc_active_sample.xml": "live NDBC station list, 25 stations",

@@ -59,6 +59,7 @@ NWP_Deployment_Package/
 |   |   |-- build.py                      # first guess, sounding superobs, Barnes increments, hydrostatic heights
 |   |   |-- geo.py                        # the forecast's grid, bilinear sampling, ETOPO terrain via ERDDAP
 |   |   |-- probe_obs_blowup.py           # P-56: where the first observation-built forecast dies
+|   |   |-- probe_terrain_b.py            # P-56 test B: same observations over HRRR terrain (diagnostic only)
 |   |   |-- sources.py                    # one adapter per observation source; missing sources skipped and logged
 |   |   `-- test_analysis.py              # suite for analysis.py
 |   |-- dynamics/                      # the model itself

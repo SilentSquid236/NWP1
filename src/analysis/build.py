@@ -313,6 +313,39 @@ def blend_surface(fields, Z, terrain, obs, lat, lon, domain,
     return fields, info
 
 
+def extrapolate_below_ground(fields, Z, terrain, pmsl, levels_pa, passes=2):
+    """
+    Replace values on pressure levels that lie BELOW the ground.
+
+    Nothing observes the 1000 hPa level under 800 m of terrain, yet
+    pressure_to_sigma interpolates the lowest sigma levels between the
+    pressure level above the ground and the one below it. HRRR fills those
+    levels smoothly; an observation analysis leaves a first guess plus
+    increments from distant stations there (P-56). Tested 2026-09-22 as the
+    cause of P-56 and REFUTED (the run still died at 3.75 h), so it is off by
+    default: a change that does not move the outcome it was proposed for is
+    not kept. Temperature is continued
+    downward along the standard lapse rate from the lowest level above the
+    ground, winds and humidity are held, and heights are re-integrated,
+    because they depend on every level's temperature.
+    """
+    L = fields["TMP"].shape[0]
+    for _ in range(passes):
+        above = Z > terrain[None]
+        k0 = np.argmax(above, axis=0)                     # first level above ground
+        k0 = np.where(above.any(axis=0), k0, L - 1)
+        idx = k0[None]
+        Tk0 = np.take_along_axis(fields["TMP"], idx, 0)[0]
+        Zk0 = np.take_along_axis(Z, idx, 0)[0]
+        below = np.arange(L)[:, None, None] < k0[None]
+        fields["TMP"] = np.where(below, Tk0[None] + LAPSE * (Zk0[None] - Z), fields["TMP"])
+        for v in ("RH", "UGRD", "VGRD"):
+            hold = np.take_along_axis(fields[v], idx, 0)[0]
+            fields[v] = np.where(below, hold[None], fields[v])
+        Z = hydrostatic_heights(fields["TMP"], fields["RH"], pmsl, levels_pa)
+    return fields, Z, int(below.sum())
+
+
 # ---------------------------------------------------------------------------
 # Driver
 # ---------------------------------------------------------------------------
@@ -325,7 +358,8 @@ def first_guess_from_analysis(features):
 
 def build_analysis(cycle, observations, terrain, domain, levels_hpa,
                    previous_forecast=None, previous_rh=None,
-                   previous_analysis=None):
+                   previous_analysis=None, surface_blend=True,
+                   below_ground="none"):
     """
     Returns (features [C, L, Y, X] float32, meta dict).
 
@@ -375,9 +409,20 @@ def build_analysis(cycle, observations, terrain, domain, levels_hpa,
                          "be anchored, and a run without an anchor is not "
                          "an analysis")
     Z = hydrostatic_heights(fields["TMP"], fields["RH"], pmsl, levels_pa)
-    fields, sfc_info = blend_surface(fields, Z, terrain, used, lat, lon, domain)
+    if surface_blend:
+        fields, sfc_info = blend_surface(fields, Z, terrain, used, lat, lon, domain)
+    else:
+        # Diagnostic switch (P-56 test A): heights still anchored to the
+        # analysed sea-level pressure, but no surface T/RH/wind increments.
+        sfc_info = {"disabled": True}
     fields["HGT"] = hydrostatic_heights(fields["TMP"], fields["RH"], pmsl,
                                         levels_pa)
+    n_below = 0
+    if below_ground == "extrapolate":
+        fields, fields["HGT"], n_below = extrapolate_below_ground(
+            fields, fields["HGT"], terrain, pmsl, levels_pa)
+    sfc_info = dict(sfc_info, below_ground_points=n_below,
+                    below_ground=below_ground)
 
     feats = np.stack([fields[c] for c in CHANNELS]).astype(np.float32)
     stations = defaultdict(set)

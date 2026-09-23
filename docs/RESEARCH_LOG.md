@@ -2228,6 +2228,104 @@ written before it runs:** torch will be ≤ 1.5× NumPy at 1 thread and will not
 exceed 3× at any thread count for the Laplacian and the vertical cumsum. It
 fails if some thread count gives > 3× on all three operations.
 
+**P-56 test A, predictions written before the run** (prompt 114: "lets do
+that"). The 2026-09-21 12Z analysis, rebuilt from the same archived
+observations with the surface blend switched off, so the lowest kilometre
+comes from the soundings and the first guess only. Heights keep the same
+sea-level-pressure anchor. Same terrain, same frozen edges, same 24 h
+request, desktop.
+
+- A1: if the blend is the cause, the run passes hour 6 (the blended run died
+  at 3.75 h), and max|v| at level 17 near row 82, col 89 stays under 20 m/s
+  through hour 4.
+- A2: if the blend is not the cause, it dies before hour 5, with v running
+  away first at a low level over terrain.
+
+Either way, only this one thing changes.
+
+**Test A result.** Diverged at **4.10 h** (blended: 3.75 h). The 5-minute probe
+puts the first > 20 % growth at 2.84–2.92 h, **v at level 17**, row 47,
+col 53: central New York near the Catskills, **712 m** of terrain, 47 cells
+from every edge. **A2 holds; A1 fails.** The surface blend is not the cause.
+Removing it moved the first growth from northern Maine to central New York
+and delayed it by about 20 minutes, but the signature is the same: the
+meridional wind, third level above the ground, over 700–800 m of terrain,
+nowhere near an edge.
+
+Two side observations:
+
+- The blended run's lowest-level temperatures differed from the unblended
+  run's by up to 10.4 K, yet at the failure column the blend changed T by
+  only 0.5 K. Superadiabatic layers at 1000–975 hPa occur in both states
+  (676 columns blended, 1243 unblended, of 10 670). The blend removes about
+  half of them rather than adding any.
+- The probe (4.2 h requested) and the forecast (24 h requested) of the same
+  state diverged at 3.94 and 4.10 h. `run_forecast` sets dt = duration /
+  n_steps, so a different requested length is a slightly different dt, and
+  in this regime that is not a neutral change (compare the chunking caution
+  under P-40).
+
+**Next discriminator** (not yet run): the same observation state over flat
+ground. If the flat run passes hour 6, the failure is the state's
+interaction with terrain, and HRRR terrain (test B) and slope limits become
+the targets. If it still dies, terrain is ruled out and the frozen edges
+(test C) are next.
+
+**Flat-ground result** (same observations, same blend, terrain set to 0,
+24 h requested, desktop, 20.9 min). max|u| held at 46.0 m/s through **12 h**;
+the minimum theta fell from 279.8 to 276.1 K between hours 8 and 10. At
+**13.0 h** the state went non-finite in a single hour (NumPy warned of an
+invalid value in a power: a negative base, i.e. a pressure or column depth
+going negative), with no gradual wind growth first. **Terrain is implicated:**
+the same state dies at 3.75 h over terrain and lives 12 h without it. That
+leaves the frozen edges as a secondary suspect at most, and only for the
+separate hour-13 failure, which has a different signature (sudden non-finite,
+not a v runaway). The 12/12 h flat-ground capability measured before
+2026-09-22 was never tested past hour 12, so hour 13 is new ground for any
+initial state.
+
+**Mechanism to test next, written down before changing anything** (two
+suspects have now been checked, per the method: A the blend, F the
+terrain). An HRRR state has sensible values at pressure levels BELOW the
+ground (NCEP extrapolates them smoothly). The observation analysis does not:
+under 700–800 m of terrain, the 1000–925 hPa levels hold a first guess plus
+Barnes increments from distant stations, never observed there. If
+`pressure_to_sigma` draws on those levels when it builds the lowest sigma
+levels over terrain, the state there is unconstrained, and level 17 over
+700–800 m is exactly where it would show. Test: replace below-ground
+pressure-level values with a smooth downward extrapolation from the lowest
+level above ground (T along a standard lapse, winds held), and rerun the
+blended 12Z state over ETOPO. Prediction: it passes hour 6. Fails if it dies
+before hour 5 at level 17 again.
+
+**Result: refuted.** The below-ground extrapolation changed 7507 values, by
+up to 7.55 K, all under the terrain (nothing above ground moved). The run
+diverged at **3.75 h**, to the step the same as without it (553 m/s).
+Survival did not move at all, so the switch is kept in the code but **off by
+default**.
+
+That is two mechanisms tested and refuted (the surface blend, below-ground
+values), and one discriminator positive (flat ground survives 12 h). Per the
+method, no third guess is made from the desktop. What still differs between
+the observation runs that die over terrain and the HRRR runs that survived
+over terrain is the terrain field itself (ETOPO block-averaged vs HRRR's),
+and the balance of the flow near the ground over it. Test B (HRRR terrain
+under the observation state) separates the two, and needs the server.
+
+**Tests B and C, predictions written before they run** (server, the
+2026-09-22 18Z case, which died at 6.31 h over ETOPO; HRRR used as a
+diagnostic only, in directories named `*_test*`, never archived or verified):
+
+- **B** (`src/analysis/probe_terrain_b.py`): the same archived observations,
+  rebuilt over HRRR terrain block-averaged onto the same cells. If the
+  terrain field is the cause, it passes hour 6.31. If it still dies before
+  hour 7, the terrain field is ruled out and the flow's balance over terrain
+  is what is left.
+- **C**: an HRRR initial state with ONE frame, so its edges are frozen like
+  the observation runs'. The HRRR runs that reached 12 h had hourly edges. If
+  frozen edges are harmless over terrain, C survives 12 h; if C dies early,
+  the frozen edges are part of P-56 after all.
+
 ---
 
 ## Recording for the AI-collaboration study

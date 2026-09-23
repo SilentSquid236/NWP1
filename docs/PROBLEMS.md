@@ -429,6 +429,12 @@ service, which is P-06 and is where this project's defects have always been.
 
 **Second case, server, 2026-09-22 18Z.** Standard-atmosphere first guess (no soundings, no previous run), initial max|u| 6.2 m/s; the wind grew steadily from hour 3 (10 → 18 → 15 → 38 m/s) and reached 435 m/s at 6.31 h. A near-calm start dying rules out jet strength. Shared by both cases, and not by the HRRR runs that survived 12 h: the observation-built lower atmosphere (surface blend), ETOPO block-averaged terrain, and frozen single-frame edges.
 
+**Ruled out, test A (2026-09-22).** The surface blend: with it switched off the run still diverged, at 4.10 h, first growing at 2.84–2.92 h in v at level 17 over 712 m of terrain in central NY, 47 cells from every edge.
+
+**Terrain implicated (2026-09-22).** The same state over flat ground held max|u| at 46 m/s to 12 h, then went non-finite at 13.0 h (a sudden negative pressure or column depth, a different signature). Next suspect: below-ground pressure-level values in the observation analysis, which HRRR supplies smoothly and the analysis does not. Test and prediction in the research log.
+
+**Ruled out, below-ground values (2026-09-22).** Extrapolating the 7507 pressure-level values under the terrain (up to 7.55 K) left the run dying at exactly 3.75 h. Next: test B, HRRR terrain under the observation state (server).
+
 ---
 
 
