@@ -2433,6 +2433,37 @@ later may enter": a gentler and wider relaxation for a frozen driver, or
 relaxation only where flow enters, with the outflow edge left free. Each
 needs its own prediction before its run.
 
+**Server live cycle (2026-09-23 06Z, slope-limited terrain, 0–881 m).**
+It ran unattended through `daily.sh` and diverged at **16.31 h** (max|u|
+438 m/s) after 27.9 min, at 2.0 steps/s. The predictions, scored:
+
+| Prediction | Result |
+|---|---|
+| Passes hour 6 | **holds** (it passed hour 15) |
+| Stops at 12–16 h | **marginal miss**: 16.31 h, just past the window |
+| The theta minimum falls first | **refuted**: it held at 278.6 K throughout |
+
+The failure was abrupt, not a drift. max|u| went 15.8 m/s at 15 h, 36.5 at
+16 h, then 438 at 16.31 h, and max|sigma_dot| rose fourfold in that hour.
+So a falling theta minimum is not a precursor in general. In the 12Z case it
+was cold advection, which this weak-flow night did not have.
+
+**A separate finding in the same log: the 06Z state has almost no wind.**
+max|u| was 8.5 m/s before initialisation and 6.4 after, anywhere in the
+column. A real September atmosphere over the Northeast has 20–40 m/s near
+200–250 hPa. There are no soundings at 06Z, and on the fresh AINWP root no
+00Z forecast existed, so the first guess must have come from lower in the
+fallback chain. Its winds aloft are then whatever the surface observations
+and the fallback supply, which is close to nothing. `availability.json`
+records which one was used. Once cycles run back to back, each 06/18Z run
+starts from the previous run's +6 h. This run could not, and its forecast
+is skilful only near the ground at best.
+
+Next discriminator (prediction first): `tools/locate_growth.py` on the
+saved snapshots. If this is the same frozen-edge failure, the largest
+change between 15 and 16 h lies 8–12 cells from an edge, at the inner
+boundary of the relaxation zone. It fails if it lies more than 20 cells in.
+
 
 ---
 

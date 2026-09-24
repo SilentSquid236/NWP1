@@ -144,6 +144,7 @@ NOTES = {
     "src/analysis/testdata/raob_network.geojson": "live IEM RAOB station table, analysis box",
     "tools/checklayout.py": "checks for src/src nesting, missing and duplicate modules",
     "tools/pull.sh": "update from GitHub over curl -- no git needed on the server",
+    "tools/locate_growth.py": "where a saved forecast starts to run away: largest change per snapshot, edge distance",
     "tools/manifest.py": "writes and checks docs/MANIFEST.txt, file by file",
     "tools/tokens.py": "token ledger: billed cost vs API-equivalent shadow price",
     "tools/stale.py": "flags measurements whose file moved after the number was taken",

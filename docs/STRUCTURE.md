@@ -155,6 +155,7 @@ NWP_Deployment_Package/
 |   |-- bench_threads.py                  # numpy vs torch thread scaling on model-sized arrays, before any port
 |   |-- checklayout.py                    # checks for src/src nesting, missing and duplicate modules
 |   |-- daily.sh                          # one forecast cycle from cron (obs -> analysis -> forecast); `verify` mode scores closed windows
+|   |-- locate_growth.py                  # where a saved forecast starts to run away: largest change per snapshot, edge distance
 |   |-- manifest.py                       # writes and checks docs/MANIFEST.txt, file by file
 |   |-- newlog.py                         # append a dated research-log entry from the template
 |   |-- problem.py                        # adds to and audits docs/PROBLEMS.md
