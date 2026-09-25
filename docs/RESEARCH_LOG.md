@@ -2579,7 +2579,7 @@ snapshots, run side by side:
 | | O1: no relaxation | 06Z run (width 10, alpha 1) | O2: width 10, alpha 0.1 |
 |---|---|---|---|
 | Outcome | diverged **6.67 h** (163 m/s) | diverged 16.31 h | diverged **21.67 h** (154 m/s) |
-| Edge distance of the largest change | 0–2 in 43 of 50 lines, 3–4 in 7 | 10–13 in 30 of 30 | 8–13 in 149 of 170; 25–43 in 21 (all by 7.75 h, ≤ 1.1 m/s) |
+| Edge distance of the largest change | 0–2 in 43 of 50 lines, 3–4 in 7 | 10–13 in 30 of 30 | 8–13 in 149 of 170; the other 21 at 5–7, 14–18 or 26–43 (all by 7.75 h, ≤ 1.6 m/s) |
 | Minimum edge distance of points changing > 5 m/s | 0 in 22 of 22 intervals | 10–11 | 9–10 in 45 of 54, 8 in 2, 11–12 in 7 |
 | Where it ran away | southern edge, rows 0–4, cols 53–109, over the sea (0 m) | south-west corner, 540–880 m | south-west corner, rows 9–14, cols 9–14, 660–880 m |
 
