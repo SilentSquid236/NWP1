@@ -35,7 +35,7 @@ MODEL_LABEL = "NWP1 12 km (dry sigma model, observation-only analysis)"
 PRODUCTS = {
     "mslp": ("Surface", "MSLP & 1000-500 mb thickness", ["mslp", "thick"]),
     "tlow": ("Surface", "Temperature (lowest level)", ["t_low_f"]),
-    "tchg": ("Surface", "12-hr temperature change", ["t_low_f", "dt12_f"]),
+    "tchg": ("Surface", "1-hr temperature change", ["t_low_f", "dt1_f"]),
     "wlow": ("Surface", "Wind (lowest level)", ["wind_low"]),
     "t925": ("Upper air", "925 mb temp, height, wind", ["t925", "z925", "wind925"]),
     "t850": ("Upper air", "850 mb temp, height, wind", ["t850", "z850", "wind850"]),
@@ -294,13 +294,15 @@ def product_tlow(m, d, sub, note):
 
 
 def product_tchg(m, d, sub, note):
-    fig, ax = m.frame("12-hr temperature change (\u00b0F), lowest model level", sub, *note)
-    dt = d["dT12"] * 9 / 5
-    lv = np.arange(-30, 31, 2)
+    fig, ax = m.frame("1-hr temperature change (\u00b0F), lowest model level", sub, *note)
+    dt = d["dT1"] * 9 / 5
+    lv = np.arange(-8, 8.25, 0.5)
     cf = ax.contourf(m.X, m.Y, dt, levels=lv, cmap="RdBu_r", extend="both", zorder=1)
-    m.contour(ax, dt, [v for v in lv if v != 0 and v % 10 == 0], color="0.25", lw=0.5, fs=6.5)
+    m.contour(ax, dt, [-4, -2, 2, 4], color="0.25", lw=0.5, fs=6.5)
     m.boundaries(ax)
-    m.colorbar(fig, cf, "\u00b0F change over the previous 12 h", ticks=np.arange(-30, 31, 10))
+    m.colorbar(fig, cf, "\u00b0F change over the previous hour"
+               + ("   (F001: from the analysis to the first model hour)" if round(d.get("hour", -1)) == 1 else ""),
+               ticks=np.arange(-8, 9, 2))
     return fig
 
 

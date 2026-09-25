@@ -2711,7 +2711,9 @@ SHARPpy-style sounding; follow Pivotal's parameters. Changes:
   product it was.
 - **Pivotal parameters.** Added 925 mb temperature/height/wind, 700 mb
   vertical velocity (kinematic, -µb/s), 300 mb jet and a 12-hr temperature
-  change. Units are mb and kt, °F at the surface and °C aloft.
+  change. The 12-hr change became a 1-hr change at prompt 126, drawn from
+  F001 on (F001 is the analysis-to-first-hour step), on a ±8 °F scale in
+  0.5 °F steps. Units are mb and kt, °F at the surface and °C aloft.
 - **Hover and sounding.** Per-hour JavaScript data files (int16, a scale
   and offset per field, loaded with script tags so file:// works): 32–33
   map fields at every grid point, and model columns at every second point.

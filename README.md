@@ -70,7 +70,7 @@ python src/make_maps.py --run-dir data/tensors_3d/obs_20260923_06
 ```
 
 A Pivotal-style viewer. Products are listed on the left:
-- Surface: MSLP and thickness; lowest-level temperature, its 12-hr change,
+- Surface: MSLP and thickness; lowest-level temperature, its 1-hr change,
   and wind.
 - Upper air: 925, 850 and 700 mb temperature, height and wind; 700 mb
   vertical velocity; 500 mb vorticity; 300 and 250 mb jet.

@@ -176,7 +176,7 @@ def test_every_product_renders():
          "sigma": lev.sigma, "p_top": lev.p_top, "terrain": terrain,
          "hours": np.array([1.0]), "lat": lat, "lon": lon, "dx": dx, "dy": dy}
     d = derive.snapshot(f, 0)
-    d["dT12"] = np.full(terrain.shape, -2.0)
+    d["dT1"] = np.full(terrain.shape, -0.8)
     m = render.Mapper(lat, lon, {"coast": (np.array([-75.0, -72.0, np.nan], np.float32),
                                            np.array([40.0, 41.0, np.nan], np.float32))})
     sub = render.time_labels(__import__("datetime").datetime(2026, 9, 21, 12), 1)

@@ -165,7 +165,7 @@ def write_js(path, var, hour, obj):
                  f"window.{var}[{hour}] = {json.dumps(obj)};\n")
 
 
-def hover_channels(d, dt12=None):
+def hover_channels(d, dt1=None):
     """Every map field at one hour, in display units (see HOVER_META)."""
     kt = render.MS_TO_KT
     tf = lambda K: (K - 273.15) * 9 / 5 + 32
@@ -175,8 +175,8 @@ def hover_channels(d, dt12=None):
           ("omega700", -d["omega700"] * 10.0), ("avort500", d["avort500"] * 1e5)]
     if "thick_1000_500" in d:
         ch.append(("thick", d["thick_1000_500"] / 10.0))
-    if dt12 is not None:
-        ch.append(("dt12_f", dt12 * 9 / 5))
+    if dt1 is not None:
+        ch.append(("dt1_f", dt1 * 9 / 5))
     if "T_2m" in d:
         ch.append(("t2m_f", tf(d["T_2m"])))
     for L in (925, 850, 700, 500, 300, 250):
@@ -190,7 +190,7 @@ def hover_channels(d, dt12=None):
 
 HOVER_META = {   # name: (label, unit, decimals); winds are shown as dir/speed
     "terrain": ("Terrain", "m", 0), "mslp": ("MSLP", "mb", 1), "thick": ("1000-500 thickness", "dam", 0),
-    "t_low_f": ("Temperature (lowest level)", "\u00b0F", 0), "dt12_f": ("12-hr change", "\u00b0F", 1),
+    "t_low_f": ("Temperature (lowest level)", "\u00b0F", 0), "dt1_f": ("1-hr change", "\u00b0F", 1),
     "t2m_f": ("2 m temperature", "\u00b0F", 0), "wind_low": ("Wind (lowest level)", "kt", 0),
     "omega700": ("700 mb vertical velocity", "-\u00b5b/s", 1), "avort500": ("500 mb abs. vorticity", "10\u207b\u2075 s\u207b\u00b9", 1),
     **{f"t{L}": (f"{L} mb temperature", "\u00b0C", 1) for L in (925, 850, 700, 500, 300, 250)},
@@ -305,14 +305,15 @@ def main():
         d = (derive.analysis_snapshot(an, terrain, dx, dy, lat, z_low) if kind == "a"
              else derive.snapshot(f, i))
         t_low[hour] = d["T_low"]
-        dt12 = t_low[hour] - t_low[hour - 12] if (hour - 12) in t_low else None
-        if dt12 is not None:
-            d["dT12"] = dt12
+        prev = hour - a.every
+        dt1 = t_low[hour] - t_low[prev] if prev in t_low and a.every == 1 else None
+        if dt1 is not None:
+            d["dT1"] = dt1
         sub = render.time_labels(cycle, hour)
         right = "hour 0 = the analysis" if kind == "a" else (
             f"run stopped: {stopped}" if stopped else "")
         for key, fn in render.FORECAST_PRODUCTS.items():
-            if not want(key) or (key == "tchg" and dt12 is None):
+            if not want(key) or (key == "tchg" and dt1 is None):
                 continue
             fig = fn(m, d, sub, (left, right))
             fig.savefig(out / f"{key}_f{hour:03d}.png", dpi=render.DPI); plt.close(fig); n_img += 1
@@ -330,7 +331,7 @@ def main():
             for key, fig in figs:
                 fig.savefig(out / f"{key}_f000.png", dpi=render.DPI); plt.close(fig); n_img += 1
         if not a.no_data:
-            write_js(out / "data" / f"h{hour:03d}.js", "NWPH", hour, pack(hover_channels(d, dt12)))
+            write_js(out / "data" / f"h{hour:03d}.js", "NWPH", hour, pack(hover_channels(d, dt1)))
             snd = ({"stride": SOUNDING_STRIDE, "nx": int(np.ceil(lat.shape[1] / SOUNDING_STRIDE)),
                     "kind": "plev", "levels_hPa": [float(x) for x in an["levels_hPa"]],
                     **pack(sounding_channels_plev(an))} if kind == "a" else

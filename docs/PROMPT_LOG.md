@@ -208,6 +208,7 @@ on itself.
 | 123 | "List of problems: Too many station plots, The whole map should be in bounds even if that means plotting off screen points to extend bounds, only time is F000, Valid times are off on some products, Need to be able to hover and get a value, clicking should show a model sharppy sounding  Suggestion mimic pivotal weather parameters" | **OBS**, DIR | first real use of the maps. Found P-58 (only F000: snapshots not on whole hours); frame filled; stations thinned; Pivotal-style titles with Eastern time; 4 new products; hover readout and click-for-sounding added |
 | 124 | *(attached: `test_o_result.txt`, test O logs and locate output)* | **OBS** | O1 (no relaxation) refuted: dies at 6.67 h at the physical edge, so a zone is needed; O2 (alpha 0.1) held: 21.67 h, still failing about 10 cells in. Pull strength is the strongest control found. Test P designed (width 15 + alpha 0.1; alpha 0.03) |
 | 125 | *(attached: `maps.zip`, the real 06Z 2026-09-23 maps with error maps)* | **OBS** | lines aligned and all hours present; the first server verification shows a diurnal bias from +2.2 to −6.9 °C (P-59: no surface heating or radiation) |
+| 126 | "can we do hourly not 12 hourly change" | DIR | the temperature-change product and its hover field became 1-hr changes (F001 onward) |
 
 **Observation.** Prompt 53 is 18 words and is the most consequential
 instruction in the project. Before it, nine candidate causes had been patched
