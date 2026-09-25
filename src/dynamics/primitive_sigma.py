@@ -27,6 +27,7 @@ Terrain comes with the coordinate rather than being a separate feature.
 
 import numpy as np
 
+from backend import xp_of, to_numpy, set_threads, TORCH
 from grid import CGrid
 from sigma import (SigmaLevels, hydrostatic_geopotential, continuity,
                    vertical_advection, pressure_gradient_force,
@@ -221,11 +222,15 @@ class PrimitiveSigma:
         Freeze the state the sponge relaxes toward. Called automatically on the
         first step if not set explicitly.
         """
-        self._u_ref = (self.u if u is None else u).copy()
-        self._v_ref = (self.v if v is None else v).copy()
+        uu = self.u if u is None else u
+        vv = self.v if v is None else v
+        xp = xp_of(uu)
+        self._u_ref = xp.copy(xp.asarray(uu)) if xp.name == "torch" else uu.copy()
+        self._v_ref = xp.copy(xp.asarray(vv)) if xp.name == "torch" else vv.copy()
 
     def tendencies(self, u, v, theta, pi):
         gr, lev = self.grid, self.lev
+        xp = xp_of(u, theta, pi)
 
         phi = hydrostatic_geopotential(theta, pi, lev, phi_surface=self.phi_s)
 
@@ -239,7 +244,7 @@ class PrimitiveSigma:
         dpi_dt, sd = continuity(u, v, pi, lev, gr, top_flux=top_flux)
         # Reference profile: the horizontal-mean temperature on each sigma
         # surface. Recomputed each call so it tracks the evolving state.
-        T_ref = (theta * (lev.pressure(pi) / P0) ** KAPPA).mean(axis=(1, 2))
+        T_ref = xp.mean(theta * (lev.pressure(pi) / P0) ** KAPPA, axis=(1, 2))
         fx, fy = pressure_gradient_force(phi, theta, pi, lev, gr,
                                          reference=T_ref if self.ref_pgf else None)
 
@@ -248,11 +253,11 @@ class PrimitiveSigma:
 
         du = (-self._horiz_adv(u, u, v_at_u)
               - vertical_advection(u, sd, lev)
-              + gr.f_u * v_at_u + fx)
+              + xp.asarray(gr.f_u) * v_at_u + fx)
 
         dv = (-self._horiz_adv(v, u_at_v, v)
               - vertical_advection(v, sd, lev)
-              - gr.f_v * u_at_v + fy)
+              - xp.asarray(gr.f_v) * u_at_v + fy)
 
         u_at_h = 0.5 * (u + gr.shift(u, 1, 1))
         v_at_h = 0.5 * (v + gr.shift(v, 1, 0))
@@ -262,7 +267,7 @@ class PrimitiveSigma:
         if self.hyper > 0:
             du = du + hyperdiffusion(u, gr, self.hyper)
             dv = dv + hyperdiffusion(v, gr, self.hyper)
-            th_ref = theta.mean(axis=(1, 2), keepdims=True)
+            th_ref = xp.mean(theta, axis=(1, 2), keepdims=True)
             dth = dth + hyperdiffusion(theta - th_ref, gr, self.hyper)
             # NOTE: no diffusion on pi. Hyperdiffusion is only conservative on
             # a periodic domain; applied to the prognostic surface pressure on
@@ -289,8 +294,9 @@ class PrimitiveSigma:
             self._K_last = K
 
         if self.sponge_levels > 0 and self._u_ref is not None:
-            du = du - self._sponge * (u - self._u_ref)
-            dv = dv - self._sponge * (v - self._v_ref)
+            sponge = xp.asarray(self._sponge)
+            du = du - sponge * (u - self._u_ref)
+            dv = dv - sponge * (v - self._v_ref)
 
         if self.stochastic is not None:
             du = self.stochastic.apply(du)
@@ -318,13 +324,15 @@ class PrimitiveSigma:
         explicitly.
         """
         gr = self.grid
+        xp = xp_of(self.u)
         if wave_speed is None:
-            T = np.clip(self.temperature(), 150.0, 350.0)
-            wave_speed = float(np.sqrt(RD * T.max()))
-        speed = wave_speed + max(np.abs(self.u).max(), np.abs(self.v).max(), 1e-9)
+            T = xp.clip(self.temperature(), 150.0, 350.0)
+            wave_speed = float(np.sqrt(RD * float(T.max())))
+        speed = wave_speed + max(float(xp.abs(self.u).max()),
+                                 float(xp.abs(self.v).max()), 1e-9)
         dt_h = safety * min(gr.dx, gr.dy) / (speed * np.sqrt(2.0))
 
-        sd = np.abs(self.sigma_dot()).max()
+        sd = float(xp.abs(self.sigma_dot()).max())
         dt_v = np.inf
         if sd > 0:
             dt_v = safety * self.lev.dsigma.min() / sd
@@ -406,9 +414,49 @@ class PrimitiveSigma:
             k += 1
             if callback and every and k % every == 0:
                 callback(self)
-            if not np.isfinite(self.pi).all():
+            if not bool(xp_of(self.pi).isfinite(self.pi).all()):
                 break
         return k
+
+    # --- backends ----------------------------------------------------------
+
+    @property
+    def backend(self):
+        return xp_of(self.u).name
+
+    def to_backend(self, name="torch", threads=None):
+        """
+        Move the prognostic state to a backend: "torch" (multi-threaded CPU,
+        float64) or "numpy". Grid and level constants stay NumPy and are
+        converted, once and cached, where the core meets them. Returns the
+        number of torch threads in use (None for numpy).
+        """
+        if name == "numpy":
+            for k in ("u", "v", "theta", "pi", "_u_ref", "_v_ref",
+                      "_phi_top_ref", "_pi_ref"):
+                if getattr(self, k, None) is not None:
+                    setattr(self, k, np.asarray(to_numpy(getattr(self, k)), dtype=float))
+            return None
+        if name != "torch":
+            raise ValueError(f"unknown backend {name!r}")
+        if TORCH is None:
+            raise RuntimeError("PyTorch is not installed; use the numpy backend")
+        if self.stochastic is not None or self.radiative_top:
+            raise NotImplementedError("the torch backend does not yet cover "
+                                      "stochastic physics or the radiative top")
+        n = set_threads(threads) if threads else None
+        import torch
+        for k in ("u", "v", "theta", "pi", "_u_ref", "_v_ref"):
+            a = getattr(self, k, None)
+            if a is not None:
+                setattr(self, k, torch.as_tensor(np.asarray(a, dtype=float)).clone())
+        if self.theta_surface is not None and not np.isscalar(self.theta_surface):
+            self.theta_surface = torch.as_tensor(np.asarray(self.theta_surface, dtype=float))
+        return n if n is not None else torch.get_num_threads()
+
+    @staticmethod
+    def as_numpy(a):
+        return to_numpy(a)
 
     # --- integrals ---------------------------------------------------------
 

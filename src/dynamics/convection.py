@@ -50,10 +50,12 @@ heat, not extended.
 
 import numpy as np
 
+from backend import xp_of
+
 
 def unstable_fraction(theta, tol=1e-10):
     """Fraction of interfaces where theta decreases with height (index 0 = top)."""
-    return float(np.mean(theta[:-1] < theta[1:] - tol))
+    return float(xp_of(theta).mean(theta[:-1] < theta[1:] - tol))
 
 
 def dry_convective_adjustment(theta, u, v, pi, lev, max_sweeps=20,
@@ -70,13 +72,18 @@ def dry_convective_adjustment(theta, u, v, pi, lev, max_sweeps=20,
     the number of unstable interfaces or leaves it unchanged -- so the sweep
     cap is a guard, not a tuning knob.
     """
-    theta = np.array(theta, dtype=float, copy=True)
-    u = np.array(u, dtype=float, copy=True)
-    v = np.array(v, dtype=float, copy=True)
+    xp = xp_of(theta, u, v, pi)
+    if xp.name == "numpy":
+        theta = np.array(theta, dtype=float, copy=True)
+        u = np.array(u, dtype=float, copy=True)
+        v = np.array(v, dtype=float, copy=True)
+    else:
+        theta, u, v = xp.copy(theta), xp.copy(u), xp.copy(v)
 
     # Layer mass per unit area: dp/g, and dp = dsigma * pi.
-    dm = lev.dsigma.reshape(-1, *([1] * np.ndim(pi))) * np.asarray(pi)
-    dm = np.broadcast_to(dm, theta.shape).astype(float)
+    pi_a = xp.asarray(pi)
+    dm = xp.asarray(lev.dsigma).reshape(-1, *([1] * xp.ndim(pi_a))) * pi_a
+    dm = xp.astype(xp.broadcast_to(dm, tuple(theta.shape)), float)
 
     before = unstable_fraction(theta, tol)
     nz = theta.shape[0]
@@ -85,7 +92,7 @@ def dry_convective_adjustment(theta, u, v, pi, lev, max_sweeps=20,
 
     for sweeps in range(1, max_sweeps + 1):
         bad = theta[:-1] < theta[1:] - tol
-        if not bad.any():
+        if not bool(bad.any()):
             sweeps -= 1
             break
 
@@ -99,25 +106,25 @@ def dry_convective_adjustment(theta, u, v, pi, lev, max_sweeps=20,
         # Pairwise mixing was tried first and is conservative but converges
         # like a diffusion: a fully inverted 20-level column still had 0.26 K
         # of spread after 200 sweeps. Segment mixing settles it in one.
-        member = np.zeros(theta.shape, dtype=bool)
+        member = xp.zeros(tuple(theta.shape), dtype=bool)
         member[:-1] |= bad
         member[1:] |= bad
 
         # Segment id: increments whenever a new segment starts, going down.
-        starts = member.copy()
+        starts = xp.copy(member)
         starts[1:] &= ~member[:-1]
-        seg = np.cumsum(starts, axis=0)
 
         # Forward pass: accumulate mass and mass-weighted sums per segment.
-        acc_m = np.zeros(theta.shape[1:])
-        acc = [np.zeros(theta.shape[1:]) for _ in fields]
-        sums_m = np.zeros(theta.shape)
-        sums = [np.zeros(theta.shape) for _ in fields]
+        shape2, shape3 = tuple(theta.shape[1:]), tuple(theta.shape)
+        acc_m = xp.zeros(shape2)
+        acc = [xp.zeros(shape2) for _ in fields]
+        sums_m = xp.zeros(shape3)
+        sums = [xp.zeros(shape3) for _ in fields]
         for k in range(nz):
             reset = starts[k]
-            acc_m = np.where(reset, dm[k], acc_m + dm[k] * member[k])
+            acc_m = xp.where(reset, dm[k], acc_m + dm[k] * member[k])
             for j, a in enumerate(fields):
-                acc[j] = np.where(reset, dm[k] * a[k],
+                acc[j] = xp.where(reset, dm[k] * a[k],
                                   acc[j] + dm[k] * a[k] * member[k])
             sums_m[k] = acc_m
             for j in range(len(fields)):
@@ -125,26 +132,26 @@ def dry_convective_adjustment(theta, u, v, pi, lev, max_sweeps=20,
 
         # Backward pass: the last layer of a segment holds the totals; carry
         # them back up to every layer in the same segment.
-        tot_m = np.zeros(theta.shape)
-        tot = [np.zeros(theta.shape) for _ in fields]
-        carry_m = np.zeros(theta.shape[1:])
-        carry = [np.zeros(theta.shape[1:]) for _ in fields]
-        last = member.copy()
+        tot_m = xp.zeros(shape3)
+        tot = [xp.zeros(shape3) for _ in fields]
+        carry_m = xp.zeros(shape2)
+        carry = [xp.zeros(shape2) for _ in fields]
+        last = xp.copy(member)
         last[:-1] &= ~member[1:]
         for k in range(nz - 1, -1, -1):
             take = last[k]
-            carry_m = np.where(take, sums_m[k], carry_m)
+            carry_m = xp.where(take, sums_m[k], carry_m)
             for j in range(len(fields)):
-                carry[j] = np.where(take, sums[j][k], carry[j])
+                carry[j] = xp.where(take, sums[j][k], carry[j])
             tot_m[k] = carry_m
             for j in range(len(fields)):
                 tot[j][k] = carry[j]
 
-        with np.errstate(invalid="ignore", divide="ignore"):
+        with xp.errstate(invalid="ignore", divide="ignore"):
             for j, a in enumerate(fields):
-                mean = np.where(tot_m > 0, tot[j] / np.maximum(tot_m, 1e-30),
+                mean = xp.where(tot_m > 0, tot[j] / xp.maximum(tot_m, 1e-30),
                                 a)
-                a[...] = np.where(member, mean, a)
+                a[...] = xp.where(member, mean, a)
 
     info = {
         "unstable_before": before,

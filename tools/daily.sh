@@ -51,6 +51,11 @@ LOGDIR="$DATA/logs"
 LOCK="$DATA/daily.lock"
 BUDGET_MIN="${NWP_CYCLE_BUDGET_MIN:-90}"
 RESERVE_MIN=8                       # after the forecast: writing, archiving, maps
+# Array backend for the core (prompt 128). "torch" runs the same float64
+# physics on THREADS cores, ~8x faster; switch the default only after
+# tools/check_backend.py shows round-off agreement on this machine.
+BACKEND="${NWP_BACKEND:-numpy}"
+THREADS="${NWP_THREADS:-8}"
 
 mkdir -p "$LOGDIR" "$DATA"
 
@@ -122,7 +127,7 @@ if [ "$MODE" = "verify" ]; then
     exit "$STATUS"
 fi
 
-echo "cycle  $RUN, $HOURS h, source $SOURCE, budget $BUDGET_MIN min" >> "$LOG"
+echo "cycle  $RUN, $HOURS h, source $SOURCE, budget $BUDGET_MIN min, backend $BACKEND x$THREADS" >> "$LOG"
 
 # 1. Initial state.
 if [ "$SOURCE" = "hrrr" ]; then
@@ -146,6 +151,7 @@ else
     # hours reached, and both count as the run's status.
     step forecast python -u "$ROOT/src/forecast.py" \
         --run-dir "$RUNDIR" --hours "$HOURS" --output-every 1 \
+        --backend "$BACKEND" --threads "$THREADS" \
         --deadline-min "$LEFT_MIN" || true
 fi
 

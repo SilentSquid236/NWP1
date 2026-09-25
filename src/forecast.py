@@ -74,6 +74,7 @@ from grid import CGrid
 from vertical import PressureLevels, theta_from_T, T_from_theta
 from sigma import SigmaLevels
 from primitive_sigma import PrimitiveSigma
+from backend import xp_of, to_numpy
 from interpolate import pressure_to_sigma, surface_pressure_from_heights
 from initialization import filter_initial_state
 from boundaries import DaviesRelaxation, BoundaryDriver
@@ -222,22 +223,26 @@ class Relaxation3D:
     def __init__(self, grid, width=10, alpha_max=1.0, profile="cosine"):
         self.inner = DaviesRelaxation(grid, width, alpha_max, profile)
         self.alpha = self.inner.alpha[None, :, :]
+        self.alpha2d = self.alpha[0]          # one array, so torch caches it once
         self.width = width
 
     def apply(self, model, ext):
-        a = self.alpha
+        # Backend-neutral: for torch the weights and the driving state are
+        # converted (and cached) so a NumPy array never meets a tensor.
+        xp = xp_of(model.u)
+        a = xp.asarray(self.alpha)
         if "u" in ext:
-            model.u += a * (ext["u"] - model.u)
+            model.u += a * (xp.asarray(ext["u"]) - model.u)
         if "v" in ext:
-            model.v += a * (ext["v"] - model.v)
+            model.v += a * (xp.asarray(ext["v"]) - model.v)
         if "theta" in ext:
-            model.theta += a * (ext["theta"] - model.theta)
+            model.theta += a * (xp.asarray(ext["theta"]) - model.theta)
         # Surface pressure is PROGNOSTIC in the sigma core, so it has to be
         # relaxed at the edges too. Leaving it free while relaxing the wind
         # drives the boundary column toward a mass field the incoming flow
         # does not support.
         if "pi" in ext:
-            model.pi += self.alpha[0] * (ext["pi"] - model.pi)
+            model.pi += xp.asarray(self.alpha2d) * (xp.asarray(ext["pi"]) - model.pi)
 
     @property
     def interior_fraction(self):
@@ -293,6 +298,8 @@ def run_forecast(model, driver, relax, duration, dt=None, output_every=None,
     # minutes to go".
     t_start = time.time()
     every_n = max(1, n_steps // 200)
+    xp = xp_of(model.u)
+    torch_run = xp.name == "torch"
 
     for k in range(n_steps):
         model.step(dt)
@@ -301,9 +308,14 @@ def run_forecast(model, driver, relax, duration, dt=None, output_every=None,
         if k % every_n == 0:
             # Both components: the P-56 runaways are in v first, and a guard
             # on u alone let one reach 91 m/s unreported (P-57).
-            umax = float(max(np.nanmax(np.abs(model.u)),
-                             np.nanmax(np.abs(model.v))))
-            finite = np.isfinite(model.u).all() and np.isfinite(model.v).all()
+            if torch_run:
+                finite = bool(xp.isfinite(model.u).all()) and bool(xp.isfinite(model.v).all())
+                umax = float(max(xp.abs(model.u).max(), xp.abs(model.v).max())) \
+                    if finite else float("inf")
+            else:
+                umax = float(max(np.nanmax(np.abs(model.u)),
+                                 np.nanmax(np.abs(model.v))))
+                finite = np.isfinite(model.u).all() and np.isfinite(model.v).all()
             if not finite or umax > U_CEILING:
                 print(f"\n  DIVERGED at t+{model.time/3600:.2f} h "
                       f"(max|u,v| {umax:.0f} m/s) -- stopping", flush=True)
@@ -328,18 +340,20 @@ def run_forecast(model, driver, relax, duration, dt=None, output_every=None,
 
         if next_i < len(targets) and model.time >= targets[next_i] - 1e-9:
             next_i += 1
-            snapshots.append((model.time, model.u.copy(), model.v.copy(),
-                              model.theta.copy(), model.pi.copy()))
+            snap = [to_numpy(a) if torch_run else a.copy()
+                    for a in (model.u, model.v, model.theta, model.pi)]
+            snapshots.append((model.time, *snap))
             if progress:
                 print(" " * 96, end="\r")      # clear the progress line
-                ps = model.surface_pressure
+                su, sv, sth, spi = snap
+                ps = model.lev.p_top + spi
                 print(f"  +{model.time/3600:5.1f} h  "
-                      f"max|u| {np.abs(model.u).max():6.1f} m/s  "
-                      f"max|v| {np.abs(model.v).max():6.1f}  "
-                      f"theta {model.theta.min():.1f}-{model.theta.max():.1f} K  "
+                      f"max|u| {np.abs(su).max():6.1f} m/s  "
+                      f"max|v| {np.abs(sv).max():6.1f}  "
+                      f"theta {sth.min():.1f}-{sth.max():.1f} K  "
                       f"p_s {ps.min()/100:.0f}-{ps.max()/100:.0f} hPa  "
-                      f"max|sigma_dot| {np.abs(model.sigma_dot()).max():.2e}")
-            if not (np.isfinite(model.u).all() and np.isfinite(model.v).all()):
+                      f"max|sigma_dot| {float(xp.abs(model.sigma_dot()).max()):.2e}")
+            if not (np.isfinite(snap[0]).all() and np.isfinite(snap[1]).all()):
                 print("  FORECAST DIVERGED -- stopping")
                 info["stopped"] = f"diverged at {model.time/3600:.2f} h"
                 break
@@ -361,6 +375,11 @@ def main():
     p.add_argument("--output-every", type=float, default=1.0,
                    help="Snapshot interval in hours")
     p.add_argument("--relax-width", type=int, default=10)
+    p.add_argument("--backend", choices=("numpy", "torch"), default="numpy",
+                   help="array backend for the core: numpy (one core) or "
+                        "torch (multi-threaded CPU, same float64 physics)")
+    p.add_argument("--threads", type=int, default=8,
+                   help="torch threads (the Xeon's measured sweet spot is ~8)")
     p.add_argument("--relax-alpha", type=float, default=1.0,
                    help="Relaxation weight per step at the outer edge "
                         "(the cosine ramp scales from it); 0 < alpha <= 1")
@@ -475,6 +494,12 @@ def main():
           f"interior {relax.interior_fraction:.0%}")
     print(f"  timestep       : {model.max_dt():.1f} s "
           f"(external wave ~290 m/s sets this)\n")
+
+    if args.backend == "torch":
+        n = model.to_backend("torch", threads=args.threads)
+        print(f"  backend        : torch, {n} threads (float64)\n")
+    else:
+        print("  backend        : numpy (one core)\n")
 
     info = {}
     snaps = run_forecast(model, driver, relax, args.hours * 3600,

@@ -42,6 +42,8 @@ CONVENTIONS
 
 import numpy as np
 
+from backend import xp_of
+
 RD = 287.058
 CP = 1004.6
 KAPPA = RD / CP
@@ -98,12 +100,14 @@ class SigmaLevels:
 
     def pressure(self, pi):
         """p at full levels. pi = p_s - p_top, shape (ny, nx) or scalar."""
-        pi = np.asarray(pi)
-        return self.p_top + self.sigma.reshape(-1, *([1] * pi.ndim)) * pi
+        xp = xp_of(pi)
+        pi = xp.asarray(pi)
+        return self.p_top + xp.asarray(self.sigma).reshape(-1, *([1] * pi.ndim)) * pi
 
     def pressure_half(self, pi):
-        pi = np.asarray(pi)
-        return self.p_top + self.sigma_half.reshape(-1, *([1] * pi.ndim)) * pi
+        xp = xp_of(pi)
+        pi = xp.asarray(pi)
+        return self.p_top + xp.asarray(self.sigma_half).reshape(-1, *([1] * pi.ndim)) * pi
 
     def exner(self, pi):
         return (self.pressure(pi) / P0) ** KAPPA
@@ -125,16 +129,17 @@ def hydrostatic_geopotential(theta, pi, lev, phi_surface=0.0):
     Index 0 is the lid, nz-1 the ground, so we fill from the bottom index
     backwards. phi_surface is g * terrain height and may be a 2D field.
     """
+    xp = xp_of(theta, pi)
     p = lev.pressure(pi)
     T = theta * (p / P0) ** KAPPA
 
-    phi = np.empty_like(theta)
-    phi[-1] = phi_surface + RD * T[-1] * np.log(
+    phi = xp.empty_like(theta)
+    phi[-1] = xp.asarray(phi_surface) + RD * T[-1] * xp.log(
         (lev.p_top + pi) / p[-1])          # ground -> lowest full level
 
     for k in range(lev.nz - 2, -1, -1):
         T_layer = 0.5 * (T[k] + T[k + 1])
-        phi[k] = phi[k + 1] + RD * T_layer * np.log(p[k + 1] / p[k])
+        phi[k] = phi[k + 1] + RD * T_layer * xp.log(p[k + 1] / p[k])
 
     return phi
 
@@ -170,14 +175,11 @@ def pressure_gradient_force(phi, theta, pi, lev, grid, reference=None):
     it switches to the reference-state form below, where the cancellation is
     done ANALYTICALLY instead of numerically.
     """
+    xp = xp_of(theta, pi)
     p = lev.pressure(pi)
     T = theta * (p / P0) ** KAPPA
-    sig = lev.sigma.reshape(-1, 1, 1)
 
-    dpidx = grid.dx_backward(pi)
-    dpidy = grid.dy_backward(pi)
-
-    lnp = np.log(p)
+    lnp = xp.log(p)
 
     if reference is None:
         # HYDROSTATICALLY CONSISTENT FORM.
@@ -247,20 +249,21 @@ def continuity(u, v, pi, lev, grid, top_flux=None):
     pi_v = grid.h_to_v(pi) * v
     div = grid.dx_forward(pi_u) + grid.dy_forward(pi_v)      # (nz, ny, nx)
 
-    ds = lev.dsigma.reshape(-1, 1, 1)
-    total = (div * ds).sum(axis=0)                            # (ny, nx)
-    F = 0.0 if top_flux is None else np.asarray(top_flux, dtype=float)
+    xp = xp_of(u, v, pi)
+    ds = xp.asarray(lev.dsigma).reshape(-1, 1, 1)
+    total = xp.sum(div * ds, axis=0)                          # (ny, nx)
+    F = 0.0 if top_flux is None else xp.asarray(top_flux, dtype=float)
     dpi_dt = -total + F
 
     # Partial integral to each half level, top downward.
-    partial = np.concatenate([np.zeros((1,) + div.shape[1:]),
-                              np.cumsum(div * ds, axis=0)], axis=0)  # (nz+1,...)
+    partial = xp.concatenate([xp.zeros((1,) + tuple(div.shape[1:])),
+                              xp.cumsum(div * ds, axis=0)], axis=0)  # (nz+1,...)
 
-    s_half = lev.sigma_half.reshape(-1, 1, 1)
+    s_half = xp.asarray(lev.sigma_half).reshape(-1, 1, 1)
     pi_sigmadot = -partial - s_half * dpi_dt + F              # (nz+1, ny, nx)
 
-    with np.errstate(divide="ignore", invalid="ignore"):
-        sigma_dot = np.where(pi > 0, pi_sigmadot / pi, 0.0)
+    with xp.errstate(divide="ignore", invalid="ignore"):
+        sigma_dot = xp.where(pi > 0, pi_sigmadot / pi, 0.0)
 
     return dpi_dt, sigma_dot
 
@@ -275,13 +278,14 @@ def vertical_advection(a, sigma_dot, lev):
     that misbehaves near the boundaries.
     """
     # Interface values by simple averaging; ends use the adjacent full level.
-    a_half = np.empty((lev.nz + 1,) + a.shape[1:])
+    xp = xp_of(a, sigma_dot)
+    a_half = xp.empty((lev.nz + 1,) + tuple(a.shape[1:]))
     a_half[1:-1] = 0.5 * (a[:-1] + a[1:])
     a_half[0] = a[0]
     a_half[-1] = a[-1]
 
     flux = sigma_dot * a_half
-    ds = lev.dsigma.reshape(-1, 1, 1)
+    ds = xp.asarray(lev.dsigma).reshape(-1, 1, 1)
 
     # d(flux)/dsigma minus a * d(sigma_dot)/dsigma recovers the advective form
     # while keeping the exact-constant property.

@@ -44,6 +44,8 @@ is why a single domain-wide value is a poor approximation there.
 
 import numpy as np
 
+from backend import xp_of
+
 from sigma import RD, G0, P0, KAPPA
 
 VON_KARMAN = 0.4
@@ -66,17 +68,19 @@ def lowest_level_height(theta, pi, lev):
     not a hardcoded constant, or the drag silently changes with the vertical
     grid.
     """
+    xp = xp_of(theta, pi)
     p = lev.pressure(pi)
     p_half = lev.pressure_half(pi)
     T = theta * (p / P0) ** KAPPA
     # From the ground (p_half[-1]) up to the lowest full level (p[-1]).
-    return RD * T[-1] / G0 * np.log(p_half[-1] / p[-1])
+    return RD * T[-1] / G0 * xp.log(p_half[-1] / p[-1])
 
 
 def neutral_drag_coefficient(z1, z0):
     """Cd for a neutrally stratified surface layer, from the log law."""
-    z1 = np.maximum(z1, 2.0 * z0)          # level must sit above the roughness
-    return (VON_KARMAN / np.log(z1 / z0)) ** 2
+    xp = xp_of(z1)
+    z1 = xp.maximum(z1, 2.0 * z0)          # level must sit above the roughness
+    return (VON_KARMAN / xp.log(z1 / z0)) ** 2
 
 
 def bulk_richardson(u1, v1, theta1, theta_s, z1):
@@ -86,7 +90,7 @@ def bulk_richardson(u1, v1, theta1, theta_s, z1):
     Positive => stable (surface colder than the air above, e.g. a clear
     night). Negative => unstable (surface warmer, convective).
     """
-    speed2 = np.maximum(u1 ** 2 + v1 ** 2, 0.01)
+    speed2 = xp_of(u1).maximum(u1 ** 2 + v1 ** 2, 0.01)
     return (G0 * z1 * (theta1 - theta_s)) / (theta1 * speed2)
 
 
@@ -100,10 +104,11 @@ def stability_function(Ri_b, ri_crit=0.2):
     Strongly stable (Ri_b >= ri_crit): decoupled, essentially no drag. This is
     what lets a nocturnal inversion form instead of being mixed away.
     """
-    F = np.ones_like(Ri_b)
+    xp = xp_of(Ri_b)
+    F = xp.ones_like(Ri_b)
 
     unstable = Ri_b < 0
-    F[unstable] = np.minimum(1.0 + 10.0 * np.abs(Ri_b[unstable]), 4.0)
+    F[unstable] = xp.minimum(1.0 + 10.0 * xp.abs(Ri_b[unstable]), 4.0)
 
     stable = (Ri_b >= 0) & (Ri_b < ri_crit)
     F[stable] = (1.0 - Ri_b[stable] / ri_crit) ** 2
@@ -122,32 +127,33 @@ def surface_drag(u, v, theta, pi, lev, z0=0.1, theta_s=None, ri_crit=0.2):
     scheme spreads the effect upward from there, which is how a boundary layer
     actually deepens.
     """
+    xp = xp_of(u, theta, pi)
     p = lev.pressure(pi)
     p_half = lev.pressure_half(pi)
     T = theta * (p / P0) ** KAPPA
 
     z1 = lowest_level_height(theta, pi, lev)
-    dz1 = RD * T[-1] / G0 * np.log(p_half[-1] / p_half[-2])
+    dz1 = RD * T[-1] / G0 * xp.log(p_half[-1] / p_half[-2])
 
     u1, v1 = u[-1], v[-1]
-    speed = np.sqrt(u1 ** 2 + v1 ** 2)
+    speed = xp.sqrt(u1 ** 2 + v1 ** 2)
 
     cd_n = neutral_drag_coefficient(z1, z0)
     if theta_s is None:
-        F = np.ones_like(u1)
-        Ri_b = np.zeros_like(u1)
+        F = xp.ones_like(u1)
+        Ri_b = xp.zeros_like(u1)
     else:
         Ri_b = bulk_richardson(u1, v1, theta[-1], theta_s, z1)
         F = stability_function(Ri_b, ri_crit)
     cd = cd_n * F
 
-    du = np.zeros_like(u)
-    dv = np.zeros_like(v)
+    du = xp.zeros_like(u)
+    dv = xp.zeros_like(v)
     du[-1] = -cd * speed * u1 / dz1
     dv[-1] = -cd * speed * v1 / dz1
 
     info = {"z1": z1, "dz1": dz1, "cd": cd, "cd_neutral": cd_n,
-            "Ri_bulk": Ri_b, "u_star": np.sqrt(cd * speed ** 2)}
+            "Ri_bulk": Ri_b, "u_star": xp.sqrt(cd * speed ** 2)}
     return du, dv, info
 
 

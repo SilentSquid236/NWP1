@@ -2760,6 +2760,61 @@ too cold and too calm by day, with the sign change at sunrise. No
 persistence reference was scored, so how much of the error the model
 adds, or removes, relative to holding the analysis fixed is not assessed.
 
+
+---
+
+## 2026-09-25 — The PyTorch backend
+
+**Context.** Prompt 127 asked whether more CPU would speed things up;
+prompt 128: "do the pytorch port". The core is element-wise NumPy on one
+core, and the server benchmark (prompt 115) put torch at 6–14× on
+model-sized arrays at 8 threads.
+
+**Design: one physics source, two backends.** A second copy of the
+physics in torch would drift from the first. Instead,
+`src/dynamics/backend.py` gives the hot code a NumPy-named namespace:
+NumPy itself for arrays, or a torch mapping (float64, CPU) for tensors.
+Nine functions across `grid`, `sigma`, `turbulence`, `surface`,
+`convection`, `primitive_sigma` and the forecast relaxation now ask
+`xp_of(array)` which to use. NumPy constants (levels, Coriolis, terrain,
+sponge, relaxation weights) pass through `xp.asarray`. That is free for
+NumPy and a bounded cache for torch, because `ndarray * tensor` silently
+turns the tensor back into NumPy. `grid.shift` now slices instead of
+`np.roll` plus an edge fill: the same values, and expressible in both
+backends. Not ported: stochastic physics and the radiative top (both off
+in production). `to_backend("torch")` refuses them rather than running
+them wrongly.
+
+**Checks.**
+
+| Check | Result |
+|---|---|
+| NumPy path after the refactor vs before, 300 steps, realistic case | **bit-identical** (all four fields) |
+| All 11 dynamics suites + forecast, maps and analysis suites (NumPy) | 74 + 47 tests pass |
+| torch vs NumPy, 300 steps (44×40) | 1.6e-12 relative (u), round-off |
+| torch vs NumPy, 60 steps, full 110×97 grid | 1.7e-13 relative |
+| `forecast.py` 1 h on a synthetic analysis, torch vs NumPy | 3.7e-13 relative (v); both "completed" |
+| `test_backend.py` (new) | 3/3 |
+
+**Speed on the desktop (full grid, 60 steps).**
+
+| Backend | Time | Speed-up |
+|---|---|---|
+| NumPy | 20.1 s | 1.0× |
+| torch × 1 | 5.9 s | 3.4× |
+| torch × 4 | 2.4 s | **8.4×** |
+| torch × 8 | 2.4 s | 8.4× |
+| torch × 12 | 3.0 s | 6.7× |
+
+A forecast hour in `forecast.py` took 10.5 s against 90 s. The server
+benchmark's peak near 8 threads holds here: past 8 threads it gets slower.
+Initialisation (filter and balance, about a minute) still runs in NumPy.
+
+**Not yet done.** The server has torch 2.8 (the desktop has 2.13) and
+Python 3.9. `tools/check_backend.py` runs the same comparison there. The
+backend becomes the cycle default (`NWP_BACKEND=torch` in `daily.sh`)
+only after that shows round-off agreement.
+
 ---
 
 ## Recording for the AI-collaboration study

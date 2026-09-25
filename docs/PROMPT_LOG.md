@@ -209,6 +209,8 @@ on itself.
 | 124 | *(attached: `test_o_result.txt`, test O logs and locate output)* | **OBS** | O1 (no relaxation) refuted: dies at 6.67 h at the physical edge, so a zone is needed; O2 (alpha 0.1) held: 21.67 h, still failing about 10 cells in. Pull strength is the strongest control found. Test P designed (width 15 + alpha 0.1; alpha 0.03) |
 | 125 | *(attached: `maps.zip`, the real 06Z 2026-09-23 maps with error maps)* | **OBS** | lines aligned and all hours present; the first server verification shows a diurnal bias from +2.2 to −6.9 °C (P-59: no surface heating or radiation) |
 | 126 | "can we do hourly not 12 hourly change" | DIR | the temperature-change product and its hover field became 1-hr changes (F001 onward) |
+| 127 | "would using more cpu increase the speed of these tasks" | **CON** | answered from measurements: not for a single run until the core leaves NumPy; yes today for parallel test variants; not for the network-bound ingest |
+| 128 | "do the pytorch port" | DIR | one physics source with NumPy/torch backends; NumPy path bit-identical; torch agrees to round-off and runs 8.4× faster at 4–8 threads on the desktop; server check written, default left NumPy until it passes |
 
 **Observation.** Prompt 53 is 18 words and is the most consequential
 instruction in the project. Before it, nine candidate causes had been patched

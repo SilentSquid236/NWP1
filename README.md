@@ -250,7 +250,17 @@ cd src/verification && python test_fetchers.py     # 9
 cd src && python test_forecast.py                  # 7
 python test_netpolicy.py                           # 9
 python src/maps/test_maps.py                       # 15
+cd src/dynamics && python test_backend.py          # 3 (needs PyTorch; skips otherwise)
 ```
+
+### Faster forecasts: the PyTorch backend
+
+`python src/forecast.py ... --backend torch --threads 8` runs the same
+float64 physics multi-threaded. It agrees with NumPy to round-off (below
+1e-12 relative after 300 steps) and is 8.4x faster on the desktop at 4-8
+threads (a forecast hour in 10.5 s against 90 s). On a new machine, run
+`python tools/check_backend.py` first. `daily.sh` uses it when
+`NWP_BACKEND=torch` is set.
 
 70 tests. Physics tests assert analytic answers or convergence order, not
 tolerances chosen to pass.

@@ -64,6 +64,8 @@ NWP_Deployment_Package/
 |   |   `-- test_analysis.py              # suite for analysis.py
 |   |-- dynamics/                      # the model itself
 |   |   |-- README.md                     # orientation for this directory
+|   |   |-- backend.py                    # array backends for the core: NumPy (default) or PyTorch (multi-threaded CPU, float64)
+|   |   |-- backend_reference.py          # the realistic reference integration used to compare backends
 |   |   |-- balance_check.py              # initial-state balance and Nh/U by terrain height
 |   |   |-- boundaries.py                 # Davies relaxation, limited-area driver (6/6)
 |   |   |-- convection.py                 # dry convective adjustment (post-step, conservative)
@@ -113,6 +115,7 @@ NWP_Deployment_Package/
 |   |   |-- sweep_boundary_layer.py       # mixing x drag x terrain x noise matrix
 |   |   |-- terrain_matrix2.py            # terrain rows re-measured with convection
 |   |   |-- terrain_probe.py              # terrain baseline with and without the filter
+|   |   |-- test_backend.py               # backend tests: torch reproduces numpy to round-off; no cache leakage
 |   |   |-- test_boundaries.py            # suite for boundaries.py
 |   |   |-- test_convection.py            # suite for convection.py
 |   |   |-- test_initialization.py        # suite for initialization.py
@@ -160,6 +163,7 @@ NWP_Deployment_Package/
 |-- tools/                             # maintenance scripts
 |   |-- apply_sync.py                     # applies a sync archive safely -- no nesting, never touches data/
 |   |-- bench_threads.py                  # numpy vs torch thread scaling on model-sized arrays, before any port
+|   |-- check_backend.py                  # on a new machine: torch vs numpy speed and agreement at several thread counts
 |   |-- checklayout.py                    # checks for src/src nesting, missing and duplicate modules
 |   |-- daily.sh                          # one forecast cycle from cron (obs -> analysis -> forecast); `verify` mode scores closed windows
 |   |-- fetch_boundaries.py               # fetches the Natural Earth lines ahead of time, or writes the bundled copy
