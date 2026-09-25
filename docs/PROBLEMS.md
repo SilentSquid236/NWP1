@@ -476,6 +476,19 @@ service, which is P-06 and is where this project's defects have always been.
 ---
 
 
+## P-59 — No diurnal cycle: the dry core has no surface heating or radiation
+**Category** G · **First seen** 2026-09-25 · **Status** OPEN
+
+**Symptom.** The first real server verification (06Z 2026-09-23, 346–362 surface temperature pairs an hour) has a bias that follows the sun. It is +1.7 to +2.2 °C in the night hours (F001–F005, 07–11Z) and crosses zero at about F006–F007. It reaches **−6.9 °C at F014 (20Z, 4 PM EDT)**, when RMSE is 7.7 °C. Wind speed does the same: +1.6 kt at night, −3.1 kt at F011 (17Z), when daytime mixing is missing.
+
+**What is known.** `src/dynamics` has no surface sensible-heat flux, no radiation and no solar geometry. `radiation.py` is the lid's radiating upper boundary, not physics. So the lowest levels cannot warm by day or cool by night, and a forecast holds roughly the hour-0 temperatures while the real surface warms 6–8 °C into the afternoon. This is the largest error source in the first verified run, larger than anything P-56 has cost so far. Numbers are read from the error maps' header boxes (`maps/err_t_f*.png`); the artifact `verification_20260923_06Z.csv` holds them.
+
+**Candidate responses (none tried).** A surface energy budget with solar geometry and a land/sea surface temperature. Or, as a first step, a prescribed diurnal surface heat flux from solar elevation, which uses no later observations. Either needs a prediction before it is built. Also worth adding: a persistence reference (the hour-0 analysis held fixed) scored the same way, so the model's skill is measured against doing nothing.
+
+**Ruled out.** none.
+---
+
+
 # FIXED
 
 ## P-40 — The eddy-diffusivity ceiling was binding, and was never tested

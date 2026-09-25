@@ -2724,6 +2724,40 @@ SHARPpy-style sounding; follow Pivotal's parameters. Changes:
 `src/maps/test_maps.py` 15/15. The synthetic 24 h run drew 315 images in
 58 s. The page's JavaScript is still untested in a browser.
 
+**First real maps and first server verification (prompt 125: `maps.zip`
+from the 06Z 2026-09-23 run).**
+
+- **Maps.** All 17 hours (F000–F016, the run died at 16.31 h) and all 17
+  products rendered, with 16 hours of error maps after `verify`.
+- **Lines.** The state, coast and lake lines line up with the geography
+  (Finger Lakes, Long Island, Cape Cod, Chesapeake), and the stations sit
+  on land and coast where they should.
+- **Viewer data.** The data files decode sensibly. At Albany at F006:
+  terrain 242 m, MSLP 1030.7 mb, lowest-level 42.6 °F, 850 mb 6.1 °C. The
+  sounding column has p_s 999.8 mb and 200 hPa −55.9 °C.
+- **What the maps expose.** The 850 mb and 700 mb maps are nearly
+  uniform, with calm winds. That is the standard-atmosphere first guess of
+  a 06Z cycle with no soundings and no previous run, made visible at a
+  glance.
+
+The first server verification (≈350 surface stations an hour, read from
+the error maps; `verification_20260923_06Z.csv`):
+
+| Lead (valid) | T bias / RMSE (°C) | Wind bias / RMSE (kt) |
+|---|---|---|
+| F001 (07Z) | +1.68 / 2.63 | +0.86 / 3.84 |
+| F005 (11Z) | +2.16 / 3.31 | +0.86 / 4.10 |
+| F007 (13Z) | −0.67 / 2.14 | −0.78 / 3.82 |
+| F010 (16Z) | −4.91 / 5.84 | −2.92 / 4.82 |
+| F014 (20Z) | −6.88 / 7.72 | −2.38 / 5.02 |
+| F016 (22Z) | −5.82 / 6.53 | −1.18 / 4.41 |
+
+The error is the missing diurnal cycle (P-59): the core has no surface
+heating or radiation. The model is too warm and too windy by night and
+too cold and too calm by day, with the sign change at sunrise. No
+persistence reference was scored, so how much of the error the model
+adds, or removes, relative to holding the analysis fixed is not assessed.
+
 ---
 
 ## Recording for the AI-collaboration study
