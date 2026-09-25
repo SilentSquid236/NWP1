@@ -2468,10 +2468,13 @@ boundary of the relaxation zone. It fails if it lies more than 20 cells in.
 The first guess was `standard_atmosphere`, which has no wind at all, so the
 near-windless state is explained. In all 15 hourly intervals, the largest
 change in u and in v lies **10–13 cells from the edge** (usually exactly
-10 or 11), at rows 10–16 and columns 10–14. That is the south-west corner
-of the relaxation zone's inner boundary, over 540–880 m of the West Virginia
-Appalachians. The corner cell itself, row 10 col 10, has the largest change
-in hours 1–4.
+10 or 11). In 28 of the 30 u/v lines it is at rows 10–16 and columns 10–14:
+the south-west corner of the relaxation zone's inner boundary, over
+540–880 m of the West Virginia Appalachians. The two exceptions are early
+and small, still on column 10 but further north over low ground: v at row
+75 (146 m, 2.0 m/s, hours 2–3) and u at row 77 (163 m, 2.9 m/s, hours 5–6).
+The corner cell itself, row 10 col 10, has the largest change in u in
+hours 1–4.
 
 | Hours | Points changing > 5 m/s | Largest change u / v (m/s) |
 |---|---|---|
@@ -2481,8 +2484,9 @@ in hours 1–4.
 | 14–15 | 79 / 71 | 14 / 17 |
 | 15–16 | 158 / 148 | 36 / 68 |
 
-The minimum edge distance of the fast-changing points is 10 in every
-interval, and the median is 11–12. The disturbance never moves in; it
+The minimum edge distance of the fast-changing points is 10 or 11 in
+every interval where there are any (never less than 10), and the median is
+10–12. The disturbance never moves in; it
 widens along the zone boundary until it runs away. This is not the 12Z
 picture of an inflow mismatch: this flow is under 10 m/s and almost nothing
 evolves to mismatch. Both failures do sit near a western corner, though.
