@@ -17,7 +17,8 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
-for p in (ROOT, ROOT / "src", ROOT / "src" / "dynamics", ROOT / "src" / "analysis"):
+for p in (ROOT, ROOT / "src", ROOT / "src" / "dynamics", ROOT / "src" / "analysis",
+          ROOT / "src" / "verification"):
     sys.path.insert(0, str(p))
 
 from maps import geography, derive          # noqa: E402
@@ -175,6 +176,7 @@ def test_every_product_renders():
          "sigma": lev.sigma, "p_top": lev.p_top, "terrain": terrain,
          "hours": np.array([1.0]), "lat": lat, "lon": lon, "dx": dx, "dy": dy}
     d = derive.snapshot(f, 0)
+    d["dT12"] = np.full(terrain.shape, -2.0)
     m = render.Mapper(lat, lon, {"coast": (np.array([-75.0, -72.0, np.nan], np.float32),
                                            np.array([40.0, 41.0, np.nan], np.float32))})
     sub = render.time_labels(__import__("datetime").datetime(2026, 9, 21, 12), 1)
@@ -212,11 +214,80 @@ def test_viewer_embeds_every_product():
            f"{len(man['products'])} products, hours {man['all_hours']}, {len(html) // 1000} kB")
 
 
+def test_forecast_hours_match_real_snapshot_times():
+    import make_maps
+    t = np.ceil(np.arange(1, 17) * 3600 / 17.1 - 1e-9) * 17.1 / 3600   # as run_forecast saves them
+    got = make_maps.match_hours(t)
+    report("hours: every forecast hour is found although snapshots land seconds late",
+           sorted(got) == list(range(1, 17)) and all(abs(t[j] - h) < 0.01 for h, j in got.items()),
+           f"snapshot at {t[0]:.4f} h, {t[1]:.4f} h ... -> hours {min(got)}-{max(got)} ({len(got)})")
+
+
+def test_valid_time_labels():
+    from datetime import datetime
+    from maps import render
+    a = render.time_labels(datetime(2026, 9, 23, 6), 12)
+    b = render.time_labels(datetime(2026, 12, 1, 0), 18)
+    report("titles: init, forecast hour, and valid time in UTC and US Eastern (EDT/EST)",
+           a[0].startswith("Init: 06z Sep 23 2026") and "Forecast hour: 12" in a[0]
+           and a[1].startswith("Valid: 18z Wed Sep 23 2026") and "2 PM EDT Wed" in a[1]
+           and b[1].startswith("Valid: 18z Tue Dec 1 2026") and "1 PM EST Tue" in b[1],
+           f"{a[0]} | {a[1]} ; {b[1]}")
+
+
+def test_pixel_geometry_for_hover():
+    """A marker drawn at a lat/lon lands on the pixel the viewer computes for it."""
+    import tempfile
+    from PIL import Image
+    from maps import render
+    from geo import cell_centres
+    import config
+    lat, lon = cell_centres(config.DOMAIN, 97, 110)
+    m = render.Mapper(lat, lon, {})
+    fig, ax = m.frame("t", ("a", "b"))
+    pts = [(-74.0, 42.0), (-79.5, 38.5), (-68.5, 46.5)]
+    for lo, la in pts:
+        x, y = m.P(lo, la); ax.plot([x], [y], "s", color=(1, 0, 0), ms=5, zorder=20)
+    with tempfile.TemporaryDirectory() as tmp:
+        fig.savefig(Path(tmp) / "g.png", dpi=render.DPI); render.plt.close(fig)
+        im = np.asarray(Image.open(Path(tmp) / "g.png").convert("RGB")).astype(int)
+    F = m.pixel_frame(); worst = 0.0
+    red = (im[..., 0] > 200) & (im[..., 1] < 60) & (im[..., 2] < 60)
+    for lo, la in pts:
+        x, y = m.P(lo, la)
+        px = F["ax_left"] + (x - F["extent"][0]) / (F["extent"][1] - F["extent"][0]) * F["ax_w"]
+        py = F["ax_top"] + (F["extent"][3] - y) / (F["extent"][3] - F["extent"][2]) * F["ax_h"]
+        yy, xx = np.nonzero(red[int(py) - 8:int(py) + 9, int(px) - 8:int(px) + 9])
+        worst = max(worst, np.hypot(xx.mean() - 8 - (px - int(px)), yy.mean() - 8 - (py - int(py))))
+        # the JavaScript inverse projection, replicated
+        P = F["proj"]; dy = P["rho0"] - y; rho = np.sign(P["n"]) * np.hypot(x, dy)
+        la2 = np.degrees(2 * np.arctan((P["R"] * P["F"] / rho) ** (1 / P["n"])) - np.pi / 2)
+        lo2 = P["lon0"] + np.degrees(np.arctan2(x, dy)) / P["n"]
+        worst = max(worst, 100 * abs(la2 - la), 100 * abs(lo2 - lo))
+    report("hover: rendered marker within 1.5 px of the viewer's pixel, inverse projection exact",
+           worst < 1.5, f"worst offset {worst:.2f} px (or 0.01 deg units)")
+
+
+def test_pack_roundtrip():
+    import base64
+    import make_maps
+    a = np.linspace(-40, 40, 600).reshape(20, 30); b = a * 100; b[3, 4] = np.nan
+    o = make_maps.pack([("a", a), ("b", b)])
+    q = np.frombuffer(base64.b64decode(o["b64"]), dtype="<i2").reshape(2, 20, 30)
+    ra = o["offset"][0] + q[0] * o["scale"][0]
+    rb = np.where(q[1] == -32768, np.nan, o["offset"][1] + q[1] * o["scale"][1])
+    err = max(np.abs(ra - a).max() / 80, np.nanmax(np.abs(rb - b)) / 8000)
+    report("viewer data: int16 packing round-trips within 1/65000 of range, NaN kept",
+           err <= 1 / 65000 + 1e-12 and np.isnan(rb[3, 4]), f"relative error {err:.1e}")
+
+
 TESTS = [test_projection_is_conformal, test_clip_breaks_lines_at_the_box,
          test_geojson_geometry_kinds, test_heights_match_standard_atmosphere,
          test_mslp_recovers_sea_level_pressure, test_interpolation_exact_at_model_levels,
          test_vorticity, test_destagger, test_wind_rotation_follows_the_meridians,
-         test_every_product_renders, test_viewer_embeds_every_product]
+         test_every_product_renders, test_viewer_embeds_every_product,
+         test_forecast_hours_match_real_snapshot_times, test_valid_time_labels,
+         test_pixel_geometry_for_hover, test_pack_roundtrip]
 
 if __name__ == "__main__":
     print("=" * 62)

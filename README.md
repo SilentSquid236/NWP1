@@ -69,12 +69,19 @@ python src/make_maps.py --run-dir data/tensors_3d/obs_20260923_06
 # -> data/tensors_3d/obs_20260923_06/maps/index.html  (open in a browser)
 ```
 
-A Pivotal-style viewer: products on the left (Surface: MSLP and thickness,
-lowest-level temperature and wind; Upper air: 850/700 hPa temperature,
-500 hPa vorticity, 250 hPa jet; Analysis: the hour-0 analysis with the
-station reports and soundings it was built from; Verification:
-forecast-minus-observed by station, after `daily.sh verify`), forecast hours
-along the top, arrow keys to step. Only numpy and matplotlib are needed. The
+A Pivotal-style viewer. Products are listed on the left:
+- Surface: MSLP and thickness; lowest-level temperature, its 12-hr change,
+  and wind.
+- Upper air: 925, 850 and 700 mb temperature, height and wind; 700 mb
+  vertical velocity; 500 mb vorticity; 300 and 250 mb jet.
+- Analysis: the hour-0 analysis with the thinned station reports and
+  soundings it was built from.
+- Verification: forecast minus observed by station, after `daily.sh verify`.
+
+Forecast hours run along the top, and the arrow keys step through them.
+Hovering reads out the values under the cursor. Clicking opens the model
+sounding there (skew-T, barbs, hodograph, lapse rates, shear and freezing
+level), taken every second grid point. Only numpy and matplotlib are needed. The
 state and coast lines are fetched once from Natural Earth and cached. The
 model is dry, so there is no precipitation, dewpoint or radar product, and
 "near-surface" means the lowest model level, as each map says. To view it
@@ -242,7 +249,7 @@ cd src/postproc && python test_bias_correction.py  # 7
 cd src/verification && python test_fetchers.py     # 9
 cd src && python test_forecast.py                  # 7
 python test_netpolicy.py                           # 9
-python src/maps/test_maps.py                       # 11
+python src/maps/test_maps.py                       # 15
 ```
 
 70 tests. Physics tests assert analytic answers or convergence order, not

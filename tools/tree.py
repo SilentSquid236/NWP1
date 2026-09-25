@@ -134,7 +134,7 @@ NOTES = {
     "src/maps/geography.py": "Lambert conformal projection in NumPy; Natural Earth state/coast lines, fetched once and cached",
     "src/maps/derive.py": "map diagnostics from the sigma state or the analysis: heights, pressure levels, MSLP, vorticity",
     "src/maps/render.py": "the product maps (surface, upper air, analysis with reports, forecast-minus-observed)",
-    "src/maps/viewer.py": "self-contained Pivotal-style HTML viewer page",
+    "src/maps/viewer.py": "self-contained Pivotal-style HTML viewer: hover readout, click-for-sounding (skew-T, hodograph)",
     "src/maps/test_maps.py": "map tests: projection, clipping, standard-atmosphere diagnostics, rendering, viewer",
     "tools/fetch_boundaries.py": "fetches the Natural Earth lines ahead of time, or writes the bundled copy",
     "src/verify_pending.py": "verifies every archived forecast whose window has closed, once",

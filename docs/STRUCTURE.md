@@ -132,7 +132,7 @@ NWP_Deployment_Package/
 |   |   |-- geography.py                  # Lambert conformal projection in NumPy; Natural Earth state/coast lines, fetched once and cached
 |   |   |-- render.py                     # the product maps (surface, upper air, analysis with reports, forecast-minus-observed)
 |   |   |-- test_maps.py                  # map tests: projection, clipping, standard-atmosphere diagnostics, rendering, viewer
-|   |   `-- viewer.py                     # self-contained Pivotal-style HTML viewer page
+|   |   `-- viewer.py                     # self-contained Pivotal-style HTML viewer: hover readout, click-for-sounding (skew-T, hodograph)
 |   |-- postproc/                      # learned correction of a finished forecast
 |   |   |-- bias_correction.py            # Kalman-filter bias correction, MOS (7/7)
 |   |   `-- test_bias_correction.py       # suite for bias_correction.py

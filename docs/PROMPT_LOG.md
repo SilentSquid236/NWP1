@@ -205,6 +205,7 @@ on itself.
 | 120 | "We must also have a way to diplay this data with different variables on maps like how a site like pivotal weather has their maps" | **DIR** | a new deliverable: forecast maps. The AI asked two questions (how to view them, which products) and whether the server has matplotlib, then planned |
 | 121 | *(answers: HTML viewer page; all four groups: surface, upper air, analysis with observations, forecast vs observations)* | DIR | scope fixed: a per-run `maps/index.html` viewer and 13 products |
 | 122 | "matplotlib is installed" | OBS | maps render on the server after each cycle; cartopy not needed (projection and boundaries built in) |
+| 123 | "List of problems: Too many station plots, The whole map should be in bounds even if that means plotting off screen points to extend bounds, only time is F000, Valid times are off on some products, Need to be able to hover and get a value, clicking should show a model sharppy sounding  Suggestion mimic pivotal weather parameters" | **OBS**, DIR | first real use of the maps. Found P-58 (only F000: snapshots not on whole hours); frame filled; stations thinned; Pivotal-style titles with Eastern time; 4 new products; hover readout and click-for-sounding added |
 
 **Observation.** Prompt 53 is 18 words and is the most consequential
 instruction in the project. Before it, nine candidate causes had been patched

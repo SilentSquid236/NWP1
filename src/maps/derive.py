@@ -41,7 +41,7 @@ from sigma import RD, KAPPA, P0, G0            # noqa: E402
 
 LAPSE = 0.0065                                 # K/m, standard atmosphere
 OMEGA = 7.292e-5
-PRESSURE_LEVELS_HPA = (1000, 850, 700, 500, 250)
+PRESSURE_LEVELS_HPA = (1000, 925, 850, 700, 500, 300, 250)
 
 
 def load_forecast(path, domain=None):
@@ -134,6 +134,32 @@ def relative_vorticity(u, v, dx, dy):
     return np.gradient(v, dx, axis=-1) - np.gradient(u, dy, axis=-2)
 
 
+def kinematic_omega(wind_at, p_hpa, dx, dy, top_hpa=200.0, step_hpa=25.0):
+    """
+    Vertical velocity omega (Pa/s) at p_hpa by the kinematic method:
+    omega(p) = -integral from the lid of the horizontal divergence dp,
+    with omega = 0 at the 200 hPa lid (the model's rigid top). wind_at(pk)
+    returns (u, v) on pressure pk in Pa. Positive omega is sinking.
+    """
+    levels = np.arange(top_hpa, p_hpa + 1e-6, step_hpa) * 100.0
+    div = []
+    for pk in levels:
+        u, v = wind_at(pk)
+        div.append(np.gradient(u, dx, axis=-1) + np.gradient(v, dy, axis=-2))
+    div = np.array(div)
+    return -np.sum(0.5 * (div[1:] + div[:-1]) * np.diff(levels)[:, None, None], axis=0)
+
+
+def column_for_sounding(f, i):
+    """(p [L,Y,X] Pa, T K, u, v, Z m, p_s) on the model levels of snapshot i."""
+    theta = np.asarray(f["theta"][i], dtype=float)
+    pi = np.asarray(f["pi"][i], dtype=float)
+    terrain = np.asarray(f["terrain"], dtype=float)
+    uc, vc = destagger(np.asarray(f["u"][i], float), np.asarray(f["v"][i], float))
+    p, T, Z, ps = column_state(theta, pi, f["sigma"], f["p_top"], terrain)
+    return p, T, uc, vc, Z, ps
+
+
 def coriolis(lat):
     return 2.0 * OMEGA * np.sin(np.radians(lat))
 
@@ -165,6 +191,10 @@ def snapshot(f, i, levels_hpa=PRESSURE_LEVELS_HPA):
                                             f["dx"], f["dy"]) + fcor
     if 1000 in levels_hpa and 500 in levels_hpa:
         d["thick_1000_500"] = d["Z500"] - d["Z1000"]
+    d["omega700"] = kinematic_omega(
+        lambda pk: (to_pressure(uc, p, pk, "wind", ps=ps)[0],
+                    to_pressure(vc, p, pk, "wind", ps=ps)[0]),
+        700.0, f["dx"], f["dy"])
     return d
 
 
@@ -218,4 +248,7 @@ def analysis_snapshot(a, terrain, dx, dy, lat, z_low_agl=None,
         d[f"avort{L}"] = relative_vorticity(d[f"u{L}"], d[f"v{L}"], dx, dy) + fcor
     if 1000 in levels_hpa and 500 in levels_hpa:
         d["thick_1000_500"] = d["Z500"] - d["Z1000"]
+    d["omega700"] = kinematic_omega(
+        lambda pk: (_interp_levels(U, pa, pk), _interp_levels(V, pa, pk)),
+        700.0, dx, dy)
     return d

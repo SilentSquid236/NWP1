@@ -2632,6 +2632,40 @@ or CAPE products. The analysis map shows 2 m temperature because that is
 what the analysis fitted. Withheld stations are drawn open and in purple,
 because they score the analysis and did not build it.
 
+**Revision after the first server render (prompt 123).** The user listed:
+too many station plots; the map should be filled edge to edge; only F000
+shows; valid times off on some products; hover for values; click for a
+SHARPpy-style sounding; follow Pivotal's parameters. Changes:
+
+- **Only F000.** A real defect, P-58. The snapshots land up to one 17 s
+  model step after each hour, and the map script demanded exact hours. It is fixed and tested
+  against the model's own step rule.
+- **Frame.** The map is now the largest rectangle inside the projected
+  domain. The grid is drawn beyond it and clipped, so no blank corners
+  remain.
+- **Station plots.** They are thinned to 45 km (55 km for pressure), and
+  the colour-bar label says how many are shown.
+- **Times.** Titles follow Pivotal's pattern: "Init: 06z Sep 23 2026
+  Forecast hour: 12 / Valid: 18z Wed Sep 23 2026 (2 PM EDT Wed)". Eastern
+  time comes from the US DST rule, with no time-zone database needed. What
+  the user saw as "off" has not been identified. The one known time error
+  (P-58) would have hidden every hour but 0, so the user is asked which
+  product it was.
+- **Pivotal parameters.** Added 925 mb temperature/height/wind, 700 mb
+  vertical velocity (kinematic, -µb/s), 300 mb jet and a 12-hr temperature
+  change. Units are mb and kt, °F at the surface and °C aloft.
+- **Hover and sounding.** Per-hour JavaScript data files (int16, a scale
+  and offset per field, loaded with script tags so file:// works): 32–33
+  map fields at every grid point, and model columns at every second point.
+  That is about 35 MB of data per 24 h run and about 70 MB with the images.
+  The page inverts the projection in JavaScript. The frame geometry is
+  tested by drawing markers and finding them within 1 px of where the page
+  computes them. The sounding has no dewpoint or CAPE except at hour 0,
+  because the model is dry, and it says so.
+
+`src/maps/test_maps.py` 15/15. The synthetic 24 h run drew 315 images in
+58 s. The page's JavaScript is still untested in a browser.
+
 ---
 
 ## Recording for the AI-collaboration study

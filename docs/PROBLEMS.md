@@ -461,6 +461,19 @@ service, which is P-06 and is where this project's defects have always been.
 ---
 
 
+## P-58 — Maps show only F000: forecast snapshots are not on whole hours
+**Category** A/E · **First seen** 2026-09-25 · **Status** FIXED
+
+**Symptom.** Found by the user on the first server render (prompt 123): the viewer had only F000. `run_forecast` saves a snapshot at the first step at or after each output time, and the step is 17.1 s, so the snapshots sit at 1.0023 h, 2.0045 h, and so on. `make_maps.py` accepted a snapshot only if it was within 1e-6 h of a whole hour, so it kept none, and only the analysis (hour 0) was drawn.
+
+**What is known.** The synthetic test forecast had exact whole-hour times, so it could not catch this. That is an interface assumption about what `forecast.npz` holds, made without reading `run_forecast`'s output rule (the class of P-54: the offline fixture was the AI's idea of the data, not the data). Fixed with `make_maps.match_hours`, which takes the nearest snapshot within 0.1 h. The synthetic forecast now uses the real step rule.
+
+**Confirmed by.** `src/maps/test_maps.py`, "every forecast hour is found although snapshots land seconds late": snapshot times built by the model's rule give hours 1–16 (16 of 16). The synthetic re-render drew 25 times, 0–24.
+
+**Ruled out.** none.
+---
+
+
 # FIXED
 
 ## P-40 — The eddy-diffusivity ceiling was binding, and was never tested
