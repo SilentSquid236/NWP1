@@ -443,6 +443,21 @@ service, which is P-06 and is where this project's defects have always been.
 
 **Second case (server 06Z 2026-09-23, 16.31 h).** The largest change stayed 10–13 cells from the edge, almost always at the south-west corner of the zone boundary over 540–880 m terrain (2 of 30 early, small maxima were further north on the same column), from hour 1, in near-windless flow (standard-atmosphere first guess). So an inflow mismatch is not required. Open: the zone boundary itself (H1) or the terrain at that place (H2). Test W, relaxation width 6 vs 15, separates them.
 
+**Test W (2026-09-25).** The growth moves with the relaxation width: edge distance mostly 6–8 at width 6 and 15–17 at width 15. Width 6 ran away over flat coastal ground, so terrain is not required. The failure is made at the inner boundary of the zone, a band pinned to hour 0 beside a free interior. Width 15 delays it by about 2 h. Next: test O, no relaxation (O1) and alpha 0.1 (O2).
+
+---
+
+
+## P-57 — Divergence guard and progress log watch u only
+**Category** E/H · **First seen** 2026-09-25 · **Status** FIXED
+
+**Symptom.** Test W width 15, 18.00 h: the hourly log printed "max|u| 17.9 m/s" while the snapshot had max|v| 91.5 m/s. `run_forecast`'s in-loop guard (the 150 m/s ceiling, P-52) and its finiteness checks also looked only at `model.u`.
+
+**What is known.** The first P-56 runaway started in v. A v runaway could therefore pass the ceiling, or go non-finite, without being reported until u followed. Found by comparing the log with `tools/locate_growth.py`, not by a test. Fixed in `src/forecast.py`: the guard uses max(|u|, |v|) and the finiteness of both, and the hourly line prints max|v|. Past divergence times were detected on u and may be late. Locations and ordering come from snapshots and are unaffected.
+
+**Confirmed by.** `src/test_forecast.py` 11/11 after the change. The first server run with the fix must show max|v| in its hourly lines (test O).
+
+**Ruled out.** none.
 ---
 
 

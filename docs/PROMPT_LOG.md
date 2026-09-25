@@ -201,6 +201,7 @@ on itself.
 | 116 | "the push is pulled to the server do you want another test don" | ADM | a live cycle with slope-limited terrain on the server; the hour-13 failure located on the desktop in parallel |
 | 117 | *(pasted: server cycle 2026-09-23 06Z log, forecast section)* | **OBS** | first unattended slope-limited server run: 16.31 h before divergence (window 12–16 h, marginal miss; theta-minimum precursor refuted); exposed a near-windless 06Z first guess; `tools/locate_growth.py` written to locate the failure from the saved snapshots |
 | 118 | *(pasted: server `locate_growth.py` on the 06Z forecast)* | **OBS** | locate prediction held in all 15 intervals: growth pinned 10–11 cells in, at the south-west corner of the relaxation zone over the Appalachians; first guess confirmed `standard_atmosphere`; test W (width 6 vs 15) designed to separate "zone boundary" from "terrain at that place" |
+| 119 | *(pasted: test W logs and `locate_growth.py` for widths 6 and 15)* | **OBS** | growth moves with the zone boundary (H1 holds, H2 refuted: width 6 ran away over 1–2 m coastal ground); width 15 delays about 2 h; P-57 found (guard and log watch u only; v at 91.5 m/s unreported) and fixed; `--relax-alpha` added; test O (no relaxation / alpha 0.1) designed |
 
 **Observation.** Prompt 53 is 18 words and is the most consequential
 instruction in the project. Before it, nine candidate causes had been patched

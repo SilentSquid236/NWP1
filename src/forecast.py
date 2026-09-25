@@ -299,10 +299,14 @@ def run_forecast(model, driver, relax, duration, dt=None, output_every=None,
         relax.apply(model, driver.at(model.time))
 
         if k % every_n == 0:
-            umax = float(np.nanmax(np.abs(model.u)))
-            if not np.isfinite(model.u).all() or umax > U_CEILING:
+            # Both components: the P-56 runaways are in v first, and a guard
+            # on u alone let one reach 91 m/s unreported (P-57).
+            umax = float(max(np.nanmax(np.abs(model.u)),
+                             np.nanmax(np.abs(model.v))))
+            finite = np.isfinite(model.u).all() and np.isfinite(model.v).all()
+            if not finite or umax > U_CEILING:
                 print(f"\n  DIVERGED at t+{model.time/3600:.2f} h "
-                      f"(max|u| {umax:.0f} m/s) -- stopping", flush=True)
+                      f"(max|u,v| {umax:.0f} m/s) -- stopping", flush=True)
                 info["stopped"] = f"diverged at {model.time/3600:.2f} h"
                 break
             if deadline_s is not None and time.time() - t_start > deadline_s:
@@ -331,10 +335,11 @@ def run_forecast(model, driver, relax, duration, dt=None, output_every=None,
                 ps = model.surface_pressure
                 print(f"  +{model.time/3600:5.1f} h  "
                       f"max|u| {np.abs(model.u).max():6.1f} m/s  "
+                      f"max|v| {np.abs(model.v).max():6.1f}  "
                       f"theta {model.theta.min():.1f}-{model.theta.max():.1f} K  "
                       f"p_s {ps.min()/100:.0f}-{ps.max()/100:.0f} hPa  "
                       f"max|sigma_dot| {np.abs(model.sigma_dot()).max():.2e}")
-            if not np.isfinite(model.u).all():
+            if not (np.isfinite(model.u).all() and np.isfinite(model.v).all()):
                 print("  FORECAST DIVERGED -- stopping")
                 info["stopped"] = f"diverged at {model.time/3600:.2f} h"
                 break
@@ -356,6 +361,9 @@ def main():
     p.add_argument("--output-every", type=float, default=1.0,
                    help="Snapshot interval in hours")
     p.add_argument("--relax-width", type=int, default=10)
+    p.add_argument("--relax-alpha", type=float, default=1.0,
+                   help="Relaxation weight per step at the outer edge "
+                        "(the cosine ramp scales from it); 0 < alpha <= 1")
     p.add_argument("--stochastic", action="store_true",
                    help="Enable SPPT-style tendency perturbations")
     p.add_argument("--seed", type=int, default=None)
@@ -458,8 +466,12 @@ def main():
           f"p_s {ps.min()/100:.0f}-{ps.max()/100:.0f} hPa, "
           f"max|sigma_dot| {np.abs(model.sigma_dot()).max():.2e} 1/s")
 
-    relax = Relaxation3D(grid, width=args.relax_width)
+    if not 0.0 < args.relax_alpha <= 1.0:
+        raise SystemExit(f"--relax-alpha {args.relax_alpha} is outside (0, 1]")
+    relax = Relaxation3D(grid, width=args.relax_width,
+                         alpha_max=args.relax_alpha)
     print(f"  relaxation     : width {args.relax_width}, "
+          f"alpha {args.relax_alpha:g} at the edge, "
           f"interior {relax.interior_fraction:.0%}")
     print(f"  timestep       : {model.max_dt():.1f} s "
           f"(external wave ~290 m/s sets this)\n")

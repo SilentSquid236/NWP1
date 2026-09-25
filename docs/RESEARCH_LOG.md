@@ -2516,6 +2516,64 @@ refuted if both runs move their growth with the boundary. If both hold in
 part (moves with the boundary, but only in the west), the answer is the
 combination: the zone boundary where it crosses steep terrain.
 
+**Test W result (server, prompt 119). H1 holds and H2 is refuted as the
+sole cause: the growth moves with the zone boundary.**
+
+| | Width 6 | Width 10 (06Z run) | Width 15 |
+|---|---|---|---|
+| alpha per step, one cell inside | 0.067 | 0.0245 | 0.011 |
+| Outcome | diverged 16.20 h | diverged 16.31 h | reached 18.00 h, running away (max\|v\| 31.0 → 91.5 m/s in the last 15 min) |
+| Edge distance of the largest change | 5–9 in 119 of 126 lines; 10–11 in 5; 32 and 43 in 2 (at 0.5–0.75 h, ≤ 1.1 m/s) | 10–13 in 30 of 30 | 15–19 in 105 of 142; 25–38 in 37 (all by 7 h, ≤ 1.0 m/s) |
+| Minimum edge distance of points changing > 5 m/s | 6 in 24 of 29 intervals, 7–9 in 5 | 10–11 | 15 in 25 of 39, 16–17 in 14 |
+| Where it ran away | southern edge, rows 8–9, cols 46–49, terrain 1–2 m (near the Delmarva coast) | south-west corner, 540–880 m | south-west corner, rows 15–21, cols 15–18, 730–850 m |
+
+Scored against the predictions:
+
+- Width 6 dies before 16.3 h: holds, but by 0.11 h, which is too small to
+  mean anything.
+- Width 6 grows 6–7 cells in: holds (mostly 6–8).
+- Width 15 survives past 16.3 h: holds, by about 2 h. It was already
+  running away when the run ended.
+- Width 15 grows about 15 cells in: holds (mostly 15–17).
+- H2 (it stays at the Appalachian corner): refuted. The width-6 run ran
+  away over flat coastal ground at 1–2 m.
+
+The south-west corner is still where the width-10 and width-15 runs fail,
+so the place has some influence, but it is neither necessary nor the cause.
+
+**What this establishes.** The failure is made at the inner boundary of
+the relaxation zone, wherever that boundary is. A gentler weight ramp
+delays it (by about 2 h from 0.0245 to 0.011 per step), and a steeper one
+does not bring it much earlier. So the ramp's steepness is not the main
+control. What all three runs share is the thing itself: a band pinned to
+the hour-0 state next to an interior that is free to evolve.
+
+**A defect found reading these logs: P-57.** At 18.00 h the width-15 log
+printed "max|u| 17.9 m/s" while max|v| was 91.5 m/s. The in-loop guard and
+the progress log both look only at u. The first P-56 runaway (3.75 h) started in v, and so did the last
+width-15 hour, so a v runaway could pass the 150 m/s ceiling unreported
+until u followed: the P-52 class again, "failure not detected". Fixed in `forecast.py`: the guard
+now uses max(|u|, |v|) and finiteness of both, and the hourly line prints
+max|v|. `test_forecast.py` passes 11/11. Earlier divergence times were detected on u, so they
+may be late by however long u took to follow v. The locations and the
+order of events come from snapshots and are unaffected.
+
+**Next: test O, predictions first.** Same 06Z state, 24 h, 15-minute
+snapshots, run side by side:
+
+- **O1, no relaxation** (`--relax-width 0`). The edges then follow the
+  model's own replicate condition, and no observed-later data is involved
+  either way. If the pinned/free interface is what makes the failure,
+  there is no growth band at a fixed edge distance and the run survives
+  past 18 h. It fails if it dies by 18 h with its growth 5 or more cells
+  in. If it dies with its growth at edge distance 0–2, that is a different
+  failure (the free edge), not a refutation. It is recorded as a new
+  problem, and it would say the zone is needed but in a different form.
+- **O2, weak pinning** (width 10, `--relax-alpha 0.1`: 0.1 per step at the
+  edge, 0.00245 one cell in). If the pull's strength matters, rather than
+  only its presence, it survives past 18 h. If it fails, its growth is
+  still about 10 cells in.
+
 
 ---
 
