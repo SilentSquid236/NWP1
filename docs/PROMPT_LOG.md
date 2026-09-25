@@ -200,6 +200,7 @@ on itself.
 | 115 | *(pasted: server `bench_threads.py`, test C log, test B missing)* | **OBS** | torch 6–14× at 8 threads (prediction refuted: port worth it); test C (HRRR, frozen edges) died at 3.16 h, which exposed that no real-data forecast had ever survived; slope mechanism written down; test S (slope-limited terrain) then ran: 3.75 → 13.7 h |
 | 116 | "the push is pulled to the server do you want another test don" | ADM | a live cycle with slope-limited terrain on the server; the hour-13 failure located on the desktop in parallel |
 | 117 | *(pasted: server cycle 2026-09-23 06Z log, forecast section)* | **OBS** | first unattended slope-limited server run: 16.31 h before divergence (window 12–16 h, marginal miss; theta-minimum precursor refuted); exposed a near-windless 06Z first guess; `tools/locate_growth.py` written to locate the failure from the saved snapshots |
+| 118 | *(pasted: server `locate_growth.py` on the 06Z forecast)* | **OBS** | locate prediction held in all 15 intervals: growth pinned 10–11 cells in, at the south-west corner of the relaxation zone over the Appalachians; first guess confirmed `standard_atmosphere`; test W (width 6 vs 15) designed to separate "zone boundary" from "terrain at that place" |
 
 **Observation.** Prompt 53 is 18 words and is the most consequential
 instruction in the project. Before it, nine candidate causes had been patched

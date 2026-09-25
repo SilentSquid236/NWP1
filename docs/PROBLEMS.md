@@ -441,6 +441,8 @@ service, which is P-06 and is where this project's defects have always been.
 
 **Second failure located (2026-09-23).** The first growth came at 11.59–11.67 h, 10 cells from the western (inflow) edge: the inner boundary of the 10-cell relaxation zone. It is violent (theta ±6.7 K and pi 6.2 hPa in 5 min) and near grid scale. Mechanism: the frozen edge pulls the inflow boundary back to hour 0 while the interior has moved on. Candidates: a gentler/wider relaxation for a frozen driver, or inflow-only relaxation. Not yet tested.
 
+**Second case (server 06Z 2026-09-23, 16.31 h).** Growth stayed 10–11 cells from the edge at the south-west corner of the zone boundary over 540–880 m terrain, from hour 1, in near-windless flow (standard-atmosphere first guess). So an inflow mismatch is not required. Open: the zone boundary itself (H1) or the terrain at that place (H2). Test W, relaxation width 6 vs 15, separates them.
+
 ---
 
 

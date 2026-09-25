@@ -2464,6 +2464,54 @@ saved snapshots. If this is the same frozen-edge failure, the largest
 change between 15 and 16 h lies 8–12 cells from an edge, at the inner
 boundary of the relaxation zone. It fails if it lies more than 20 cells in.
 
+**Located (server, prompt 118): the prediction holds in every interval.**
+The first guess was `standard_atmosphere`, which has no wind at all, so the
+near-windless state is explained. In all 15 hourly intervals, the largest
+change in u and in v lies **10–13 cells from the edge** (usually exactly
+10 or 11), at rows 10–16 and columns 10–14. That is the south-west corner
+of the relaxation zone's inner boundary, over 540–880 m of the West Virginia
+Appalachians. The corner cell itself, row 10 col 10, has the largest change
+in hours 1–4.
+
+| Hours | Points changing > 5 m/s | Largest change u / v (m/s) |
+|---|---|---|
+| 1–5 | 0 | 2–4 / 2–5 |
+| 7–10 | 3–6 | 8–9 / 7–8 |
+| 12–13 | 33 | 12 / 10 |
+| 14–15 | 79 / 71 | 14 / 17 |
+| 15–16 | 158 / 148 | 36 / 68 |
+
+The minimum edge distance of the fast-changing points is 10 in every
+interval, and the median is 11–12. The disturbance never moves in; it
+widens along the zone boundary until it runs away. This is not the 12Z
+picture of an inflow mismatch: this flow is under 10 m/s and almost nothing
+evolves to mismatch. Both failures do sit near a western corner, though.
+In the 12Z case, row 84 is 12 cells from the northern edge.
+
+**Two explanations remain, and they make different predictions:**
+
+- **H1, the zone boundary itself.** The failure is made where the
+  relaxation weight falls to zero. With the cosine profile, alpha per step
+  is 0.0245 one cell inside the boundary and 0 at it: a pinned state next to
+  a free one. The location should then move with the width.
+- **H2, the place.** Steep terrain near the western corners (with the
+  sigma-coordinate pressure-gradient error in an unbalanced, standard
+  atmosphere state) makes it. The coincidence with column 10 is then
+  chance, twice.
+
+**Test W (server, before any result): the same 06Z state, 18 h,
+15-minute snapshots, relaxation width 6 and width 15, run side by side.**
+
+| | H1 predicts | H2 predicts |
+|---|---|---|
+| Width 6 | first growth 6–7 cells from the edge; dies **before** 16.3 h (steeper weight: 0.067 per step one cell in) | growth stays at rows 10–16, cols 10–14 (edge distance ≈ 10) |
+| Width 15 | first growth 15–16 cells in; survives **past** 16.3 h (0.011 per step one cell in) | the corner is inside the zone and pinned; growth appears elsewhere over terrain, or not at all |
+
+H1 is refuted if width 6 keeps its growth at edge distance ≥ 9. H2 is
+refuted if both runs move their growth with the boundary. If both hold in
+part (moves with the boundary, but only in the west), the answer is the
+combination: the zone boundary where it crosses steep terrain.
+
 
 ---
 
