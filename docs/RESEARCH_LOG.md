@@ -2574,6 +2574,64 @@ snapshots, run side by side:
   only its presence, it survives past 18 h. If it fails, its growth is
   still about 10 cells in.
 
+**Test O result (server, prompt 124).**
+
+| | O1: no relaxation | 06Z run (width 10, alpha 1) | O2: width 10, alpha 0.1 |
+|---|---|---|---|
+| Outcome | diverged **6.67 h** (163 m/s) | diverged 16.31 h | diverged **21.67 h** (154 m/s) |
+| Edge distance of the largest change | 0–2 in 43 of 50 lines, 3–4 in 7 | 10–13 in 30 of 30 | 8–13 in 149 of 170; 25–43 in 21 (all by 7.75 h, ≤ 1.1 m/s) |
+| Minimum edge distance of points changing > 5 m/s | 0 in 22 of 22 intervals | 10–11 | 9–10 in 45 of 54, 8 in 2, 11–12 in 7 |
+| Where it ran away | southern edge, rows 0–4, cols 53–109, over the sea (0 m) | south-west corner, 540–880 m | south-west corner, rows 9–14, cols 9–14, 660–880 m |
+
+Scored against the predictions:
+
+- O1 survives past 18 h if the interface is the cause: **refuted.** It
+  died much earlier, at the physical edge (edge distance 0). Growth started
+  at 4 h along the southern boundary over the ocean. By the rule written
+  beforehand, this is a different failure (the replicate edge), not a
+  vindication of the zone. **Some relaxation is needed**: a free edge fails
+  in under 7 h.
+- O2 survives past 18 h if the pull's strength matters: **holds**, 21.67 h
+  against 16.31 h.
+- O2 fails about 10 cells in: **holds**, mostly 10–11. It runs away at the
+  same south-west corner over the Appalachians.
+
+**What the three tests say together.**
+
+| Change from the 06Z default | Hours gained |
+|---|---|
+| width 10 → 6 | −0.1 |
+| width 10 → 15 (gentler ramp, 0.011 one cell in) | ≈ +2 |
+| alpha 1 → 0.1 (0.00245 one cell in) | **+5.4** |
+| no zone at all | −9.6 |
+
+The failure is made at the zone's inner edge, and it weakens as the pull
+toward the frozen hour-0 state weakens. Without a zone, the edge itself
+fails first. The south-west corner (the Appalachians under a
+standard-atmosphere first guess) is where it breaks whenever the zone
+boundary lies near it. The simplest reading: the frozen edge state is not
+in the model's own balance over that terrain. The stronger the pull back
+to it, the faster the mismatch at the zone's inner edge feeds the growth.
+
+This is not yet a fix, and weakening the pull is tuning, not a cure: every
+case still fails, only later. But the cycle needs 24 h, and 21.67 h is
+close.
+
+**Next: test P (predictions first).** Same 06Z state, 24 h, run side by
+side:
+
+- **P1**, width 15 and alpha 0.1, the two helpful changes together. If the
+  effects add, it survives 24 h. It fails if it dies before 21.67 h (worse
+  than alpha 0.1 alone).
+- **P2**, width 10 and alpha 0.03, the dose-response check. If strength is
+  the control, it outlives O2 (> 21.67 h). If it dies earlier than O2,
+  weaker is not simply better. The edge would then be too free, as in O1,
+  and its growth would move toward edge distance 0–4.
+
+A 12Z case with real soundings is needed before any default changes. The
+06Z state has a standard-atmosphere first guess, and a setting tuned on
+one windless night is not a result.
+
 
 
 ---

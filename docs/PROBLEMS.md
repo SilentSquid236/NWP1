@@ -445,6 +445,8 @@ service, which is P-06 and is where this project's defects have always been.
 
 **Test W (2026-09-25).** The growth moves with the relaxation width: edge distance mostly 6–8 at width 6 and 15–17 at width 15. Width 6 ran away over flat coastal ground, so terrain is not required. The failure is made at the inner boundary of the zone, a band pinned to hour 0 beside a free interior. Width 15 delays it by about 2 h. Next: test O, no relaxation (O1) and alpha 0.1 (O2).
 
+**Test O (2026-09-25).** With no relaxation the run dies at 6.67 h at the physical southern edge (edge distance 0), so some zone is needed. With alpha 0.1 at width 10 it lasts to 21.67 h (from 16.31 h), still failing about 10 cells in at the south-west corner. Strength of the pull toward the frozen state is the strongest control found (+5.4 h); width 15 gave about +2 h. Next: test P (width 15 + alpha 0.1; alpha 0.03), then a 12Z case with soundings before any default changes.
+
 ---
 
 
