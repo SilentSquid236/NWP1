@@ -21,6 +21,10 @@
 #     budget after ingest, and writes the hours it reached.
 #   * Verification is NOT part of a run -- the observations it needs do not
 #     exist yet. `daily.sh verify` scores every run whose window has closed.
+#   * Maps (2026-09-25): after the forecast, src/make_maps.py draws every
+#     product for the hours reached into <rundir>/maps/, with index.html as
+#     the viewer; `verify` adds the error maps. A map failure never changes
+#     the cycle's status.
 #   * One variable, RUNDIR, gives every step its directory. The old script
 #     handed the forecast $DATA/tensors/... while ingest wrote to
 #     $DATA/tensors_3d/... (P-55).
@@ -46,7 +50,7 @@ TENSORS="$DATA/tensors_3d"          # == config.TENSOR_DIR; the ONE place runs l
 LOGDIR="$DATA/logs"
 LOCK="$DATA/daily.lock"
 BUDGET_MIN="${NWP_CYCLE_BUDGET_MIN:-90}"
-RESERVE_MIN=8                       # after the forecast: writing, archiving
+RESERVE_MIN=8                       # after the forecast: writing, archiving, maps
 
 mkdir -p "$LOGDIR" "$DATA"
 
@@ -99,8 +103,21 @@ step() {
     echo "data   $DATA"
 } >> "$LOG"
 
+maps() {
+    # Maps never change a cycle's status: a failed map is not a failed forecast.
+    local keep=$STATUS
+    step maps python -u "$ROOT/src/make_maps.py" "$@" || true
+    STATUS=$keep
+}
+
 if [ "$MODE" = "verify" ]; then
     step verify python -u "$ROOT/src/verify_pending.py"
+    # Error maps for every run verified since its maps were last drawn.
+    for d in "$TENSORS"/obs_*; do
+        [ -f "$d/verified.json" ] || continue
+        [ -f "$d/maps/index.html" ] && [ "$d/maps/index.html" -nt "$d/verified.json" ] && continue
+        maps --run-dir "$d" --products err_t,err_w
+    done
     echo "=== done  $(date -u +%FT%TZ)  status=$STATUS" >> "$LOG"
     exit "$STATUS"
 fi
@@ -135,6 +152,11 @@ fi
 if [ ! -f "$RUNDIR/forecast.npz" ]; then
     echo "=== no forecast.npz in $RUNDIR -- nothing to verify later" >> "$LOG"
     [ "$STATUS" -eq 0 ] && STATUS=1
+fi
+
+# 3. Maps and the viewer (<rundir>/maps/index.html), for the hours reached.
+if [ -f "$RUNDIR/forecast.npz" ] || [ -f "$RUNDIR/obs_analysis_f00.npz" ]; then
+    maps --run-dir "$RUNDIR"
 fi
 
 echo "=== done  $(date -u +%FT%TZ)  +$(( ($(date +%s) - T0) / 60 )) min  status=$STATUS" >> "$LOG"

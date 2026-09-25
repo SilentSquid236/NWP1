@@ -127,6 +127,12 @@ NWP_Deployment_Package/
 |   |   |-- turbulence.py                 # Richardson-number vertical mixing
 |   |   |-- vertical.py                   # pressure-coordinate vertical operators
 |   |   `-- visualize_instability.py      # cross-sections and growth curves
+|   |-- maps/
+|   |   |-- derive.py                     # map diagnostics from the sigma state or the analysis: heights, pressure levels, MSLP, vorticity
+|   |   |-- geography.py                  # Lambert conformal projection in NumPy; Natural Earth state/coast lines, fetched once and cached
+|   |   |-- render.py                     # the product maps (surface, upper air, analysis with reports, forecast-minus-observed)
+|   |   |-- test_maps.py                  # map tests: projection, clipping, standard-atmosphere diagnostics, rendering, viewer
+|   |   `-- viewer.py                     # self-contained Pivotal-style HTML viewer page
 |   |-- postproc/                      # learned correction of a finished forecast
 |   |   |-- bias_correction.py            # Kalman-filter bias correction, MOS (7/7)
 |   |   `-- test_bias_correction.py       # suite for bias_correction.py
@@ -143,6 +149,7 @@ NWP_Deployment_Package/
 |   |-- forecast.py                       # end-to-end driver, sigma core over real terrain
 |   |-- ingest_hrrr.py                    # Herbie fetch, domain cut, stride coarsening -> .npz
 |   |-- ingest_obs.py                     # one cycle's initial state from observations at or before the cycle time
+|   |-- make_maps.py                      # renders a run's product maps and its HTML viewer (<rundir>/maps/index.html)
 |   |-- nwp_emulator_3d.py                # Conv3d state-to-state emulator  [SUPERSEDED -- bounded by its teacher]
 |   |-- test_forecast.py                  # driver suite (11/11)
 |   |-- test_hrrr_search.py               # GRIB search-string suite (6/6)
@@ -155,6 +162,7 @@ NWP_Deployment_Package/
 |   |-- bench_threads.py                  # numpy vs torch thread scaling on model-sized arrays, before any port
 |   |-- checklayout.py                    # checks for src/src nesting, missing and duplicate modules
 |   |-- daily.sh                          # one forecast cycle from cron (obs -> analysis -> forecast); `verify` mode scores closed windows
+|   |-- fetch_boundaries.py               # fetches the Natural Earth lines ahead of time, or writes the bundled copy
 |   |-- locate_growth.py                  # where a saved forecast starts to run away: largest change per snapshot, edge distance
 |   |-- manifest.py                       # writes and checks docs/MANIFEST.txt, file by file
 |   |-- newlog.py                         # append a dated research-log entry from the template

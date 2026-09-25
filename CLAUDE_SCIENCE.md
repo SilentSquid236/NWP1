@@ -34,6 +34,13 @@ this app. Install it on the **Windows desktop**. If working directly on the
 server is wanted later, that is a question for the server's admin, not a
 workaround to find.
 
+What the server's Python already has is enough for the forecast maps
+(2026-09-25): numpy and matplotlib are in `/opt/anaconda3` (Python 3.9), as
+the user confirmed. cartopy is not used. The map projection (Lambert
+conformal) is plain NumPy in `src/maps/`, and the state and coast lines are
+a small bundled file, so maps render on the server after each run with
+nothing installed and no network.
+
 ## Steps
 
 1. **Create a project** in Claude Science named `NWP1 — AI-built weather model`.

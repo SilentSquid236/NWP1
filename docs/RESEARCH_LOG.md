@@ -2575,6 +2575,63 @@ snapshots, run side by side:
   still about 10 cells in.
 
 
+
+---
+
+## 2026-09-25 — Forecast maps and a Pivotal-style viewer
+
+**Context.** Prompt 120: the forecasts need maps "like how a site like
+pivotal weather has their maps". The user chose an HTML viewer and all four
+product groups: surface, upper air, the analysis with its observations, and
+forecast minus observed. The server has matplotlib but no cartopy, and
+nothing may be installed (constraint 1).
+
+**What was built.**
+- `src/maps/geography.py`: a spherical Lambert conformal projection (39/45 N,
+  centred 42 N 74 W) in NumPy. Natural Earth 1:50m coast, lakes, borders and
+  state lines are fetched once as GeoJSON, clipped with the json module and
+  NumPy, and cached like the ETOPO terrain.
+- `src/maps/derive.py`: every product field from the model's own variables
+  and constants. That covers heights by the core's own hydrostatic
+  integration, ln-p interpolation to 1000/850/700/500/250 hPa, MSLP,
+  thickness, de-staggered winds and absolute vorticity. Hour 0 is drawn from
+  the analysis.
+- `src/maps/render.py`: 7 forecast products, 4 analysis-with-reports products
+  and 2 error products, each on a fixed colour scale.
+- `src/maps/viewer.py`: one self-contained `index.html` per run.
+- `src/make_maps.py`: renders it all. `daily.sh` runs it after each forecast,
+  and `verify` adds the error maps. A map failure never changes a cycle's
+  status.
+
+**Checks.** `src/maps/test_maps.py` 11/11:
+- Heights are within 1.7 m of the standard atmosphere at 1000–250 hPa, on
+  flat ground and over 1000 m.
+- MSLP reduces a standard atmosphere over 0–1500 m to 1013.25 hPa.
+- Interpolation is exact at the model levels.
+- Vorticity is 0 for uniform flow and 2Ω for solid-body rotation.
+- The projection is conformal, with scale 0.9986–1.0033 over the domain.
+- Barbs are rotated onto the projected meridians to within 3×10⁻⁵ degrees.
+- Every product renders, and the viewer embeds every product and hour with
+  no external URL.
+
+A synthetic 24 h run (a moving low over analytic terrain, with the captured
+2026-09-21 12Z station payloads as reports) rendered 179 images in 45 s on
+the desktop, well inside the cycle's 8-minute reserve.
+
+**What is not verified yet.** The state and coast lines have not been
+drawn anywhere. The desktop sandbox had no network, so the Natural Earth
+fetch happens on the server's first run, and the alignment of lines with
+the grid is checked by eye there. The JavaScript viewer was not run in a
+browser here (no browser or node in the sandbox). Its manifest is tested;
+its behaviour is not.
+
+**Honesty in the labels.** The model is dry and has no 2 m or 10 m
+diagnosis. So "near-surface" maps say "lowest model level (≈ 236 m above
+ground)" in their titles, and there are no precipitation, dewpoint, radar
+or CAPE products. The analysis map shows 2 m temperature because that is
+what the analysis fitted. Withheld stations are drawn open and in purple,
+because they score the analysis and did not build it.
+
 ---
 
 ## Recording for the AI-collaboration study
