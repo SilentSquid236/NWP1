@@ -211,6 +211,7 @@ on itself.
 | 126 | "can we do hourly not 12 hourly change" | DIR | the temperature-change product and its hover field became 1-hr changes (F001 onward) |
 | 127 | "would using more cpu increase the speed of these tasks" | **CON** | answered from measurements: not for a single run until the core leaves NumPy; yes today for parallel test variants; not for the network-bound ingest |
 | 128 | "do the pytorch port" | DIR | one physics source with NumPy/torch backends; NumPy path bit-identical; torch agrees to round-off and runs 8.4× faster at 4–8 threads on the desktop; server check written, default left NumPy until it passes |
+| 129 | *(pasted: server `test_backend.py` 3/3 and `check_backend.py`)* | **OBS** | torch agrees on the server (2e-12) but gives only 2.8× at 8 threads; the AI's "about 5 min for 24 h" had been extrapolated from the desktop, where NumPy is slow; real-case timing requested |
 
 **Observation.** Prompt 53 is 18 words and is the most consequential
 instruction in the project. Before it, nine candidate causes had been patched

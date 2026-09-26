@@ -2815,6 +2815,51 @@ Python 3.9. `tools/check_backend.py` runs the same comparison there. The
 backend becomes the cycle default (`NWP_BACKEND=torch` in `daily.sh`)
 only after that shows round-off agreement.
 
+**Server check (prompt 129).** `test_backend.py` passes 3/3 on the Xeon
+(torch 2.8.0+cpu, NumPy 1.24.4, Python 3.9). `check_backend.py`, full
+grid, 60 steps:
+
+| Backend | s/step | Speed-up | Max relative difference |
+|---|---|---|---|
+| NumPy | 0.237 | 1.0× | — |
+| torch × 1 | 0.308 | 0.8× | 2.2e-12 |
+| torch × 4 | 0.114 | 2.1× | 2.2e-12 |
+| torch × 8 | 0.085 | **2.8×** | 2.1e-12 |
+| torch × 12 | 0.087 | 2.7× | 2.1e-12 |
+| torch × 16 | 0.089 | 2.7× | 2.1e-12 |
+
+Agreement holds everywhere. The speed-up is a third of the desktop's, and
+the estimate given to the user ("about 5 minutes for 24 h") was wrong.
+That estimate was carried over from the desktop without asking why the
+desktop's ratio was so large.
+
+The per-component profile on the desktop shows the reason. There NumPy is
+the slow side: a step takes 358 ms against the server's 237. Torch at 8
+threads takes 41 ms on the desktop and 85 ms on the server, a slower,
+shared core. The ratio therefore depends on both machines' NumPy as much as
+on torch.
+
+| Desktop, ms | NumPy | torch × 1 | torch × 8 |
+|---|---|---|---|
+| step | 358 | 97 | 41 |
+| tendencies (×3 per step) | 112 | 30 | 15 |
+| vertical mixing | 18.8 | 6.4 | 2.5 |
+| surface drag | 10.1 | 3.2 | 0.9 |
+| hyperdiffusion (×3 per tendency) | 8.4 | 1.5 | 0.5 |
+| continuity | 6.2 | 1.4 | 0.6 |
+| geopotential | 5.1 | 2.2 | 1.5 |
+| convective adjustment | 1.9 | 1.1 | 0.4 |
+
+At torch × 1 no single term dominates. What remains is the cost of many
+small operations, which is what fusing them (`torch.compile`) would
+attack. That needs a C++ compiler at run time: to be checked on the
+server, and not testable on this desktop.
+
+Expected for a real 24 h cycle on the server: the production forecast ran
+at about 0.48 s/step in NumPy, so torch × 8 should give about 0.17 s/step,
+or about 15 min instead of about 40 plus a minute of set-up. Measured on
+the real case next.
+
 ---
 
 ## Recording for the AI-collaboration study

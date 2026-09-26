@@ -18,8 +18,8 @@ b660cbbe87e8813c      6530  docs/CAPABILITIES.md
 6026c87422e8fbd4      4956  docs/METHODOLOGY.md
 1eeb6616080945dd      6884  docs/POSTPROCESSING.md
 aadf12b546fd72c8     65096  docs/PROBLEMS.md
-c220ae84efbb7cea     25364  docs/PROMPT_LOG.md
-fed06f5f92621d02    160018  docs/RESEARCH_LOG.md
+ac6a4b6eb7c46971     25640  docs/PROMPT_LOG.md
+8591c1976ee3561f    161926  docs/RESEARCH_LOG.md
 78c3574bb1b0dd88      4845  docs/STABILITY.md
 c36e5c3a6f81dfa6     18875  docs/STRUCTURE.md
 a155ccce967d26bc      4340  docs/TOKEN_COST.md
