@@ -2680,6 +2680,14 @@ If Q1 holds, width 15 / alpha 0.1 becomes the default: two cases, one calm
 and one with a jet. If it fails, the zone's form, not its strength, is
 next.
 
+**Viewer confirmed in a browser (prompt 131).** The user opened the 06Z
+2026-09-23 maps. The hover readout and the click-for-sounding panel both
+work, and the valid times are correct on every product. The "valid times
+are off" complaint (prompt 124) was made on the first map version. The
+revision after it changed the hour matching (P-58) and the title times,
+and the current build no longer shows the problem. Nothing on the viewer
+is still unconfirmed.
+
 
 
 ---
