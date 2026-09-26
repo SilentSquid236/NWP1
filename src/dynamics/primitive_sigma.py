@@ -352,6 +352,7 @@ class PrimitiveSigma:
 
         u0, v0, t0, p0 = self.u, self.v, self.theta, self.pi
 
+        # Three-stage Runge-Kutta, dt/3, dt/2, dt (Wicker and Skamarock 2002).
         du, dv, dth, dp = self.tendencies(u0, v0, t0, p0)
         u1, v1, t1, p1 = (u0 + dt / 3 * du, v0 + dt / 3 * dv,
                           t0 + dt / 3 * dth, p0 + dt / 3 * dp)

@@ -213,7 +213,7 @@ def state_to_boundary(u, v, theta, pi=None):
 
 class Relaxation3D:
     """
-    Davies relaxation applied to a 3D state.
+    Davies (1976) relaxation applied to a 3D state.
 
     The 2D weight field is reused at every level: the lateral boundary is a
     vertical wall, so the taper depends only on horizontal distance from the
@@ -397,7 +397,7 @@ def main():
                    help="Levels below the lid in the wind sponge (P-60 test R); "
                         "the default of 5 is the measured choice")
     p.add_argument("--stochastic", action="store_true",
-                   help="Enable SPPT-style tendency perturbations")
+                   help="Enable SPPT-style tendency perturbations (Buizza et al. 1999)")
     p.add_argument("--seed", type=int, default=None)
     p.add_argument("--no-balance", action="store_true",
                    help="Skip initial divergence removal. The forecast will "

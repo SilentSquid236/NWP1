@@ -12,7 +12,7 @@ cell -- a small error that is also a spurious pressure gradient everywhere.
 TERRAIN (P-53)
 
 HRRR terrain is gone with the rest of HRRR. Terrain is static geography, not
-weather, so any elevation model will do; ETOPO (NOAA, 1 arc-minute) is served
+weather, so any elevation model will do; ETOPO1 (NOAA National Geophysical Data Center 2009; 1 arc-minute) is served
 by NOAA's ERDDAP as plain CSV, which needs nothing but urllib. It is fetched
 ONCE, block-averaged onto the grid, and cached under <data>/static/. Ocean
 depths are clipped to sea level: the atmosphere's lower boundary over water

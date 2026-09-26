@@ -41,7 +41,7 @@ observation space, so a grid field can be compared with a point measurement.
 `K` is the **gain**: how much to trust the obs relative to the background.
 
 Full DA (3D-Var, EnKF) solves for `K` from error covariances. That is a large
-undertaking. A successive-corrections scheme (Cressman or Barnes) approximates
+undertaking. A successive-corrections scheme (Cressman 1959; Barnes 1964) approximates
 it with a distance-weighted influence radius, needs no matrix inversion, and is
 a reasonable first implementation:
 

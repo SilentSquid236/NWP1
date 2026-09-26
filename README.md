@@ -163,11 +163,13 @@ than the atmosphere. Train on analysis.
 | `docs/STABILITY.md` | the open stability problem, with all measurements |
 | `docs/DATA_ASSIMILATION.md` | observation operator, QC, increments — design |
 | `docs/POSTPROCESSING.md` | bias correction and learned post-processing — design |
+| `docs/REFERENCES.md` | every outside method, data set and library used, in AMS format, with where each is used |
 
 New log entry: `python tools/newlog.py "Short title"`. Hypothesis before
 result.
 
-Before a commit: `python tools/problem.py check` (no fix asserted without a
+Before a commit: `python tools/check_refs.py` (every citation has an AMS-format
+entry in `docs/REFERENCES.md`), `python tools/problem.py check` (no fix asserted without a
 measurement), `python tools/manifest.py --check` (this copy is byte-for-byte
 what it should be), `python tools/checklayout.py` (no `src/src`), and
 `python tools/stale.py` (nothing has re-checked these numbers since the code

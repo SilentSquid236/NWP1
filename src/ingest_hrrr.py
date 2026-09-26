@@ -2,7 +2,8 @@
 Fetch HRRR pressure-level data, subset to the configured domain, and write
 [C, L, Y, X] arrays as compressed .npz.
 
-HRRR supplies INITIAL and BOUNDARY conditions for the physics core. It is not
+HRRR (Dowell et al. 2022; NOAA 2026a), fetched with Herbie (Blaylock 2026),
+supplies INITIAL and BOUNDARY conditions for the physics core. It is not
 training data and it is never used as verification truth -- see
 docs/DATA_ASSIMILATION.md.
 
@@ -105,6 +106,7 @@ def _download_subset(H, search, allow_full=True, verbose=True):
 
 def _open_hrrr(H, search, allow_full=True, verbose=True):
     """Download, verify, then open. Never hand cfgrib a path that may not exist."""
+    # xarray (Hoyer and Hamman 2017) with the cfgrib engine (ECMWF 2026).
     import xarray as xr
     path = _download_subset(H, search, allow_full=allow_full, verbose=verbose)
 

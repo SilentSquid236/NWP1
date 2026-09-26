@@ -1,5 +1,6 @@
 """
-Array backends for the dynamical core: NumPy (default) or PyTorch (CPU).
+Array backends for the dynamical core: NumPy (default; Harris et al. 2020) or
+PyTorch (CPU; Paszke et al. 2019).
 
 WHY. The core is element-wise array code. NumPy runs it on one core, so a
 24 h forecast took ~40 min whatever the thread settings said. PyTorch runs

@@ -37,6 +37,7 @@ from backend import xp_of
 from sigma import RD, G0, P0, KAPPA
 
 RI_CRIT = 0.25          # below this, shear overcomes stratification
+                        # (Miles 1961; Howard 1961)
 K_MAX = 200.0           # m^2/s ceiling on the eddy diffusivity
 MIXING_LENGTH = 150.0   # m
 

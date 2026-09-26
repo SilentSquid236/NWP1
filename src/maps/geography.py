@@ -5,11 +5,11 @@ Nothing here needs cartopy, shapely or pyproj. The shared server allows no
 installs (CLAUDE.md constraint 1), and matplotlib plus NumPy are enough to
 draw a projected map.
 
-PROJECTION. Lambert conformal conic on a sphere, standard parallels 39 and
+PROJECTION. Lambert conformal conic on a sphere (formulas as in Snyder 1987), standard parallels 39 and
 45 N, centred at 42 N 74 W: the projection US regional products use, with
 scale error under 1 % across 37-47.5 N.
 
-BOUNDARIES. Natural Earth 1:50m coastline, lakes, country borders and
+BOUNDARIES. Natural Earth (2026) 1:50m coastline, lakes, country borders and
 state/province lines. That is static geography, like the ETOPO terrain, not
 weather. They are fetched ONCE as GeoJSON (parsed with the json module),
 clipped to the domain plus a margin, and cached as a small npz of

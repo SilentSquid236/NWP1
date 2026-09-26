@@ -1,5 +1,5 @@
 """
-Arakawa C-grid for a doubly-periodic beta-plane.
+Arakawa C-grid (Arakawa and Lamb 1977) for a doubly-periodic beta-plane.
 
 Variable placement (the whole point of the C-grid):
 

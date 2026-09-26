@@ -20,7 +20,7 @@ SPPT, SKEB) because a single deterministic integration is systematically
 overconfident: it produces one trajectory when the atmosphere admits a
 distribution of them.
 
-The perturbations here are SPPT-style: tendencies are multiplied by (1 + r),
+The perturbations here are SPPT-style (Buizza et al. 1999): tendencies are multiplied by (1 + r),
 where r is a random field that is SMOOTH in space and CORRELATED in time.
 Both properties matter. White noise would be scrubbed out by diffusion and
 would inject grid-scale energy; a field that changes discontinuously each

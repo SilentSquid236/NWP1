@@ -23,7 +23,7 @@ Bulk aerodynamic, with a log-law drag coefficient:
     Cd  = (kappa / ln(z1/z0))^2 * F(Ri_b)   (neutral value, times stability)
 
 kappa = 0.4 is von Karman's constant, z1 the height of the lowest model level,
-z0 the roughness length. F(Ri_b) is the Louis-type stability correction:
+z0 the roughness length. F(Ri_b) is the Louis-type stability correction (Louis 1979):
 drag increases when the surface layer is unstable (convective gusts reach
 down) and falls toward zero when it is strongly stable (a decoupled nocturnal
 inversion). Neglecting F entirely would apply daytime drag to a calm, clear

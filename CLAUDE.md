@@ -144,8 +144,17 @@ Every module has a `test_*.py` beside it. The suites are the specification.
     python tools/problem.py check      # no FIXED entry without a measurement
     python tools/checklayout.py        # no src/src, no duplicates
     python tools/manifest.py --check   # byte-for-byte against the manifest
+    python tools/check_refs.py         # every citation in docs/REFERENCES.md, AMS style
     python tools/tree.py               # regenerate STRUCTURE.md
     # and every test suite the change could touch
+
+**Outside work is cited, in AMS format** (the user's rule, prompt 137).
+Every method, formula, data set, service, library or design taken from
+someone else gets an entry in `docs/REFERENCES.md`, in American
+Meteorological Society style. Resolve its DOI against CrossRef or DataCite
+before adding it; do not type it from memory. Add an author–year citation
+where the work is used ("Davies (1976)", "(Wicker and Skamarock 2002)",
+"Koch et al. (1983)"; "and", never "&").
 
 Then: a research-log entry (hypothesis stated before the result), the problem
 register updated in place, the prompt logged, and the session's token counts

@@ -9,7 +9,8 @@ sHHH.js) loaded with <script> tags, which browsers allow from file://.
   * top: forecast hours, play, and the arrow keys (left/right = hour,
     up/down = product)
   * hover: the values under the cursor for the product shown
-  * click: the model sounding at that grid point, SHARPpy-style: skew-T
+  * click: the model sounding at that grid point, laid out like SHARPpy
+    (Blumberg et al. 2017): skew-T
     log-p, wind barbs, hodograph and a few indices. The model is dry, so
     forecast soundings have no dewpoint and no CAPE; hour 0 (the analysis)
     shows a dewpoint from the analysed humidity.

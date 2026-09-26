@@ -8,7 +8,8 @@ there unstable to begin with?
 
 A and B are two runs of the SAME case that differ only by round-off, e.g.
 the numpy and torch backends (P-60). Their difference is then the leading
-unstable mode seeded by round-off (a bred vector): it shows where the
+unstable mode seeded by round-off (a bred vector; Toth and Kalnay 1993): it
+shows where the
 instability lives hours before it is visible in the fields.
 
 Part 1 prints, for each requested hour, where |B - A| is largest for u, v
@@ -23,7 +24,8 @@ the mode (the last requested hour's u/v maximum, or --box ROW COL), at
 A's first snapshot or at each of the --at hours:
   eta/f  absolute vorticity over f; below 0 is inertial instability
   Ri     gradient Richardson number with the level below; below 0.25 is
-         shear instability, below 0 static instability
+         shear instability (Miles 1961; Howard 1961), below 0 static
+         instability
   N2     buoyancy frequency squared with the level below (1/s^2)
 and, over the whole domain, how many points per level have eta/f < 0 and
 how many have Ri < 0.25. Rows are stored south to north, level 0 is the lid.

@@ -66,6 +66,9 @@ from observations import Observation
 from fetchers import (f_to_k, c_to_k, knots_to_ms, wind_to_uv, _num,
                       rh_from_dewpoint)
 
+# Sources: Iowa Environmental Mesonet (2026a, b) for ASOS and RAOB; NOAA
+# National Data Buoy Center (2026); MRMS (Zhang et al. 2016; NOAA 2026b).
+# Full entries in docs/REFERENCES.md.
 IEM = "https://mesonet.agron.iastate.edu"
 IEM_ASOS = f"{IEM}/cgi-bin/request/asos.py"
 IEM_RAOB = f"{IEM}/cgi-bin/request/raob.py"

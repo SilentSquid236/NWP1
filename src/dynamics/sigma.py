@@ -1,5 +1,5 @@
 """
-Terrain-following sigma coordinate.
+Terrain-following sigma coordinate (Phillips 1957).
 
     sigma = (p - p_top) / (p_s - p_top),      sigma = 0 at the lid, 1 at the ground
 
@@ -295,7 +295,7 @@ def vertical_advection(a, sigma_dot, lev):
 
 
 # ---------------------------------------------------------------------------
-# Hydrostatically consistent discretisation (Simmons & Burridge 1981)
+# Hydrostatically consistent discretisation (Simmons and Burridge 1981)
 # ---------------------------------------------------------------------------
 #
 # THE CRITERION

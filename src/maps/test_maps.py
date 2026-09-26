@@ -238,7 +238,7 @@ def test_valid_time_labels():
 def test_pixel_geometry_for_hover():
     """A marker drawn at a lat/lon lands on the pixel the viewer computes for it."""
     import tempfile
-    from PIL import Image
+    from PIL import Image  # Pillow (Pillow Contributors 2026)
     from maps import render
     from geo import cell_centres
     import config

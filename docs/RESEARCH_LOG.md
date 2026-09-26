@@ -2960,6 +2960,86 @@ resolved structure: something in the analysed state, or resolved
 dynamics. The next step is then to look at the analysis over Maine, not
 another switch.
 
+**Test T result (prompt 138).**
+
+| Run | Setting | Onset (first 15 min with > 20 points changing > 5 m/s) | Where | 8 h |
+|---|---|---|---|---|
+| Q0 | default | 4.00–4.25 h (32) | L03–L05, r76–78 c86–90 | diverged 7.45 h |
+| T1 | timestep × 0.5 | 4.00–4.25 h (272) | L03–L04, r77 c89–90 | diverged 7.65 h (8.2 min) |
+| T2 | hyperdiffusion × 4 | **5.75–6.00 h** (48) | L04, r76 c87 | completed (3.0 min) |
+
+The roughness of the Q0n–Q0t u difference is 0.98, 0.99, 0.99 and 0.99
+at 1, 2, 3 and 4 h.
+
+- **Time discretization: ruled out.** Halving the timestep leaves the
+  onset at 4.00–4.25 h, and the growth after onset is, if anything,
+  faster.
+- **Grid-scale mode: both parts of the prediction hold.** Roughness is
+  0.99 at 3–4 h, above the 0.8 threshold and in the 2–4Δx band, and T2's
+  onset is 1.75 h later. At 1 h a roughness of 0.98 is expected from
+  round-off alone. By 4 h the difference has grown 5 000-fold into one
+  box, so the 0.99 there describes the mode.
+- **The delay fits a 2–3Δx scale (a rough check).** Hyperdiffusion × 4
+  adds three times the default grid-scale damping rate (1/3 h) at 2Δx,
+  0.56 of that at 3Δx and 0.25 at 4Δx. With a mean e-folding of 24 min
+  and an onset at 4.1 h without it, the estimated onsets are 6.8 h
+  (2Δx), 5.3 h (3Δx) and 4.6 h (4Δx). The observed 5.75–6.00 h lies
+  between 2Δx and 3Δx.
+
+So P-60 is a **grid-scale (2–3Δx) spatial-discretization mode** at jet
+level. It is present from the start, does not depend on the timestep, is
+damped but not removed by hyperdiffusion, and grows faster as the shear
+under the jet sharpens. Stronger hyperdiffusion alone is not a fix: T2
+still blows up after 6 h, and damping 2Δx in 45 min is tuning against a
+growth rate, not a correction to its source.
+
+**Next, measurement U: which term feeds the mode.** `tools/mode_budget.py`
+takes the Q0n state and the Q0n state plus the scaled mode (1 mm/s, so
+linear). It evaluates every tendency term of the core at both, and
+prints each term's share of the mode's kinetic-energy growth in the box.
+Advection is split into the base flow carrying the mode and the mode
+carrying the base flow. It was checked on the synthetic pair, where the
+terms rebuild the core's own tendency difference to 3.6e-12 and the
+advection splits add up exactly.
+
+- Check: the implied energy growth rate at 3 h must be within a factor 2
+  of 2/(22 min) = 1.5e-3 s⁻¹. That is 0.75–3.0e-3 s⁻¹, from the measured
+  2–3 h e-folding. If it is outside that range, the tendencies do not
+  describe the mode. The relaxation zone and convective adjustment act
+  outside them, but neither is active in the box: it is 18+ cells in and
+  N2 > 0.
+- Expectation, not a test: the largest positive term is the mode's
+  vertical motion acting on the base flow's vertical shear,
+  d(sigma_dot) dU/dsigma. That is where the sharpening is (Ri falls at
+  L03–L05) and the mode is deep but grid-scale in the horizontal. The
+  budget will show if the horizontal term d.grad U or the pressure
+  gradient term dominates instead.
+
+**References in AMS format (prompt 137).** The user asked that anything
+taken from other people be referenced in American Meteorological Society
+format. `docs/REFERENCES.md` now lists 38 works:
+- methods and formulas: Davies relaxation, the Wicker–Skamarock RK3,
+  Simmons–Burridge, Barnes and Koch et al., Louis, Manabe et al., the
+  Magnus constants, Bolton, and others;
+- data: IEM, NDBC, MRMS, ETOPO1 through ERDDAP, HRRR, Natural Earth;
+- software: NumPy, PyTorch, Matplotlib, xarray, cfgrib, Herbie, Pillow;
+- designs the maps imitate: Pivotal Weather, SHARPpy.
+
+Each DOI was resolved against CrossRef or DataCite, and author initials,
+titles, volumes and pages were taken from the registry record. Two
+records needed correcting. CrossRef misspells Buizza et al.'s second
+author ("Milleer"). The PyTorch paper has no DOI, so its entry was
+checked against the NeurIPS proceedings and dblp.
+
+In-text author–year citations were added where each work is used, and
+the three "&" citations were changed to "and". The new
+`tools/check_refs.py` enforces the rule. It flags a citation with no
+entry, an "&", or an entry nothing cites, and it joins the pre-commit
+checks.
+
+The check also found Sadourny (1975), cited in the shallow-water core,
+which the first inventory had missed.
+
 
 
 ---

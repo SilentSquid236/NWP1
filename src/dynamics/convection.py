@@ -1,5 +1,5 @@
 """
-Dry convective adjustment.
+Dry convective adjustment (after Manabe et al. 1965).
 
 WHY, WITH THE MEASUREMENT THAT MOTIVATED IT
 

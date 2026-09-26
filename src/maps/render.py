@@ -1,12 +1,12 @@
 """
-Forecast product maps, drawn with matplotlib alone (no cartopy).
+Forecast product maps, drawn with Matplotlib (Hunter 2007) alone (no cartopy).
 
 One PNG per product per hour on a Lambert conformal map. The frame is the
 largest rectangle inside the model domain, so every pixel of the map holds
 model data. The grid is drawn past the frame and clipped. Each product keeps
 a FIXED colour scale at every hour and in every run, so maps compare by eye.
 Names, units (mb, kt, degF at the surface, degC aloft) and layout follow
-Pivotal Weather's model pages.
+Pivotal Weather's model pages (Pivotal Weather 2026).
 
 Hour 0 of the forecast products is the analysis (a forecast's snapshots
 start at its first output hour). The model is dry, so there is no

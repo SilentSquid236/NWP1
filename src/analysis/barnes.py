@@ -1,5 +1,5 @@
 """
-Successive-correction (Barnes) analysis of increments against a first guess.
+Successive-correction analysis (Barnes 1964) of increments against a first guess.
 
     inc = barnes_increments(lat_g, lon_g, lat_o, lon_o, d, sigma_o, L_km)
     analysis = background + inc
@@ -25,7 +25,7 @@ observation by its error: a buoy temperature (1 K) counts more than an ASOS
 one (1.5 K).
 
 Each further pass analyses what the previous pass left unexplained AT THE
-OBSERVATIONS, with a length scale multiplied by `gamma` -- the standard Barnes
+OBSERVATIONS, with a length scale multiplied by `gamma` (Koch et al. 1983) -- the standard Barnes
 refinement, which recovers smaller scales where the data are dense.
 
 Distances are on a local tangent plane, which is accurate to well under 1 %

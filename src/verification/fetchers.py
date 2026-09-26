@@ -292,7 +292,7 @@ def parse_raob_csv(text, station_meta=None, source="raob"):
         add("TMP", c_to_k(tmpc) if tmpc is not None else None)
         add("HGT", _num(row.get("height_m")))
 
-        # RH from temperature and dewpoint (Magnus formula).
+        # RH from temperature and dewpoint (Magnus form; Alduchov and Eskridge 1996).
         dwpc = _num(row.get("dwpc"))
         if tmpc is not None and dwpc is not None:
             add("RH", rh_from_dewpoint(tmpc, dwpc))
@@ -307,7 +307,10 @@ def parse_raob_csv(text, station_meta=None, source="raob"):
 
 
 def rh_from_dewpoint(t_c, td_c):
-    """Relative humidity (%) from temperature and dewpoint in Celsius (Magnus)."""
+    """Relative humidity (%) from temperature and dewpoint in Celsius.
+
+    Magnus form with the constants of Alduchov and Eskridge (1996).
+    """
     a, b = 17.625, 243.04
     num = np.exp(a * td_c / (b + td_c))
     den = np.exp(a * t_c / (b + t_c))
