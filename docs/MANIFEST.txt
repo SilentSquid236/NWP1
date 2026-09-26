@@ -17,10 +17,10 @@ b660cbbe87e8813c      6530  docs/CAPABILITIES.md
 1bc65de9fd15e3cf     24015  docs/LEARNING_LOG.md
 6026c87422e8fbd4      4956  docs/METHODOLOGY.md
 1eeb6616080945dd      6884  docs/POSTPROCESSING.md
-ec095b14ea99574f     75483  docs/PROBLEMS.md
-3bb42221d1ed28c2     31058  docs/PROMPT_LOG.md
+8e23694127d16a6e     77085  docs/PROBLEMS.md
+60f5d6ccc7e38984     31319  docs/PROMPT_LOG.md
 ac14573f21369f67     13315  docs/REFERENCES.md
-e3463340079ec450    199478  docs/RESEARCH_LOG.md
+aabf46bf88841edd    200498  docs/RESEARCH_LOG.md
 78c3574bb1b0dd88      4845  docs/STABILITY.md
 9f4cd931b4eea149     19777  docs/STRUCTURE.md
 a155ccce967d26bc      4340  docs/TOKEN_COST.md
@@ -116,7 +116,7 @@ cc678b6db4c6beab      8872  src/dynamics/test_radiation.py
 4d768915f3cf8d90      6866  src/dynamics/turbulence.py
 b9ad5d54a3e1dd79      4813  src/dynamics/vertical.py
 11ea32d1050e29c3      7067  src/dynamics/visualize_instability.py
-1ccd0f2a87dcba03     27526  src/forecast.py
+78e84f03a6f7927c     27901  src/forecast.py
 72920dad90f90394     21010  src/ingest_hrrr.py
 69b14ed26fdc09f9      9258  src/ingest_obs.py
 6907fa3c46f6c97c     17128  src/make_maps.py
@@ -130,7 +130,7 @@ dd33655f87aa1ed4       906  src/nwp_emulator_3d.py
 6889b97f7e3244f1       200  src/postproc/__init__.py
 7f55be875ea6eade      6545  src/postproc/bias_correction.py
 c9aa9e9da814b9f4      6625  src/postproc/test_bias_correction.py
-52151c15090edb7c     14904  src/test_forecast.py
+e4d7df9f7c12992e     16088  src/test_forecast.py
 c7a4ca1a819cae0f      5436  src/test_hrrr_search.py
 e65fd3628cb850ff      9589  src/test_verify.py
 c24c234b80125dff      8457  src/train_autoregressive.py

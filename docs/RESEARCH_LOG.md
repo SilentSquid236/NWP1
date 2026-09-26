@@ -3352,6 +3352,25 @@ state.** Each case ran alone for 1 h at torch × 8. The server had
   of 10 or more sweeps and at least 60 % of the step time; in the jet
   case 0 sweeps on most steps and under 10 %).
 
+**Re-verification of test X (prompt 149): P-61 confirmed fixed, and P-62
+found.** X was verified again into fresh archives, so the truncated
+observation caches were not reused.
+
+- X1 is now scored at every lead from 1 to 23 h, with 342–362
+  temperature pairs per lead. X0 is scored to 14 h, its last snapshot.
+  The prediction said leads 1–24: lead 24 is missing because the
+  forecast file itself stops at 23.75 h.
+- **P-62:** `run_forecast` compared `model.time`, a sum of 5 040 float
+  steps that ends a few nanoseconds short of 24 h, with a 1e-9 s
+  tolerance. So every run lost its final snapshot. The last step now
+  always writes it, and a stub-model regression test was added
+  (`test_forecast.py`, 12/12).
+- X1 against X0 over leads 7–14: temperature RMSE +0.01 to +0.03, u
+  −0.08 to −0.21 (better), v −0.01 to −0.10. Skill is unchanged or
+  better throughout.
+- **P-59, the night side:** bias rises from +1.3 °C (lead 5) to +6.2 °C
+  (lead 17, 11Z), then falls to −1.4 °C (lead 23, 17Z).
+
 
 
 ---

@@ -231,6 +231,7 @@ on itself.
 | 146 | "the results for x are missing" | **OBS** | The collection steps died with the terminal session. Rewritten as a background job that survives a disconnect |
 | 147 | *(pasted: test Y timings)* | **OBS** | Flushing and machine load both refuted: calm 2.9–3.0 against jet 11.1–11.2 steps/s. Convective adjustment sweeps proposed; test Z designed |
 | 148 | *(attached: `test_x_result.txt`)* | **OBS** | Test X: X0 diverged 14.05 h, X1 completed 24 h, skill unchanged within 0.1. P-56 FIXED. Verification ended at 00Z: date-only ASOS request (P-61), fixed and tested |
+| 149 | *(attached: `test_x_verify24.txt`)* | **OBS** | P-61 confirmed: leads 1–23 scored with 342–362 pairs. P-62 found and fixed: the final snapshot was lost to a float sum of steps (regression test). Night warm bias +6.2 °C at 11Z recorded under P-59 |
 
 **Observation.** Prompt 53 is 18 words and is the most consequential
 instruction in the project. Before it, nine candidate causes had been patched

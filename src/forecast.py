@@ -338,7 +338,12 @@ def run_forecast(model, driver, relax, duration, dt=None, output_every=None,
                   f"elapsed {el/60:.1f} min  ETA {eta/60:.1f} min",
                   end="\r", flush=True)
 
-        if next_i < len(targets) and model.time >= targets[next_i] - 1e-9:
+        # The LAST step always writes the final target. model.time is a sum of
+        # n_steps floats and can end a few ns short of `duration`, so a 1e-9 s
+        # tolerance never fired there: every run lost its last snapshot (24 h
+        # runs ended at 23.75 h; found 2026-09-26 in the test X verification).
+        if next_i < len(targets) and (model.time >= targets[next_i] - 1e-9
+                                      or k == n_steps - 1):
             next_i += 1
             snap = [to_numpy(a) if torch_run else a.copy()
                     for a in (model.u, model.v, model.theta, model.pi)]

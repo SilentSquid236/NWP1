@@ -456,24 +456,43 @@ service, which is P-06 and is where this project's defects have always been.
 **Candidate responses (none tried).** A surface energy budget with solar geometry and a land/sea surface temperature. Or, as a first step, a prescribed diurnal surface heat flux from solar elevation, which uses no later observations. Either needs a prediction before it is built. Also worth adding: a persistence reference (the hour-0 analysis held fixed) scored the same way, so the model's skill is measured against doing nothing.
 
 **Ruled out.** none.
+
+**The night side (test X, 18Z 2026-09-22 run through the night, 2026-09-26).** With the damping on, the temperature bias rises from +1.3 °C at lead 5 to **+6.2 °C at lead 17 (11Z, around sunrise)**, with RMSE 7.3 °C. It then falls to −1.4 °C by lead 23 (17Z). Without surface cooling the nights stay far too warm, as the days stay too cool (−6.9 °C at 20Z on the 06Z run).
+
 ---
 
 
+
+
+
+
+# FIXED
+
+## P-62 — Every forecast lost its final output time (float sum of steps)
+**Category** D · **First seen** 2026-09-26 · **Status** FIXED · **Fixed** 2026-09-26
+
+**Symptom.** 24 h runs with 15-minute output wrote 95 snapshots ending at 23.75 h, not 96 ending at 24.00 h, and 8 h runs ended at 7.75 h. The re-verified test X therefore had no lead 24.
+
+**What is known.** `run_forecast` emits a snapshot when `model.time >= target - 1e-9`. `model.time` is a sum of n_steps floats (5 040 steps of 17.1 s) and ends a few nanoseconds short of the duration. So the last target, which no later step can cross, was never reached. Intermediate targets were unaffected.
+
+**Fix.** The last step always writes the final pending target.
+
+**Confirmed by.** A stub model with 17.1 s steps reproduced it: 95 snapshots, the last at 23.753 h. With the fix, `test_final_output_time_is_written` in `src/test_forecast.py` gets 96, the last at 24.000000 h. The suite passes 12/12.
+---
+
 ## P-61 — Verification drops every hour after 00Z (date-only ASOS request)
-**Category** A · **First seen** 2026-09-26 · **Status** OPEN
+**Category** A · **First seen** 2026-09-26 · **Status** FIXED · **Fixed** 2026-09-26
 
 **Symptom.** Test X verified two 24 h forecasts from 18Z 2026-09-22, but the scores stop at lead 6.25 h, which is 00:15Z on 2026-09-23. Lead 6 has 281 temperature pairs against about 357 at leads 1–5. Test W's comparisons were complete: the Q case to 8 h and the 06Z case to 16 h. Both windows stayed inside one UTC day.
 
 **What is known.** `src/verification/fetchers.asos_url` sent only `year1/month1/day1` and `year2/month2/day2`. IEM then ends the request at 00Z of the end date. So any verification window that crosses midnight UTC loses every hour after 00Z. Almost every 24 h cycle crosses it. The analysis ingest (`src/analysis/sources.asos_url`) was never affected: it sends exact `sts`/`ets` timestamps.
 
-**Fix (2026-09-26, not yet confirmed on the server).** `fetchers.asos_url` now sends `sts`/`ets` to the minute, as the ingest does. `test_fetchers.py` checks a window crossing midnight (17:30Z to 18:30Z the next day) and fails on a date-only request; the suite passes 9/9. To be closed when test X re-verified into fresh archives scores all 24 leads. The old archives hold the truncated observations under the same window name, so they cannot be reused.
+**Fix.** `fetchers.asos_url` now sends `sts`/`ets` to the minute, as the ingest does. `test_fetchers.py` checks a window crossing midnight (17:30Z to 18:30Z the next day) and fails on a date-only request; the suite passes 9/9. The old archives hold the truncated observations under the same window name, so they cannot be reused.
 
 **Ruled out.** none.
 
+**Confirmed by.** Test X re-verified on the server into fresh archives (x0b, x1b). X1 is scored at every lead from 1 to 23 h, with 342–362 temperature pairs per lead; before the fix it stopped at 6.25 h. X0 is scored to 14 h, its last snapshot. Lead 24 was missing because the forecast itself ended at 23.75 h (P-62), not because of the request.
 ---
-
-
-# FIXED
 
 ## P-56 — The first observation-built forecast diverges at 3.75 h
 **Category** F?, G? · **First seen** 2026-09-22 · **Status** FIXED · **Fixed** 2026-09-26

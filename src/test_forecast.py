@@ -330,6 +330,35 @@ def test_npz_roundtrip():
                f"surface pressure absent (derived from heights instead)")
 
 
+def test_final_output_time_is_written():
+    """A 24 h run with 15-min output must end with a 24.00 h snapshot.
+
+    Regression for 2026-09-26: model.time is a sum of 5040 float steps and ends
+    a few ns short of 24 h, so the last target was never reached and every run
+    lost its final snapshot (95 of 96, ending at 23.75 h).
+    """
+    class Stub:
+        def __init__(self):
+            self.u = np.zeros((2, 4, 4)); self.v = self.u.copy()
+            self.theta = self.u + 300.0; self.pi = np.full((4, 4), 8e4)
+            self.time = 0.0
+        def max_dt(self): return 17.1
+        def step(self, dt): self.time += dt
+        def sigma_dot(self): return np.zeros((3, 4, 4))
+
+    class NoRelax:
+        def apply(self, model, ext): pass
+
+    class NoDriver:
+        def at(self, t): return {}
+
+    snaps = run_forecast(Stub(), NoDriver(), NoRelax(), 24 * 3600.0,
+                         output_every=900.0, progress=False)
+    last = snaps[-1][0] / 3600.0
+    ok = len(snaps) == 96 and abs(last - 24.0) < 1e-6
+    report("the final output time is written", ok,
+           f"{len(snaps)} snapshots, last at {last:.6f} h")
+
 if __name__ == "__main__":
     print("\nForecast driver integration\n" + "=" * 62)
     for fn in (test_channels_require_height,
@@ -342,7 +371,8 @@ if __name__ == "__main__":
                test_relaxation_drives_surface_pressure,
                test_forecast_runs_and_stays_finite,
                test_boundaries_hold_edges_to_driver,
-               test_npz_roundtrip):
+               test_npz_roundtrip,
+               test_final_output_time_is_written):
         try:
             fn()
         except Exception as e:
