@@ -232,6 +232,7 @@ on itself.
 | 147 | *(pasted: test Y timings)* | **OBS** | Flushing and machine load both refuted: calm 2.9–3.0 against jet 11.1–11.2 steps/s. Convective adjustment sweeps proposed; test Z designed |
 | 148 | *(attached: `test_x_result.txt`)* | **OBS** | Test X: X0 diverged 14.05 h, X1 completed 24 h, skill unchanged within 0.1. P-56 FIXED. Verification ended at 00Z: date-only ASOS request (P-61), fixed and tested |
 | 149 | *(attached: `test_x_verify24.txt`)* | **OBS** | P-61 confirmed: leads 1–23 scored with 342–362 pairs. P-62 found and fixed: the final snapshot was lost to a float sum of steps (regression test). Night warm bias +6.2 °C at 11Z recorded under P-59 |
+| 150 | *(pasted: test Z counts)* | **OBS** | Calm: 20 sweeps (the cap) on all 210 steps, 51.6 s of ~72 s, 0.8 % unstable at every call. Jet: 0 sweeps. P-63 opened; `tools/convection_check.py` written for Z2 (relaxation vs interior) |
 
 **Observation.** Prompt 53 is 18 words and is the most consequential
 instruction in the project. Before it, nine candidate causes had been patched

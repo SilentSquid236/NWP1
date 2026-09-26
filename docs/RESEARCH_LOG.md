@@ -3371,6 +3371,36 @@ observation caches were not reused.
 - **P-59, the night side:** bias rises from +1.3 °C (lead 5) to +6.2 °C
   (lead 17, 11Z), then falls to −1.4 °C (lead 23, 17Z).
 
+**Test Z result (prompt 150): the convective adjustment is the cost, and it
+never converges.**
+
+| Case | Calls | Sweeps per call | Adjustment time | Unstable interfaces at each call |
+|---|---|---|---|---|
+| calm (18Z 2026-09-22) | 210 | **20 (the cap) every time** | 51.6 s of ~72 s stepping | mean 8.19e-3, max 9.16e-3 |
+| jet (12Z 2026-09-25) | 229 | 0 every time | 0.2 s | 0 |
+
+The prediction (calm: a mean of 10 or more sweeps and at least 60 % of the
+time; jet: mostly 0 and under 10 %) holds. It also shows something the
+prediction did not ask about: the calm case hits the cap on **every** call,
+with a near-constant 0.8 % unstable at the start of each. So the
+adjustment ends every step with instability left.
+
+On the desktop the scheme converges on a column with 3 K noise, but only
+after 69 sweeps (2.4 % still unstable at 20). Registered as P-63.
+
+**Measurement Z2 (predictions first).** `tools/convection_check.py` on the
+calm and jet 1 h states:
+
+- **(a) Relaxation re-imposes it:** at least 80 % of the unstable
+  interfaces lie in the relaxation zone (edge distance 14 or less).
+- **(b) Interior needing more sweeps:** most lie deeper than that, and
+  the adjustment converges (none left) with a higher cap, at more than
+  20 sweeps.
+- Either way, the jet state has none.
+- Both can be partly true. The split by edge distance decides which fix
+  comes first: adjusting the driving state once, or a converging and
+  cheaper adjustment.
+
 
 
 ---

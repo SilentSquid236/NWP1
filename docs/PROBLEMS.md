@@ -466,6 +466,24 @@ service, which is P-06 and is where this project's defects have always been.
 
 
 
+## P-63 — Calm cases run 3.8x slower: the convective adjustment hits its 20-sweep cap every step
+**Category** H, C · **First seen** 2026-09-26 · **Status** OPEN
+
+**Symptom.** At torch × 8, calm cases (06Z 2026-09-23, 18Z 2026-09-22) run about 3 steps/s; the jet case (12Z 2026-09-25) runs 11 steps/s. That holds with each run alone on a quiet server (test Y: 2.9 against 11.1) and with denormals flushed (3.0 against 11.2).
+
+**What is known.** Test Z counted and timed `dry_convective_adjustment` over 1 h:
+- **Calm case:** 20 sweeps, the cap, on all 210 steps, taking 51.6 s of about 72 s of stepping. About 0.8 % of interfaces are unstable at the start of every call (mean 8.19e-3, max 9.16e-3), nearly constant through the hour.
+- **Jet case:** 0 sweeps on all 229 steps, 0.2 s in total.
+
+So the calm case never finishes adjusting within a step, and the instability is back at the next call. A sweep is two Python loops over 20 levels, several hundred small array operations. On a desktop test with 3 K noise the scheme does converge, but it needs 69 sweeps: mixing uncovers new unstable interfaces at segment edges. The cap of 20 is therefore not a guard but binding.
+
+**Candidates (test Z2, `tools/convection_check.py`).** (a) The relaxation re-imposes an unstable frozen boundary state after every step, so the adjustment fights it indefinitely. The fix would be to adjust the driving state once. (b) The interior instability needs more than 20 sweeps. The fix would be a converging algorithm, and a cheaper sweep.
+
+**Ruled out.** Machine load and denormals (test Y).
+
+---
+
+
 # FIXED
 
 ## P-62 — Every forecast lost its final output time (float sum of steps)

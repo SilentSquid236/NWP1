@@ -169,6 +169,7 @@ NWP_Deployment_Package/
 |   |-- check_refs.py                     # every author-year citation has an AMS-format entry in docs/REFERENCES.md
 |   |-- checklayout.py                    # checks for src/src nesting, missing and duplicate modules
 |   |-- compare_forecasts.py              # hour-by-hour difference between two forecast files (e.g. numpy vs torch)
+|   |-- convection_check.py               # where a state is statically unstable and how many adjustment sweeps it needs
 |   |-- daily.sh                          # one forecast cycle from cron (obs -> analysis -> forecast); `verify` mode scores closed windows
 |   |-- fetch_boundaries.py               # fetches the Natural Earth lines ahead of time, or writes the bundled copy
 |   |-- locate_growth.py                  # where a saved forecast starts to run away: largest change per snapshot, edge distance
