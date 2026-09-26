@@ -10,6 +10,7 @@ Run:  python test_fetchers.py
 """
 
 from datetime import datetime
+from urllib.parse import parse_qs, urlparse
 
 import numpy as np
 
@@ -193,6 +194,12 @@ def test_urls_well_formed():
     ok = ("network=NY_ASOS" in a and "network=PA_ASOS" in a and "tz=UTC" in a
           and "station=OKX" in r and "noaa-mrms-pds" in m
           and "20260801-123000" in m)
+    # The window must carry the exact end TIME, not just its date: a
+    # date-only request ends at 00Z and drops every hour after midnight.
+    a2 = asos_url(["NY_ASOS"], datetime(2026, 9, 22, 17, 30), datetime(2026, 9, 23, 18, 30))
+    q = parse_qs(urlparse(a2).query)
+    ok = ok and q.get("sts") == ["2026-09-22T17:30Z"] and q.get("ets") == ["2026-09-23T18:30Z"] \
+        and "day2" not in q
     report("request URLs are well formed", ok,
            f"ASOS has both networks and UTC; RAOB has stations; "
            f"MRMS path: ...{m[-52:]}")

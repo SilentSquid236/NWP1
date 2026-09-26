@@ -168,8 +168,13 @@ def asos_url(networks, start, end, stations=None):
     """
     params = [("data", "tmpf"), ("data", "dwpf"), ("data", "relh"),
               ("data", "drct"), ("data", "sknt"),
-              ("year1", start.year), ("month1", start.month), ("day1", start.day),
-              ("year2", end.year), ("month2", end.month), ("day2", end.day),
+              # Exact timestamps, as src/analysis/sources.py sends them. Until
+              # 2026-09-26 this sent only year/month/day, and every
+              # verification window ended at 00Z of the end DATE: a 24 h
+              # forecast crossing midnight lost every hour after 00Z (test X:
+              # scores stopped at 18Z + 6.25 h).
+              ("sts", start.strftime("%Y-%m-%dT%H:%MZ")),
+              ("ets", end.strftime("%Y-%m-%dT%H:%MZ")),
               ("tz", "UTC"), ("format", "onlycomma"), ("latlon", "yes"),
               ("elev", "yes"), ("missing", "M"), ("trace", "T"),
               ("direct", "no"), ("report_type", "3")]

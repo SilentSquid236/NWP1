@@ -418,44 +418,6 @@ service, which is P-06 and is where this project's defects have always been.
 ---
 
 
-## P-56 — The first observation-built forecast diverges at 3.75 h
-**Category** F?, G? · **First seen** 2026-09-22 · **Status** OPEN
-
-**Symptom.** 2026-09-21 12Z from observations only, 24 h requested: max|u| 46 m/s for 3 h, then 372 m/s at 3.75 h, stopped inside the hour by the new guard. Desktop, 12 km grid, ETOPO terrain 0–1161 m.
-
-**What is known.** Probe (`src/analysis/probe_obs_blowup.py`, 5-min snapshots): the runaway is the meridional wind at level 17 of 20 (near the ground), first growing by more than 20 % between 2.50 and 2.59 h, 14 cells from the edge, over 812 m of terrain in northern Maine. Only 2 points grew by more than 5 m/s, in a ~5.5 Δx pattern. The initial divergence did not reach the filter's target (4.7e-4 → 9.2e-5 1/s). Next: record every field around (row 82, col 89) from 2.0 h, check the static stability of that column in the initial state (the surface blend adds increments to the lowest 1000 m), and compare with an HRRR-seeded run of the same cycle (`--source hrrr`), which has survived 12 h before.
-
-**Ruled out.** the edges: max|u| was pinned at the lid by the frozen boundary, and the runaway began 14 cells inside it.
-
-**Second case, server, 2026-09-22 18Z.** Standard-atmosphere first guess (no soundings, no previous run), initial max|u| 6.2 m/s; the wind grew steadily from hour 3 (10 → 18 → 15 → 38 m/s) and reached 435 m/s at 6.31 h. A near-calm start dying rules out jet strength. Shared by both cases, and not by the HRRR runs that survived 12 h: the observation-built lower atmosphere (surface blend), ETOPO block-averaged terrain, and frozen single-frame edges.
-
-**Ruled out, test A (2026-09-22).** The surface blend: with it switched off the run still diverged, at 4.10 h, first growing at 2.84–2.92 h in v at level 17 over 712 m of terrain in central NY, 47 cells from every edge.
-
-**Terrain implicated (2026-09-22).** The same state over flat ground held max|u| at 46 m/s to 12 h, then went non-finite at 13.0 h (a sudden negative pressure or column depth, a different signature). Next suspect: below-ground pressure-level values in the observation analysis, which HRRR supplies smoothly and the analysis does not. Test and prediction in the research log.
-
-**Ruled out, below-ground values (2026-09-22).** Extrapolating the 7507 pressure-level values under the terrain (up to 7.55 K) left the run dying at exactly 3.75 h. Next: test B, HRRR terrain under the observation state (server).
-
-**Reframed, 2026-09-23.** Test C, an HRRR start with frozen edges, died at 3.16 h, and the record shows no real-data forecast of the sigma core had ever run before 2026-09-22. So this is not an observation problem: no real state over real terrain has survived. The earlier text's comparison with "HRRR runs that reached 12 h" was wrong; those runs never existed. Leading mechanism: slope. Real terrain at 12 km reaches 0.0316, against 0.0086 for the steepest idealised terrain that survived 12/12. Test S (slope-limited ETOPO) in the research log.
-
-**Early failure explained (test S, 2026-09-23).** ETOPO at 12 km reaches a slope of 0.0536 (model measure), against 0.0086 for the steepest idealised terrain that survived. Smoothed to 0.0083 (11 passes, peak 1161 → 881 m), the same state survived to 13.7 h instead of 3.75 h. Ingest now limits slope to 0.0086 by default. **What remains** is a second failure at hours 13–14, seen on both flat and smoothed terrain: theta minimum falling and sigma_dot growing from hour ~9. Frozen edges are the first suspect.
-
-**Second failure located (2026-09-23).** The first growth came at 11.59–11.67 h, 10 cells from the western (inflow) edge: the inner boundary of the 10-cell relaxation zone. It is violent (theta ±6.7 K and pi 6.2 hPa in 5 min) and near grid scale. Mechanism: the frozen edge pulls the inflow boundary back to hour 0 while the interior has moved on. Candidates: a gentler/wider relaxation for a frozen driver, or inflow-only relaxation. Not yet tested.
-
-**Second case (server 06Z 2026-09-23, 16.31 h).** The largest change stayed 10–13 cells from the edge, almost always at the south-west corner of the zone boundary over 540–880 m terrain (2 of 30 early, small maxima were further north on the same column), from hour 1, in near-windless flow (standard-atmosphere first guess). So an inflow mismatch is not required. Open: the zone boundary itself (H1) or the terrain at that place (H2). Test W, relaxation width 6 vs 15, separates them.
-
-**Test W (2026-09-25).** The growth moves with the relaxation width: edge distance mostly 6–8 at width 6 and 15–17 at width 15. Width 6 ran away over flat coastal ground, so terrain is not required. The failure is made at the inner boundary of the zone, a band pinned to hour 0 beside a free interior. Width 15 delays it by about 2 h. Next: test O, no relaxation (O1) and alpha 0.1 (O2).
-
-**Test O (2026-09-25).** With no relaxation the run dies at 6.67 h at the physical southern edge (edge distance 0), so some zone is needed. With alpha 0.1 at width 10 it lasts to 21.67 h (from 16.31 h), still failing about 10 cells in at the south-west corner. Strength of the pull toward the frozen state is the strongest control found (+5.4 h); width 15 gave about +2 h. Next: test P (width 15 + alpha 0.1; alpha 0.03), then a 12Z case with soundings before any default changes.
-
-**Test P (2026-09-26).** Width 15 with alpha 0.1 completed 24 h on the 06Z case with no 15-minute change above 5 m/s anywhere: the first clean 24 h real-data forecast. Width 10 with alpha 0.03 also reached 24 h, but the zone-boundary growth was rising at the end. Next: test Q, a 12Z case with soundings, before changing the default.
-
-**Test Q (2026-09-26).** On a 12Z case with soundings, width 15 with alpha 0.1 did **not** survive: it diverged at 12.65 h against 7.45 h for the default. Both failed from an interior jet-level disturbance at 4 h that the zone does not control (P-60). The default is unchanged: width 15 with alpha 0.1 removed zone-boundary growth on one case and did nothing for the other failure.
-
-**Seen in P-60 test S (2026-09-26).** With vertical mixing off, the south-east zone-boundary point r10–12 c97–99 (edge 10, L03–L05, over the sea) ran away first: v changed by 36.5 m/s in 15 min at 3.75–4.00 h. With default mixing it peaks at 3.3 m/s, so mixing is holding back a zone-boundary instability at that corner.
-
-**Test W (2026-09-26).** With divergence damping, the 06Z 2026-09-23 case runs 24 h clean with both the default zone (W3, which was predicted to fail) and the wide weak zone (W4). The Q case also completes (W1, W2). Width 15, alpha 0.1 and C = 0.0064 are now the forecast defaults. **Still OPEN** until 18Z 2026-09-22, the first server cycle, rebuilt from raw, completes with them (test X). The 12Z 2026-09-21 case cannot be rerun, because its raw files were in the wiped desktop scratch data.
-
----
 
 
 ## P-57 — Divergence guard and progress log watch u only
@@ -497,7 +459,71 @@ service, which is P-06 and is where this project's defects have always been.
 ---
 
 
+## P-61 — Verification drops every hour after 00Z (date-only ASOS request)
+**Category** A · **First seen** 2026-09-26 · **Status** OPEN
+
+**Symptom.** Test X verified two 24 h forecasts from 18Z 2026-09-22, but the scores stop at lead 6.25 h, which is 00:15Z on 2026-09-23. Lead 6 has 281 temperature pairs against about 357 at leads 1–5. Test W's comparisons were complete: the Q case to 8 h and the 06Z case to 16 h. Both windows stayed inside one UTC day.
+
+**What is known.** `src/verification/fetchers.asos_url` sent only `year1/month1/day1` and `year2/month2/day2`. IEM then ends the request at 00Z of the end date. So any verification window that crosses midnight UTC loses every hour after 00Z. Almost every 24 h cycle crosses it. The analysis ingest (`src/analysis/sources.asos_url`) was never affected: it sends exact `sts`/`ets` timestamps.
+
+**Fix (2026-09-26, not yet confirmed on the server).** `fetchers.asos_url` now sends `sts`/`ets` to the minute, as the ingest does. `test_fetchers.py` checks a window crossing midnight (17:30Z to 18:30Z the next day) and fails on a date-only request; the suite passes 9/9. To be closed when test X re-verified into fresh archives scores all 24 leads. The old archives hold the truncated observations under the same window name, so they cannot be reused.
+
+**Ruled out.** none.
+
+---
+
+
 # FIXED
+
+## P-56 — The first observation-built forecast diverges at 3.75 h
+**Category** F?, G? · **First seen** 2026-09-22 · **Status** FIXED · **Fixed** 2026-09-26
+
+**Symptom.** 2026-09-21 12Z from observations only, 24 h requested: max|u| 46 m/s for 3 h, then 372 m/s at 3.75 h, stopped inside the hour by the new guard. Desktop, 12 km grid, ETOPO terrain 0–1161 m.
+
+**What is known.** Probe (`src/analysis/probe_obs_blowup.py`, 5-min snapshots): the runaway is the meridional wind at level 17 of 20 (near the ground), first growing by more than 20 % between 2.50 and 2.59 h, 14 cells from the edge, over 812 m of terrain in northern Maine. Only 2 points grew by more than 5 m/s, in a ~5.5 Δx pattern. The initial divergence did not reach the filter's target (4.7e-4 → 9.2e-5 1/s). Next: record every field around (row 82, col 89) from 2.0 h, check the static stability of that column in the initial state (the surface blend adds increments to the lowest 1000 m), and compare with an HRRR-seeded run of the same cycle (`--source hrrr`), which has survived 12 h before.
+
+**Ruled out.** the edges: max|u| was pinned at the lid by the frozen boundary, and the runaway began 14 cells inside it.
+
+**Second case, server, 2026-09-22 18Z.** Standard-atmosphere first guess (no soundings, no previous run), initial max|u| 6.2 m/s; the wind grew steadily from hour 3 (10 → 18 → 15 → 38 m/s) and reached 435 m/s at 6.31 h. A near-calm start dying rules out jet strength. Shared by both cases, and not by the HRRR runs that survived 12 h: the observation-built lower atmosphere (surface blend), ETOPO block-averaged terrain, and frozen single-frame edges.
+
+**Ruled out, test A (2026-09-22).** The surface blend: with it switched off the run still diverged, at 4.10 h, first growing at 2.84–2.92 h in v at level 17 over 712 m of terrain in central NY, 47 cells from every edge.
+
+**Terrain implicated (2026-09-22).** The same state over flat ground held max|u| at 46 m/s to 12 h, then went non-finite at 13.0 h (a sudden negative pressure or column depth, a different signature). Next suspect: below-ground pressure-level values in the observation analysis, which HRRR supplies smoothly and the analysis does not. Test and prediction in the research log.
+
+**Ruled out, below-ground values (2026-09-22).** Extrapolating the 7507 pressure-level values under the terrain (up to 7.55 K) left the run dying at exactly 3.75 h. Next: test B, HRRR terrain under the observation state (server).
+
+**Reframed, 2026-09-23.** Test C, an HRRR start with frozen edges, died at 3.16 h, and the record shows no real-data forecast of the sigma core had ever run before 2026-09-22. So this is not an observation problem: no real state over real terrain has survived. The earlier text's comparison with "HRRR runs that reached 12 h" was wrong; those runs never existed. Leading mechanism: slope. Real terrain at 12 km reaches 0.0316, against 0.0086 for the steepest idealised terrain that survived 12/12. Test S (slope-limited ETOPO) in the research log.
+
+**Early failure explained (test S, 2026-09-23).** ETOPO at 12 km reaches a slope of 0.0536 (model measure), against 0.0086 for the steepest idealised terrain that survived. Smoothed to 0.0083 (11 passes, peak 1161 → 881 m), the same state survived to 13.7 h instead of 3.75 h. Ingest now limits slope to 0.0086 by default. **What remains** is a second failure at hours 13–14, seen on both flat and smoothed terrain: theta minimum falling and sigma_dot growing from hour ~9. Frozen edges are the first suspect.
+
+**Second failure located (2026-09-23).** The first growth came at 11.59–11.67 h, 10 cells from the western (inflow) edge: the inner boundary of the 10-cell relaxation zone. It is violent (theta ±6.7 K and pi 6.2 hPa in 5 min) and near grid scale. Mechanism: the frozen edge pulls the inflow boundary back to hour 0 while the interior has moved on. Candidates: a gentler/wider relaxation for a frozen driver, or inflow-only relaxation. Not yet tested.
+
+**Second case (server 06Z 2026-09-23, 16.31 h).** The largest change stayed 10–13 cells from the edge, almost always at the south-west corner of the zone boundary over 540–880 m terrain (2 of 30 early, small maxima were further north on the same column), from hour 1, in near-windless flow (standard-atmosphere first guess). So an inflow mismatch is not required. Open: the zone boundary itself (H1) or the terrain at that place (H2). Test W, relaxation width 6 vs 15, separates them.
+
+**Test W (2026-09-25).** The growth moves with the relaxation width: edge distance mostly 6–8 at width 6 and 15–17 at width 15. Width 6 ran away over flat coastal ground, so terrain is not required. The failure is made at the inner boundary of the zone, a band pinned to hour 0 beside a free interior. Width 15 delays it by about 2 h. Next: test O, no relaxation (O1) and alpha 0.1 (O2).
+
+**Test O (2026-09-25).** With no relaxation the run dies at 6.67 h at the physical southern edge (edge distance 0), so some zone is needed. With alpha 0.1 at width 10 it lasts to 21.67 h (from 16.31 h), still failing about 10 cells in at the south-west corner. Strength of the pull toward the frozen state is the strongest control found (+5.4 h); width 15 gave about +2 h. Next: test P (width 15 + alpha 0.1; alpha 0.03), then a 12Z case with soundings before any default changes.
+
+**Test P (2026-09-26).** Width 15 with alpha 0.1 completed 24 h on the 06Z case with no 15-minute change above 5 m/s anywhere: the first clean 24 h real-data forecast. Width 10 with alpha 0.03 also reached 24 h, but the zone-boundary growth was rising at the end. Next: test Q, a 12Z case with soundings, before changing the default.
+
+**Test Q (2026-09-26).** On a 12Z case with soundings, width 15 with alpha 0.1 did **not** survive: it diverged at 12.65 h against 7.45 h for the default. Both failed from an interior jet-level disturbance at 4 h that the zone does not control (P-60). The default is unchanged: width 15 with alpha 0.1 removed zone-boundary growth on one case and did nothing for the other failure.
+
+**Seen in P-60 test S (2026-09-26).** With vertical mixing off, the south-east zone-boundary point r10–12 c97–99 (edge 10, L03–L05, over the sea) ran away first: v changed by 36.5 m/s in 15 min at 3.75–4.00 h. With default mixing it peaks at 3.3 m/s, so mixing is holding back a zone-boundary instability at that corner.
+
+**Test W (2026-09-26).** With divergence damping, the 06Z 2026-09-23 case runs 24 h clean with both the default zone (W3, which was predicted to fail) and the wide weak zone (W4). The Q case also completes (W1, W2). Width 15, alpha 0.1 and C = 0.0064 are now the forecast defaults. **Still OPEN** until 18Z 2026-09-22, the first server cycle, rebuilt from raw, completes with them (test X). The 12Z 2026-09-21 case cannot be rerun, because its raw files were in the wiped desktop scratch data.
+
+**Fix.** The forecast defaults since 2026-09-26: divergence damping (Skamarock and Klemp 1992) at C = 0.0064 (ν about 5.4–5.9e4 m²/s), and the relaxation zone widened and weakened to width 15, alpha 0.1. Damping alone was enough on the 06Z case (W3). The wider, weaker zone removed the remaining zone-boundary activity on the Q case (W1 against W2).
+
+**Confirmed by.** Every real case that can still be run, each run 24 h, old settings against new:
+
+| Case | Old settings (width 10, alpha 1, no damping) | New defaults |
+|---|---|---|
+| 06Z 2026-09-23 (calm) | diverged 16.31 h (south-west zone corner) | W4: 24 h, largest 15-min change 0.5 m/s |
+| 12Z 2026-09-25 (jet) | diverged 7.45 h (P-60) | W2: 24 h, no point changing > 5 m/s |
+| 18Z 2026-09-22 (calm; rebuilt from raw, test X) | X0: diverged 14.05 h (south-west zone corner, 9–12 cells in, from about 9.75 h) | X1: 24 h, no point changing > 5 m/s |
+
+Skill before the old run fails is unchanged within ± 0.2 (K, m/s) over hours 1–4 (Q), 1–16 (06Z) and 1–6 (18Z). The largest degradation is +0.11 (v, Q case, lead 1). The largest change, −0.17 m/s (u, 06Z), is an improvement. Not rerun: 12Z 2026-09-21, the case that opened this entry, whose raw observations went with the wiped desktop scratch data. Reopen if a live cycle diverges with the new defaults.
+---
 
 ## P-60 — Jet-level instability 17–21 cells inside the domain kills the 12Z case at 4 h
 **Category** C · **First seen** 2026-09-26 · **Status** FIXED · **Fixed** 2026-09-26

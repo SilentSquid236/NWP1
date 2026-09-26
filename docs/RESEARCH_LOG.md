@@ -3305,6 +3305,53 @@ archived raw observations** with today's ingest (slope-limited terrain),
 - If X1 fails, the new defaults are reverted to the old ones until the
   failure is understood, and P-56 gets the new case.
 
+**Test X result (prompt 148).** First guess `standard_atmosphere`
+(a calm case: initial max|u| 6.2 m/s); terrain slope-limited, 0–881 m.
+
+- **X0, old settings, fails in 6–18 h: holds.** It diverged at 14.05 h,
+  at the south-west zone corner as in the 06Z case. That is rows 10–13,
+  columns 10–16, 9–12 cells in, levels L12–L19 over 700–840 m of
+  terrain. The first points over 5 m/s appear about 9.75 h. It runs away
+  at 11.75 h (102 points), with 290–700 points per interval after that
+  (u and v).
+- **X1, new defaults, completes 24 h with no bad interval: holds.** No
+  point changed by more than 5 m/s in any 15-minute interval. max|u| and
+  max|v| were 6.0 and 8.4 m/s at the end; 27.1 min at 3.1 steps/s.
+- **Skill within ± 0.2 before X0's onset: holds.** X1 minus X0 RMSE is
+  +0.03 to +0.10 K (temperature), −0.05 to +0.01 m/s (u) and −0.10 to
+  +0.03 m/s (v), over leads 1–6.
+- **But verification stopped at lead 6.25 h** (00:15Z), in both runs.
+  Cause: the verification ASOS request sent dates only, and IEM ended it
+  at 00Z (P-61). Fixed. Re-verifying X into fresh archives will give the
+  full 24 h, and it confirms the fix.
+
+**P-56 is FIXED.** All three real cases that can still be run now complete
+24 h with the new defaults, and fail with the old ones (16.31, 7.45 and
+14.05 h). The case that opened P-56, 12Z 2026-09-21, cannot be rerun. It
+is to be reopened if a live cycle diverges.
+
+**Test Y result (prompt 147): the calm cases are slow for a reason in the
+state.** Each case ran alone for 1 h at torch × 8. The server had
+3 users, load average 2–7 on 104 cores.
+
+| Case | Normal | Denormals flushed | Result difference |
+|---|---|---|---|
+| calm (18Z 2026-09-22) | 2.9 steps/s | 3.0 | 0.0 |
+| jet (12Z 2026-09-25) | 11.1 | 11.2 | 1.1e-13 |
+
+- **Denormals are refuted:** flushing them changes nothing. Neither
+  saved state contains a single subnormal value.
+- **Machine load is refuted:** each run was alone on a quiet machine,
+  and in test W the two cases differed while running at the same time.
+- **Something in the calm state makes each step 3.8× more expensive.**
+  The candidate is `dry_convective_adjustment`. It runs after every step
+  and repeats its sweep, two Python loops over 20 levels, until no
+  interface is unstable, up to 20 sweeps. The measured extra cost,
+  about 255 ms a step, matches roughly 13–25 sweeps. Test Z counts the
+  sweeps and times the adjustment (predictions: in the calm case a mean
+  of 10 or more sweeps and at least 60 % of the step time; in the jet
+  case 0 sweeps on most steps and under 10 %).
+
 
 
 ---

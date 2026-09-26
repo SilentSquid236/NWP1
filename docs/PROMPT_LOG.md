@@ -225,6 +225,12 @@ on itself.
 | 140 | *(attached: `test_u2_result.txt`)* | **OBS** | U2: time-mean growth 1.08e-3 and PGF mean 15 % of the shear term, both predictions hold. (f) refuted: theta correlation 1.00 at every level, so the mode is deep and smooth. Candidate (g), a divergent grid-scale mode: divergence damping implemented (4 tests), and test V designed |
 | 141 | *(attached: `test_v_result.txt`)* | **OBS** | Test V: divergence damping removes the P-60 onset (V1 and V2 complete 8 h with no > 5 m/s change), resolved maxima unchanged, mode div/vort 2–52. Bug found and fixed: ν was computed before the state was loaded (0.64 of intended). `tools/score_by_lead.py` added; test W designed (24 h, both cases, ± wide zone, verification) |
 | 142 | *(attached: `test_w_result.txt`)* | **OBS** | Test W: all four 24 h runs complete; W3 was predicted to fail and did not. Skill unchanged within 0.2 before the undamped onset. Defaults changed to width 15, alpha 0.1, C = 0.0064. P-60 FIXED; P-56 open until test X (18Z 2026-09-22 rebuilt from raw) |
+| 143 | "where is bash rc" | **Q** | `~/.bashrc` in the server home directory: check it read-only, back it up, append the torch settings. A login shell may read `~/.bash_profile` instead, and cron reads neither |
+| 144 | *(attached: `test_x1.log`)* | **OBS** | X1 completed 24 h, but the result file was missing. Calm cases found to run about 3.8× slower per step; denormals proposed as the cause, with a check |
+| 145 | *(pasted: subnormal counts, 0 in both states)* | **OBS** | Denormals absent from the saved states. Test Y designed to time each case alone, with and without flushing |
+| 146 | "the results for x are missing" | **OBS** | The collection steps died with the terminal session. Rewritten as a background job that survives a disconnect |
+| 147 | *(pasted: test Y timings)* | **OBS** | Flushing and machine load both refuted: calm 2.9–3.0 against jet 11.1–11.2 steps/s. Convective adjustment sweeps proposed; test Z designed |
+| 148 | *(attached: `test_x_result.txt`)* | **OBS** | Test X: X0 diverged 14.05 h, X1 completed 24 h, skill unchanged within 0.1. P-56 FIXED. Verification ended at 00Z: date-only ASOS request (P-61), fixed and tested |
 
 **Observation.** Prompt 53 is 18 words and is the most consequential
 instruction in the project. Before it, nine candidate causes had been patched
