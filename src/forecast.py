@@ -374,13 +374,17 @@ def main():
     p.add_argument("--hours", type=int, default=12)
     p.add_argument("--output-every", type=float, default=1.0,
                    help="Snapshot interval in hours")
-    p.add_argument("--relax-width", type=int, default=10)
+    # DEFAULTS CHANGED 2026-09-26 (P-56 tests P and W, P-60 tests V and W):
+    # width 15, alpha 0.1 and divergence damping C = 0.0064. Both real cases
+    # (06Z 2026-09-23 calm, 12Z 2026-09-25 jet) then run 24 h clean. The old
+    # behaviour is --relax-width 10 --relax-alpha 1 --div-damp 0.
+    p.add_argument("--relax-width", type=int, default=15)
     p.add_argument("--backend", choices=("numpy", "torch"), default="numpy",
                    help="array backend for the core: numpy (one core) or "
                         "torch (multi-threaded CPU, same float64 physics)")
     p.add_argument("--threads", type=int, default=8,
                    help="torch threads (the Xeon's measured sweet spot is ~8)")
-    p.add_argument("--relax-alpha", type=float, default=1.0,
+    p.add_argument("--relax-alpha", type=float, default=0.1,
                    help="Relaxation weight per step at the outer edge "
                         "(the cosine ramp scales from it); 0 < alpha <= 1")
     p.add_argument("--dt-factor", type=float, default=1.0,
@@ -388,9 +392,9 @@ def main():
     p.add_argument("--hyper-factor", type=float, default=1.0,
                    help="Multiply the recommended hyperdiffusion coefficient "
                         "(P-60 test T)")
-    p.add_argument("--div-damp", type=float, default=0.0,
+    p.add_argument("--div-damp", type=float, default=0.0064,
                    help="Divergence damping, as C in nu = C dx dy / dt "
-                        "(Skamarock and Klemp 1992); 0 is off (P-60 test V)")
+                        "(Skamarock and Klemp 1992); 0 is off (P-60 tests V, W)")
     p.add_argument("--ri-crit", type=float, default=None,
                    help="Richardson number below which vertical mixing acts "
                         "(default: turbulence.RI_CRIT, 0.25; P-60 test S)")

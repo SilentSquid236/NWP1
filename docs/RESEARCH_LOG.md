@@ -3238,6 +3238,73 @@ and C = 0.0064. It would stand on one calm case and one jet case. That
 meets the two-case rule set for the relaxation change, and it would still
 be checked on the first live cycles.
 
+**Test W result (prompt 142).** C = 0.0064 gave ν = 5.85e4 m²/s on the Q
+case and 5.38e4 on the 06Z case. Four runs side by side, torch × 8 each.
+
+| Run | Case | Zone | 24 h | Points changing > 5 m/s in 15 min | Wall |
+|---|---|---|---|---|---|
+| W1 | Q (jet) | default | **completed** | at most 6 per interval, all 10–12 cells in (east zone boundary), from about 17 h; largest 13.7 m/s at 22.50–22.75 h | 16.8 min |
+| W2 | Q | width 15, alpha 0.1 | **completed** | **none** in the whole run; max\|u\|, max\|v\| 28.3 and 33.1 at 23.5 h | 9.7 min |
+| W3 | 06Z (calm) | default | **completed** | **none**; max 8.7 and 10.1 | 28.4 min |
+| W4 | 06Z | width 15, alpha 0.1 | **completed** | **none**; largest change 0.5 m/s at 23.5 h | 28.1 min |
+
+(The 06Z runs ran at 3.0 steps/s against 5.4–9.4 for the Q runs, with
+four 8-thread runs sharing the machine.)
+
+- **W1, no interior onset (completes, or fails only at the zone
+  boundary): holds.** It completed. Every fast point is at edge distance
+  10–12, the default zone's inner boundary, and none is inside.
+- **W2, completes 24 h with no interval over 20 points: holds**, with no
+  point at all.
+- **W3, still fails at the 06Z south-west corner in 15–18 h: refuted.**
+  It completed 24 h with no fast point. Divergence damping also removes
+  the 06Z failure, which the budget had attributed to d.grad U and
+  mixing near the ground. The 12 h budget described where the energy
+  entered the mode, not what would stop it. A mode damped as divergent
+  must have been divergent enough, and the prediction reasoned from the
+  source term alone.
+- **W4, completes 24 h: holds.**
+- **Skill** (`tools/score_by_lead.py`; RMSE differences, damped minus
+  undamped):
+  - Q case, W2 against Q0n over hours 1–4, before Q0n's onset:
+    temperature +0.00 to +0.04 K, u −0.03 to −0.06 m/s, v −0.06 to
+    +0.11 m/s. **Within ± 0.2: holds.** At 6–7 h, as Q0n breaks up, W2
+    is better by 0.47–1.65 (u) and 0.22–0.50 (v).
+  - 06Z, W4 against the default run over hours 1–16: temperature −0.06
+    to +0.02, u −0.02 to −0.17, v −0.02 to +0.04. **Within ± 0.2:
+    holds.** The wind is slightly better throughout.
+- **P-59 dominates the error.** In the Q case, which starts at 12Z and
+  runs through the day, the temperature bias is −8.4 to −8.7 °C at hours
+  6–8 (early afternoon) in both runs. The damping neither causes nor
+  cures it.
+
+**Decision (pre-registered in test W): new forecast defaults**, relaxation
+width 15, alpha 0.1, divergence damping C = 0.0064. They are in
+`src/forecast.py`, and `daily.sh` passes no flags, so the next cycle uses
+them. `--relax-width 10 --relax-alpha 1 --div-damp 0` reproduces the old
+model bit-identically (checked on the desktop). `src/test_forecast.py`
+passes 11/11.
+
+**P-60 is FIXED** on its case. **P-56 stays OPEN**: two of its cases pass,
+but the two that first defined it have not been rerun. One is 12Z
+2026-09-21, which was desktop-only and whose raw files went with the
+wiped scratch data. The other is 18Z 2026-09-22, the first server cycle,
+which died at 6.31 h before the slope limit existed.
+
+**Test X (predictions first): the 18Z 2026-09-22 cycle rebuilt from its
+archived raw observations** with today's ingest (slope-limited terrain),
+24 h, torch. The original directory is copied aside first.
+
+- **X1, new defaults:** completes 24 h with no 15-minute interval in which
+  more than 20 points change by more than 5 m/s.
+- **X0, old settings** (`--relax-width 10 --relax-alpha 1 --div-damp 0`):
+  fails before 24 h, somewhere in 6–18 h. The earlier real cases failed
+  at 6.31, 7.45, 13.7 and 16.3 h.
+- **Skill:** X1 within ± 0.2 K and ± 0.2 m/s of X0 over X0's hours
+  before its onset.
+- If X1 fails, the new defaults are reverted to the old ones until the
+  failure is understood, and P-56 gets the new case.
+
 
 
 ---

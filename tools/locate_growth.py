@@ -6,8 +6,9 @@
 For each pair of consecutive snapshots it prints the largest change in u and
 v: its size, level, row, column, distance from the nearest edge (in cells)
 and terrain height there, and how many points changed by more than 5 m/s,
-with their minimum and median edge distance.  The relaxation zone is the
-outer 10 cells, so an edge distance of about 10 is its inner boundary.
+with their minimum and median edge distance.  The default relaxation zone
+is the outer 15 cells (10 before 2026-09-26), so an edge distance of about
+15 (or 10 in older runs) is its inner boundary.
 It also prints the first-guess line from availability.json, if present.
 No model code is imported; only NumPy is needed.
 """

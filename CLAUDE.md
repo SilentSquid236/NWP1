@@ -162,6 +162,12 @@ recorded with `tools/tokens.py --add`.
 
 ## Things a new session gets wrong
 
+- **Forecast defaults changed on 2026-09-26:** relaxation width 15, alpha
+  0.1, and divergence damping C = 0.0064 (P-56, P-60, tests P, V and W).
+  Runs made before then used width 10, alpha 1 and no damping. Compare
+  like with like; `--relax-width 10 --relax-alpha 1 --div-damp 0` gives
+  the old model.
+
 - Index 0 in every vertical array is the **model lid**, not the ground. On the
   analysis's PRESSURE levels (`config.PRESSURE_LEVELS`) index 0 is 1000 hPa —
   the opposite way round.

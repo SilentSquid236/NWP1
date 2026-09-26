@@ -5,7 +5,7 @@
 # sha256(16)          bytes  path
 fd97c1bd78429370       353  .gitattributes
 4176e5efd4bf709b       184  .gitignore
-88fe1064dc1a3b6a     10111  CLAUDE.md
+cbec128ec9a46c42     10419  CLAUDE.md
 67def43f12d8438c      5508  CLAUDE_SCIENCE.md
 138b83b8dd106874      3339  config.py
 e066f001a5a7f149      3870  diagnose_herbie.py
@@ -17,10 +17,10 @@ b660cbbe87e8813c      6530  docs/CAPABILITIES.md
 1bc65de9fd15e3cf     24015  docs/LEARNING_LOG.md
 6026c87422e8fbd4      4956  docs/METHODOLOGY.md
 1eeb6616080945dd      6884  docs/POSTPROCESSING.md
-1dcdb31142ef68e5     71426  docs/PROBLEMS.md
-f2f8d0bb8f0e1688     29586  docs/PROMPT_LOG.md
+0ca1a7ce17d32956     72789  docs/PROBLEMS.md
+35619e8d7a64f04a     29893  docs/PROMPT_LOG.md
 ac14573f21369f67     13315  docs/REFERENCES.md
-f4b0683b856beac7    193033  docs/RESEARCH_LOG.md
+bf1487da5d87b9b6    196884  docs/RESEARCH_LOG.md
 78c3574bb1b0dd88      4845  docs/STABILITY.md
 9f4cd931b4eea149     19777  docs/STRUCTURE.md
 a155ccce967d26bc      4340  docs/TOKEN_COST.md
@@ -116,7 +116,7 @@ cc678b6db4c6beab      8872  src/dynamics/test_radiation.py
 4d768915f3cf8d90      6866  src/dynamics/turbulence.py
 b9ad5d54a3e1dd79      4813  src/dynamics/vertical.py
 11ea32d1050e29c3      7067  src/dynamics/visualize_instability.py
-02a8102c907350ab     27223  src/forecast.py
+1ccd0f2a87dcba03     27526  src/forecast.py
 72920dad90f90394     21010  src/ingest_hrrr.py
 69b14ed26fdc09f9      9258  src/ingest_obs.py
 6907fa3c46f6c97c     17128  src/make_maps.py
@@ -155,7 +155,7 @@ fa2c463e2ab0191d      6514  tools/apply_sync.py
 3c40fddf5ae8209f      1133  tools/compare_forecasts.py
 d94c449fc1d99d31      6562  tools/daily.sh
 c4cb3526b7e6e2d4      1544  tools/fetch_boundaries.py
-edb3f3ac38d9ddf0      2666  tools/locate_growth.py
+909645a4c8bd7303      2719  tools/locate_growth.py
 c058d577f05ab07a      3379  tools/manifest.py
 c6175399c5f94291     12408  tools/mode_budget.py
 8cab187f70798041      7564  tools/mode_structure.py

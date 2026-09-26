@@ -453,6 +453,8 @@ service, which is P-06 and is where this project's defects have always been.
 
 **Seen in P-60 test S (2026-09-26).** With vertical mixing off, the south-east zone-boundary point r10–12 c97–99 (edge 10, L03–L05, over the sea) ran away first: v changed by 36.5 m/s in 15 min at 3.75–4.00 h. With default mixing it peaks at 3.3 m/s, so mixing is holding back a zone-boundary instability at that corner.
 
+**Test W (2026-09-26).** With divergence damping, the 06Z 2026-09-23 case runs 24 h clean with both the default zone (W3, which was predicted to fail) and the wide weak zone (W4). The Q case also completes (W1, W2). Width 15, alpha 0.1 and C = 0.0064 are now the forecast defaults. **Still OPEN** until 18Z 2026-09-22, the first server cycle, rebuilt from raw, completes with them (test X). The 12Z 2026-09-21 case cannot be rerun, because its raw files were in the wiped desktop scratch data.
+
 ---
 
 
@@ -495,8 +497,10 @@ service, which is P-06 and is where this project's defects have always been.
 ---
 
 
+# FIXED
+
 ## P-60 — Jet-level instability 17–21 cells inside the domain kills the 12Z case at 4 h
-**Category** C · **First seen** 2026-09-26 · **Status** OPEN
+**Category** C · **First seen** 2026-09-26 · **Status** FIXED · **Fixed** 2026-09-26
 
 **Symptom.** Test Q started 2026-09-25 12Z from real soundings (first guess `sounding_mean`, max|u| 27.6 and max|v| 33.2 m/s). With the default zone it diverged at **7.45 h**; with width 15 and alpha 0.1 it diverged at **12.65 h**. In both runs the change is small (≤ 3.3 m/s per 15 min) until **4.00–4.25 h**. Then it grows at the same place: levels **L03–L05 (about 270–330 hPa, jet level)**, rows 76–78, columns 86–90 (**45.3–45.5 N, 69.4–68.8 W, central Maine**), **17–21 cells from the nearest edge**. From 5 h on, 5 100–11 500 points change by more than 5 m/s every 15 minutes, so neither forecast is usable after about 4.5 h.
 
@@ -519,10 +523,15 @@ service, which is P-06 and is where this project's defects have always been.
 - (f) The Lorenz-grid computational mode. Theta in the mode has an adjacent-level correlation of 1.00, with no zigzag (U2).
 - (e) Missing vertical dissipation, and vertical mixing generally. With Ri_c 1.0, and with mixing off, the onset is unchanged (4.00–4.25 h at r77 c88; test S).
 
+**Fix.** Divergence damping (Skamarock and Klemp 1992), `subgrid.divergence_damping`, as a forecast default: C = 0.0064, ν = C dx dy / dt ≈ 5.9e4 m²/s. It damps the divergent wind only: 2Δx in about 10 min, 10Δx in about 105 min. The wider, weaker relaxation zone (width 15, alpha 0.1) became the default at the same time, for P-56.
+
+**Confirmed by.** Q case, 12Z 2026-09-25:
+- V1 (ν 5.88e4) and V2 (ν 1.77e4): no point changes by more than 5 m/s in 0–6.25 h, where the default blew up from 4.00 h; both complete 8 h.
+- W1 (default zone): 24 h with no interior onset; the only fast points, at most 6, are at the zone boundary.
+- W2 (new defaults): 24 h with no point changing by more than 5 m/s.
+- Skill before the undamped run's onset (hours 1–4) is unchanged within 0.11 (K, m/s).
+One case: a second jet case would strengthen it.
 ---
-
-
-# FIXED
 
 ## P-40 — The eddy-diffusivity ceiling was binding, and was never tested
 **Category** E, G · **Status** FIXED · **Fixed** 2026-09-12 ·

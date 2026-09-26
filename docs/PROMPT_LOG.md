@@ -224,6 +224,7 @@ on itself.
 | 139 | *(attached: `test_u_result.txt`)* | **OBS** | Budget: d(sigma_dot) dU/dsigma is the only steady source (1.5–2.5e-3 s⁻¹, against 1.5–1.9e-3 s⁻¹ measured growth). The pressure term oscillates, so the snapshot growth check was the wrong quantity. Candidate (f), the Lorenz computational mode, cited. `mode_budget --hours` gives the time mean and vertical structure |
 | 140 | *(attached: `test_u2_result.txt`)* | **OBS** | U2: time-mean growth 1.08e-3 and PGF mean 15 % of the shear term, both predictions hold. (f) refuted: theta correlation 1.00 at every level, so the mode is deep and smooth. Candidate (g), a divergent grid-scale mode: divergence damping implemented (4 tests), and test V designed |
 | 141 | *(attached: `test_v_result.txt`)* | **OBS** | Test V: divergence damping removes the P-60 onset (V1 and V2 complete 8 h with no > 5 m/s change), resolved maxima unchanged, mode div/vort 2–52. Bug found and fixed: ν was computed before the state was loaded (0.64 of intended). `tools/score_by_lead.py` added; test W designed (24 h, both cases, ± wide zone, verification) |
+| 142 | *(attached: `test_w_result.txt`)* | **OBS** | Test W: all four 24 h runs complete; W3 was predicted to fail and did not. Skill unchanged within 0.2 before the undamped onset. Defaults changed to width 15, alpha 0.1, C = 0.0064. P-60 FIXED; P-56 open until test X (18Z 2026-09-22 rebuilt from raw) |
 
 **Observation.** Prompt 53 is 18 words and is the most consequential
 instruction in the project. Before it, nine candidate causes had been patched
