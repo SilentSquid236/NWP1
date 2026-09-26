@@ -500,9 +500,15 @@ service, which is P-06 and is where this project's defects have always been.
 
 **What is known.** The onset does not depend on the relaxation zone. The same time, place and levels appear with the default zone (10 cells) and with width 15 and alpha 0.1. The onset point lies 7–11 cells inside the default zone's inner boundary and 2–6 inside the wide zone's, so this is not P-56's zone-boundary growth. The numpy and torch runs of the default case (Q0n, Q0t) differ by 1.6e-13 at 0.25 h. That difference grows with an **e-folding time of 24 min** from the start (2.0e-9 at 4 h) and 33 min afterwards: an unstable mode is present from hour 0. On the 06Z 2026-09-23 case the same pair grew with an e-folding time of 263 min for 8 h, then 74 min. An e-folding time of 24 min is faster than inertial instability can grow (its growth rate is at most about f, an e-folding of about 3 h). Shear instability (Ri < 0.25), static instability, or a numerical mode can grow that fast. Levels L00–L04 are the wind sponge, so the onset band L03–L05 straddles the sponge base, as P-56's growth sat at the lateral zone's inner edge.
 
-**Candidates (test R).** (a) The flow there is unstable at the start (Ri < 0.25 or N2 < 0 at L03–L05): `tools/mode_structure.py` Part 2. (b) The sponge base: its lower edge makes a vertical copy of P-56. A deeper or shallower sponge would move the onset level.
+**Test R (2026-09-26).** The mode is in the Maine box from hour 1. It spans the lid (L00) to L04, where the box's strongest wind (32.6 m/s) is at the lid itself, and its e-folding shortens from 46 to 17 min over hours 0.5–4. It is still in the linear range, so the flow under it becomes more unstable over those hours.
 
-**Ruled out.** The lateral relaxation settings as the cause of the onset (Q0 vs Q1: same onset). The torch backend (Q0n and Q0t diverge at the same 7.45 h, and their difference is round-off amplified by the mode).
+**Candidates.** (c) The rigid 200 hPa lid cutting through the jet. Not tested; it needs predictions after the next measurement. Next measurement: stability (Ri, N2, eta/f) round the mode at 1–4 h (`tools/mode_structure.py --at`). If none of them goes unstable by 4 h, the mode is numerical.
+
+**Ruled out.**
+- The lateral relaxation settings as the cause of the onset (Q0 vs Q1: same onset).
+- The torch backend. Q0n and Q0t diverge at the same 7.45 h, and their difference is round-off amplified by the mode.
+- (a) An unstable flow at the start. At t+0.25 h round the mode, eta/f ≥ 0.66, Ri ≥ 1.59 and N2 > 0 at every level, and no point in the domain has Ri < 0.25 at L00–L18.
+- (b) The sponge base. With 8 and 3 sponge levels the onset stays at 4.0–4.5 h in the same place. With 8 levels it moves up to the lid, not down with the sponge base.
 
 ---
 

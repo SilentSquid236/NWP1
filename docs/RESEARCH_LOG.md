@@ -2766,6 +2766,83 @@ counterpart of P-56's lateral zone edge.
    - Either result eliminates one candidate. If both runs move, or
      neither does, both candidates are open.
 
+**Test R result (prompt 134).**
+
+*Tool check, 06Z pair: holds.* `mode_structure.py` puts the 06Z mode at
+the south-west zone boundary (edge distance 10–11, rows 11–15,
+columns 10–12, 38.2–38.7 N 80.2–80.5 W) at 6, 10, 14 and 16 h, where
+`locate_growth` found that failure. It starts at L17–L18 and has risen
+to L11–L14 by 14–16 h. At t+1 h the lowest interface there is statically
+unstable (N2 −2.8e-5, Ri −1082 at L18/L19), and 394 points in the domain
+have Ri < 0.25 at L18. That is noted, not pursued.
+
+*The Q mode.* Its position by hour:
+
+| Hour | Rows | Columns | Levels | Edge distance |
+|---|---|---|---|---|
+| 1 | 69 | 84–85 | L02–L04 | 24–25 |
+| 3 | 72 | 89–90 | L03–L04 | 19–20 |
+| 4 | 77–78 | 88–89 | L04 | 18–19 |
+
+- The prediction (rows 70–84, columns 80–96, L03–L05 from hour 1) holds
+  approximately. At hour 1 the mode is one row south and one level higher
+  than predicted; from hour 3 it is inside the box.
+- It is top-heavy. In the box, each level from the lid (L00) to L04
+  carries 85–100 % of the peak wind difference at 1–3 h. The theta
+  difference peaks lower, at L10 (525 hPa).
+- It e-folds in 46, 24, 22 and 17 min over hours 0.5–1, 1–2, 2–3 and 3–4.
+
+*Stability at the start (t+0.25 h, ± 6 cells round r77 c89).* eta/f is
+at least 0.66 at every level, Ri at least 1.59 at every interface, and
+N2 at least 6.3e-5 s⁻². No point in the domain has Ri < 0.25 at L00–L18.
+By these grid-scale measures the initial flow in the box is stable.
+**Candidate (a) is refuted as stated.**
+
+*Sponge depth (Q case, default zone, torch, 8 h).*
+
+| Run | Sponge | First 15 min with > 5 m/s changes | Where the largest changes are then | 8 h |
+|---|---|---|---|---|
+| Q0 | 5 levels | 4.00–4.25 h (32 points; 629 in the next) | L03–L05, r76–78 c86–90 | diverged 7.45 h |
+| R8 | 8 levels | 4.25–4.50 h (351 points) | L00–L01, r74–75 c87–88 | completed, 8 216 points > 5 m/s at 5.25–5.50 h |
+| R3 | 3 levels | 3.50–3.75 h (1 point, edge 10); 4.25–4.50 h (48–50) | L03–L04, r84 c83–87, then L02 r77 c93 | completed, 5 359 points > 5 m/s at 6.00–6.25 h |
+
+Under (b) the onset level should have moved with the sponge base, to
+L06–L08 in R8 and L01–L03 in R3, and the onset time should have changed.
+Instead the onset time is 4.0–4.5 h in all three runs, in the same part
+of Maine. R8's largest changes moved **up** to the lid, not down.
+**Candidate (b) is refuted.** A deeper sponge slows the growth after
+onset (R8 and R3 both reached 8 h, Q0 did not), but it does not move the
+mode or delay it. The design paragraph's last sentence ("If both runs
+move, or neither does, both candidates are open") contradicted the two
+explicit predictions above it. The runs are scored on the explicit
+predictions.
+
+*Speed.* R8 and R3 ran side by side at 0.105 and 0.135 s/step (1828
+steps in 3.2 and 4.1 min), which is close to `check_backend.py`. The 06Z
+torch run's 0.335 s/step now looks like load on the machine, not the
+code. A 24 h torch forecast is about 10–12 min.
+
+**Two candidates refuted, so stop and re-examine the assumptions before
+testing a third** (the rule this project runs on).
+
+1. **Part 2 measured the wrong time.** Growth sped up from 46 to 17 min
+   while the difference was still 1e-11–1e-8, well inside the linear
+   range. A linear mode on a steady flow grows at a constant rate, so the
+   flow under it changed during the first 4 h and became more unstable.
+   Stability has to be measured at 2–4 h, not 0.25 h. Measurement next:
+   Part 2 at 1–4 h round the mode's track.
+   - Prediction: if a resolved physical instability is responsible, the
+     minimum Ri at L00–L04 falls below 0.25 (or N2 below 0) in the box by
+     3–4 h, before the 4.25 h onset.
+   - If Ri stays above 1 and eta/f above 0 through 4 h, the mode is
+     numerical.
+2. **The mode reaches the lid.** It spans L00–L04, and the box's
+   strongest wind is at the lid itself (32.6 m/s at L00, 206 hPa). The
+   200 hPa lid cuts through the jet. On the 06Z night the wind at the
+   lid was under 1 m/s, and that case had no such mode. This is
+   candidate (c), the rigid lid under a jet. It is **not tested yet**.
+   It gets written predictions after the measurement in item 1.
+
 
 
 ---

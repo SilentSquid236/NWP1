@@ -4,6 +4,7 @@ Where does a forecast's fastest-growing disturbance live, and is the flow
 there unstable to begin with?
 
     python tools/mode_structure.py A.npz B.npz [--hours 1,2,3,4] [--box ROW COL]
+                                                [--at 0,2,4]
 
 A and B are two runs of the SAME case that differ only by round-off, e.g.
 the numpy and torch backends (P-60). Their difference is then the leading
@@ -15,9 +16,9 @@ and theta (level, row, column, edge distance, lat/lon), which three levels
 carry most of the wind difference in a box around that point, and the
 e-folding time of the wind difference since the previous hour.
 
-Part 2 takes A's FIRST snapshot and prints, level by level, the stability
-of the flow in a box around the mode (the last requested hour's u/v
-maximum, or --box ROW COL):
+Part 2 prints, level by level, the stability of A's flow in a box around
+the mode (the last requested hour's u/v maximum, or --box ROW COL), at
+A's first snapshot or at each of the --at hours:
   eta/f  absolute vorticity over f; below 0 is inertial instability
   Ri     gradient Richardson number with the level below; below 0.25 is
          shear instability, below 0 static instability
@@ -75,6 +76,8 @@ def main():
     ap.add_argument("--hours", default="1,2,3,4")
     ap.add_argument("--box", nargs=2, type=int, metavar=("ROW", "COL"))
     ap.add_argument("--half", type=int, default=6, help="box half-width, cells")
+    ap.add_argument("--at", default=None,
+                    help="hours of A's snapshots for Part 2 (default: the first)")
     a = ap.parse_args()
 
     A, B = np.load(a.a, allow_pickle=True), np.load(a.b, allow_pickle=True)
@@ -121,25 +124,27 @@ def main():
     if centre is None:
         sys.exit("no hour matched; nothing to centre Part 2 on")
     r0, c0 = centre
-    eta_f, n2, ri, speed, p = stability(A["u"][0], A["v"][0], A["theta"][0], A["pi"][0],
-                                        A["sigma"], float(A["p_top"]), lat, lon)
     sl = (slice(max(r0 - h, 0), r0 + h + 1), slice(max(c0 - h, 0), c0 + h + 1))
-    print(f"\nPart 2 -- stability in A's first snapshot (t+{ta[0]:.2f} h), box of "
-          f"+-{h} cells round r{r0} c{c0} ({lat[r0, c0]:.2f}N {lon[r0, c0]:.2f}, "
-          f"edge {edge(shape, r0, c0)})")
-    print("  lev    p hPa  max wind  min eta/f  min Ri(k,k+1)  min N2(k,k+1) | domain: eta/f<0  Ri<0.25")
-    nz = eta_f.shape[0]
-    for k in range(nz):
-        pb = float(p[k][sl].mean()) / 100.0
-        line = (f"  L{k:02d} {pb:8.0f} {float(speed[k][sl].max()):9.1f} "
-                f"{float(eta_f[k][sl].min()):10.2f}")
-        if k < nz - 1:
-            line += (f" {float(ri[k][sl].min()):14.2f} {float(n2[k][sl].min()):14.1e} |"
-                     f" {int((eta_f[k] < 0).sum()):8d} {int((ri[k] < 0.25).sum()):8d}")
-        else:
-            line += f" {'':14} {'':14} | {int((eta_f[k] < 0).sum()):8d}"
-        print(line)
-
+    idx = [0] if a.at is None else sorted({int(np.argmin(np.abs(ta - float(x))))
+                                           for x in a.at.split(",")})
+    for n in idx:
+        eta_f, n2, ri, speed, p = stability(A["u"][n], A["v"][n], A["theta"][n], A["pi"][n],
+                                            A["sigma"], float(A["p_top"]), lat, lon)
+        print(f"\nPart 2 -- stability in A at t+{ta[n]:.2f} h, box of "
+              f"+-{h} cells round r{r0} c{c0} ({lat[r0, c0]:.2f}N {lon[r0, c0]:.2f}, "
+              f"edge {edge(shape, r0, c0)})")
+        print("  lev    p hPa  max wind  min eta/f  min Ri(k,k+1)  min N2(k,k+1) | domain: eta/f<0  Ri<0.25")
+        nz = eta_f.shape[0]
+        for k in range(nz):
+            pb = float(p[k][sl].mean()) / 100.0
+            line = (f"  L{k:02d} {pb:8.0f} {float(speed[k][sl].max()):9.1f} "
+                    f"{float(eta_f[k][sl].min()):10.2f}")
+            if k < nz - 1:
+                line += (f" {float(ri[k][sl].min()):14.2f} {float(n2[k][sl].min()):14.1e} |"
+                         f" {int((eta_f[k] < 0).sum()):8d} {int((ri[k] < 0.25).sum()):8d}")
+            else:
+                line += f" {'':14} {'':14} | {int((eta_f[k] < 0).sum()):8d}"
+            print(line)
 
 if __name__ == "__main__":
     main()

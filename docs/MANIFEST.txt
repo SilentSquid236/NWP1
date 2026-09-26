@@ -17,9 +17,9 @@ b660cbbe87e8813c      6530  docs/CAPABILITIES.md
 1bc65de9fd15e3cf     24015  docs/LEARNING_LOG.md
 6026c87422e8fbd4      4956  docs/METHODOLOGY.md
 1eeb6616080945dd      6884  docs/POSTPROCESSING.md
-37efacea78d3fd14     68155  docs/PROBLEMS.md
-8088dec3ae295d72     26718  docs/PROMPT_LOG.md
-abd1ad4f2d76f115    168601  docs/RESEARCH_LOG.md
+26e2227df1327587     68854  docs/PROBLEMS.md
+824c7ee3a9c698fa     27182  docs/PROMPT_LOG.md
+0ac4c26a761f63d1    172873  docs/RESEARCH_LOG.md
 78c3574bb1b0dd88      4845  docs/STABILITY.md
 1baa4da84c182394     19150  docs/STRUCTURE.md
 a155ccce967d26bc      4340  docs/TOKEN_COST.md
@@ -154,7 +154,7 @@ d94c449fc1d99d31      6562  tools/daily.sh
 c4cb3526b7e6e2d4      1544  tools/fetch_boundaries.py
 edb3f3ac38d9ddf0      2666  tools/locate_growth.py
 c058d577f05ab07a      3379  tools/manifest.py
-4084b616197e689c      6277  tools/mode_structure.py
+5aaa1661c8d5caaa      6706  tools/mode_structure.py
 4918089c6dc57dd2      1698  tools/newlog.py
 45e8d2a8e14a5c73      4712  tools/problem.py
 6c96dc317323396d      3990  tools/pull.sh

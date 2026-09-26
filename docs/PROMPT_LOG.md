@@ -216,6 +216,7 @@ on itself.
 | 131 | "Hover and click works and the times are all good" | **OBS** | Viewer confirmed in a browser: hover readout, click-for-sounding and valid times all correct. Nothing on the maps is still unconfirmed |
 | 132 | *(pasted: torch 06Z real-case run and hourly comparison)* | **OBS** | Torch matches NumPy on a real case: both diverge at 16.31 h; difference 1.4e-12 → 1.4e-8. 1.45× faster (19.2 vs 27.9 min), short of the 2.8× benchmark |
 | 133 | *(attached: `test_q_result.txt`)* | **OBS** | Test Q: both main predictions refuted. The default diverged at 7.45 h and width 15 with alpha 0.1 at 12.65 h, both from a jet-level onset in central Maine at 4 h, 17–21 cells in (P-60 opened). Torch matches at 2.39×. `tools/mode_structure.py` and `--sponge-levels` added for test R |
+| 134 | *(attached: `test_r_result.txt`)* | **OBS** | Test R: the tool check on the 06Z pair holds. For P-60, candidate (a) (unstable initial flow) and (b) (sponge base) are both refuted, so the stop rule applies. Re-examined assumptions: the growth speeds up in the linear range, so the flow changes under the mode, and the mode reaches the lid where the jet is strongest. `--at` added to measure stability at 1–4 h; candidate (c), the lid, is not tested yet |
 
 **Observation.** Prompt 53 is 18 words and is the most consequential
 instruction in the project. Before it, nine candidate causes had been patched
