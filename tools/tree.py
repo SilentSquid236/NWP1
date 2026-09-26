@@ -144,6 +144,7 @@ NOTES = {
     "tools/mode_structure.py": "where the fastest-growing mode lives (difference of two round-off-different runs) and the initial stability there",
     "tools/mode_budget.py": "which tendency term feeds a growing mode (kinetic-energy budget of the round-off difference)",
     "tools/check_refs.py": "every author-year citation has an AMS-format entry in docs/REFERENCES.md",
+    "src/dynamics/test_div_damping.py": "divergence damping: rotational flow untouched, 2dx decay rate, torch = numpy, default bit-identical",
     "tools/compare_forecasts.py": "hour-by-hour difference between two forecast files (e.g. numpy vs torch)",
     "tools/check_backend.py": "on a new machine: torch vs numpy speed and agreement at several thread counts",
     "src/verify_pending.py": "verifies every archived forecast whose window has closed, once",

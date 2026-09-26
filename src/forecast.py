@@ -388,6 +388,9 @@ def main():
     p.add_argument("--hyper-factor", type=float, default=1.0,
                    help="Multiply the recommended hyperdiffusion coefficient "
                         "(P-60 test T)")
+    p.add_argument("--div-damp", type=float, default=0.0,
+                   help="Divergence damping, as C in nu = C dx dy / dt "
+                        "(Skamarock and Klemp 1992); 0 is off (P-60 test V)")
     p.add_argument("--ri-crit", type=float, default=None,
                    help="Richardson number below which vertical mixing acts "
                         "(default: turbulence.RI_CRIT, 0.25; P-60 test S)")
@@ -483,6 +486,15 @@ def main():
                            ri_crit=args.ri_crit, mixing=not args.no_mixing)
     if args.hyper_factor != 1.0:
         print(f"  hyperdiffusion : x{args.hyper_factor:g} ({model.hyper:.3g})")
+    if args.div_damp < 0:
+        raise SystemExit(f"--div-damp {args.div_damp} is negative")
+    if args.div_damp > 0:
+        dt0 = model.max_dt()
+        model.div_damp = args.div_damp * grid.dx * grid.dy / dt0
+        rate = 4.0 * model.div_damp / grid.dx ** 2
+        print(f"  div. damping   : C {args.div_damp:g}, nu {model.div_damp:.3g} m2/s "
+              f"(2dx e-folds in {1.0 / rate / 60.0:.1f} min, 10dx in "
+              f"{1.0 / (rate * np.sin(np.pi / 10) ** 2) / 60.0:.0f} min)")
     print(f"  mixing         : "
           + ("off" if args.no_mixing else f"on below Ri {model.ri_crit:g}"))
     print(f"  sponge         : {args.sponge_levels} levels below the lid")

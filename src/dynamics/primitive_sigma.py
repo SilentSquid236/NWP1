@@ -32,7 +32,8 @@ from grid import CGrid
 from sigma import (SigmaLevels, hydrostatic_geopotential, continuity,
                    vertical_advection, pressure_gradient_force,
                    RD, CP, KAPPA, P0, G0)
-from subgrid import hyperdiffusion, recommended_hyper_coeff, hyper_stability_dt
+from subgrid import (hyperdiffusion, recommended_hyper_coeff, hyper_stability_dt,
+                     divergence_damping, divergence_damping_stability_dt)
 import turbulence
 from turbulence import vertical_mixing, richardson, mixing_stability_dt
 from surface import surface_drag, drag_stability_dt, ROUGHNESS
@@ -64,6 +65,9 @@ class PrimitiveSigma:
 
         self.hyper = (recommended_hyper_coeff(grid) if hyper is None
                       else float(hyper))
+        # Divergence damping coefficient, m^2/s. Off (0) unless set; see
+        # subgrid.divergence_damping and P-60.
+        self.div_damp = 0.0
         self.stochastic = stochastic
 
         # Reference-state pressure-gradient force. The plain form is stable on
@@ -269,12 +273,18 @@ class PrimitiveSigma:
             dv = dv + hyperdiffusion(v, gr, self.hyper)
             th_ref = xp.mean(theta, axis=(1, 2), keepdims=True)
             dth = dth + hyperdiffusion(theta - th_ref, gr, self.hyper)
+            # (divergence damping, when on, follows this block)
             # NOTE: no diffusion on pi. Hyperdiffusion is only conservative on
             # a periodic domain; applied to the prognostic surface pressure on
             # a bounded domain it acts as a MASS SOURCE. Measured: p_s
             # inflating from 1088 to 1243 hPa over three hours. Grid-scale
             # noise in pi has to be controlled by the wind field that
             # generates it, not by diffusing mass.
+
+        if self.div_damp > 0:
+            ddu, ddv = divergence_damping(u, v, gr, self.div_damp)
+            du = du + ddu
+            dv = dv + ddv
 
         if self.drag:
             ddu, ddv, info = surface_drag(u, v, theta, pi, lev, z0=self.z0,
@@ -342,7 +352,8 @@ class PrimitiveSigma:
             dt_top = top_flux_stability_dt(self._top_flux, self.pi, self.lev)
 
         return float(min(dt_h, dt_v, dt_top,
-                         hyper_stability_dt(gr, self.hyper)))
+                         hyper_stability_dt(gr, self.hyper),
+                         divergence_damping_stability_dt(gr, self.div_damp)))
 
     def step(self, dt):
         if self.sponge_levels > 0 and self._u_ref is None:

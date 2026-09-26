@@ -17,12 +17,12 @@ b660cbbe87e8813c      6530  docs/CAPABILITIES.md
 1bc65de9fd15e3cf     24015  docs/LEARNING_LOG.md
 6026c87422e8fbd4      4956  docs/METHODOLOGY.md
 1eeb6616080945dd      6884  docs/POSTPROCESSING.md
-c544441977e47bfb     70470  docs/PROBLEMS.md
-a53ecb82354592cd     28866  docs/PROMPT_LOG.md
-eb7e7fc3164daa9d     12923  docs/REFERENCES.md
-2b0c2e08122de652    186667  docs/RESEARCH_LOG.md
+cb5fe380835b1181     70905  docs/PROBLEMS.md
+2f6a4d0823752f74     29202  docs/PROMPT_LOG.md
+ac14573f21369f67     13315  docs/REFERENCES.md
+9f88875c97eb5fbb    189598  docs/RESEARCH_LOG.md
 78c3574bb1b0dd88      4845  docs/STABILITY.md
-8c55fe08801b2865     19505  docs/STRUCTURE.md
+77d4609af97a8f3a     19649  docs/STRUCTURE.md
 a155ccce967d26bc      4340  docs/TOKEN_COST.md
 cef8aae2ae9501e5       970  docs/token_ledger.csv
 33df9e17c260f317      7600  netpolicy.py
@@ -69,7 +69,7 @@ a512258dd33068db     10032  src/dynamics/kmax_binding.py
 e5b5a2c5207fae64      5150  src/dynamics/lid_test.py
 6171605bf74f4d61       904  src/dynamics/noise_ladder.py
 adab4b2ae9bc9583     12990  src/dynamics/primitive3d.py
-1ec0bc326b408549     21978  src/dynamics/primitive_sigma.py
+1ba961e2cabc4038     22493  src/dynamics/primitive_sigma.py
 fec10abc53f63230      1926  src/dynamics/probe_4000.py
 c163874a9f10978b      6358  src/dynamics/probe_failure.py
 62e87f1b2401a81c      2222  src/dynamics/probe_p50.py
@@ -95,7 +95,7 @@ d5c01550ee247147      3562  src/dynamics/sponge_levels_lid.py
 ae82a0a70e34ad5e      2672  src/dynamics/sponge_rate_ladder.py
 4a0bab6aa9dd8d01      4224  src/dynamics/sponge_running_ref.py
 51afd5271942f63f       380  src/dynamics/sponge_three.py
-01c9308d63338894     13943  src/dynamics/subgrid.py
+b652ce9d67fc8900     15130  src/dynamics/subgrid.py
 97aa13985d4024b4      5782  src/dynamics/surface.py
 e5fc4dfed0b94add      5367  src/dynamics/sweep_boundary_layer.py
 b36f2ae0ad8f01a3       832  src/dynamics/terrain_matrix2.py
@@ -103,6 +103,7 @@ b36f2ae0ad8f01a3       832  src/dynamics/terrain_matrix2.py
 4ce21f8232ba0860      3372  src/dynamics/test_backend.py
 0df879a15490cae8      7109  src/dynamics/test_boundaries.py
 8eae90a86c248251      4281  src/dynamics/test_convection.py
+4816029650d4a2a1      4171  src/dynamics/test_div_damping.py
 070f0d671ca5818c      4427  src/dynamics/test_initialization.py
 dd0b9828f0d604f3     10195  src/dynamics/test_interpolate.py
 22b9162b420e9002      9435  src/dynamics/test_primitive3d.py
@@ -115,7 +116,7 @@ cc678b6db4c6beab      8872  src/dynamics/test_radiation.py
 4d768915f3cf8d90      6866  src/dynamics/turbulence.py
 b9ad5d54a3e1dd79      4813  src/dynamics/vertical.py
 11ea32d1050e29c3      7067  src/dynamics/visualize_instability.py
-dbfc96ad04c00ba7     26145  src/forecast.py
+596a6c92fa77ebce     26852  src/forecast.py
 72920dad90f90394     21010  src/ingest_hrrr.py
 69b14ed26fdc09f9      9258  src/ingest_obs.py
 6907fa3c46f6c97c     17128  src/make_maps.py
@@ -156,11 +157,11 @@ d94c449fc1d99d31      6562  tools/daily.sh
 c4cb3526b7e6e2d4      1544  tools/fetch_boundaries.py
 edb3f3ac38d9ddf0      2666  tools/locate_growth.py
 c058d577f05ab07a      3379  tools/manifest.py
-691a8e443e75410e     11790  tools/mode_budget.py
+c6175399c5f94291     12408  tools/mode_budget.py
 8cab187f70798041      7564  tools/mode_structure.py
 4918089c6dc57dd2      1698  tools/newlog.py
 45e8d2a8e14a5c73      4712  tools/problem.py
 6c96dc317323396d      3990  tools/pull.sh
 06c0fd59a302fc21     13132  tools/stale.py
 d7010c8a2b0b7121     11084  tools/tokens.py
-6fe4bdec7a685cb4     21292  tools/tree.py
+7c85f3b59f4751c9     21435  tools/tree.py

@@ -3106,6 +3106,69 @@ structure at 4 h.
    sigma_dot, responds at 2–3Δx. Between −0.5 and 0 is **declared
    inconclusive in advance**.
 
+**Measurement U2 result (prompt 140).** Q0n against Q0t, eight snapshots
+from 2.00 to 3.75 h.
+
+1. **Time-mean energy growth 1.08e-3 s⁻¹, inside 0.84–3.4e-3: holds.**
+2. **The mean pressure-gradient term is small: holds.** It is −2.8e-4,
+   15 % of the mean d(sigma_dot) dU/dsigma term (1.84e-3, 71 % of the
+   total). The pressure term swings from −4.7e-3 to +3.0e-3 between
+   snapshots.
+3. **(f), a zigzag in theta: refuted.** Theta's adjacent-level
+   correlation is 1.00 at every pair from L00/L01 to L18/L19. For u it
+   is 0.83–1.00 over L00–L09, and for sigma_dot 0.94–1.00.
+
+The mode is smooth and deep in the vertical, and the reason is in
+`continuity`. sigma_dot on each half level is built from the divergence
+integrated from the lid down. A divergent disturbance confined to
+L00–L09 therefore puts the same horizontal pattern into sigma_dot all the
+way to the ground. Theta then follows sigma_dot acting on the stable
+background theta.
+
+So the P-60 mode is:
+- **2–3Δx in the horizontal** (test T);
+- **divergent** (its energy arrives through its own sigma_dot);
+- **oscillating** (the pressure-gradient exchange);
+- **deep** (lid to about 500 hPa);
+- **independent of the timestep**;
+- **fed by the jet's vertical shear**.
+
+That is the description of a grid-scale gravity-wave mode drawing on the
+shear.
+
+**Candidate (g): a divergent grid-scale mode, which divergence damping
+should remove. Test V (predictions first).** Divergence damping acts only
+on the divergent part of the wind (Skamarock and Klemp 1992). It is new
+in `subgrid.divergence_damping`, off by default. The new tests check that
+a non-divergent flow gets zero tendency (5.5e-16), that a 2Δx wave decays
+at exactly 4ν/dx², that torch equals numpy, and that the default core is
+bit-identical. `--div-damp C` sets ν = C dx dy / dt.
+
+At the Q case's dt of 15.8 s and dx of 12 km:
+
+| C | ν (m²/s) | 2Δx e-fold | 3Δx | 10Δx | 20Δx |
+|---|---|---|---|---|---|
+| 0.01 (V1) | 9.1e4 | 6.6 min | 8.8 min | 69 min | 4.5 h |
+| 0.003 (V2) | 2.7e4 | 22 min | 29 min | 3.8 h | 15 h |
+
+The mode's amplitude grows at about 8.4e-4 s⁻¹ (20 min e-fold).
+
+- **If (g):** V1 has no onset within 8 h (no 15-minute interval with more
+  than 20 points changing by more than 5 m/s). V2's onset is at least
+  2 h later than Q0's, or absent.
+- **(g) refuted:** V1's onset falls in 4.0–4.75 h, as in Q0.
+- **Cost check:** V1's max|u| and max|v| stay within 1 m/s of Q0's
+  through 3.75 h, so the resolved flow is barely touched before the
+  onset. On the desktop synthetic case, C = 0.01 changed max|u| by
+  0.9 m/s in 1 h.
+- **Measurement:** `mode_budget.py` now prints rms(divergence) /
+  rms(vorticity) of the mode per level. For a divergent mode it should
+  be above 1 at L00–L06.
+
+If V1 holds, divergence damping is a treatment, not yet a default. It
+needs the 06Z case, a second jet case, and verification scores no worse
+than without it.
+
 
 
 ---

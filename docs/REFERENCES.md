@@ -103,6 +103,8 @@ Sadourny, R., 1975: The dynamics of finite-difference models of the shallow-wate
 
 Simmons, A. J., and D. M. Burridge, 1981: An energy and angular-momentum conserving vertical finite-difference scheme and hybrid vertical coordinates. *Mon. Wea. Rev.*, **109**, 758–766, https://doi.org/10.1175/1520-0493(1981)109<0758:AEAAMC>2.0.CO;2.
 
+Skamarock, W. C., and J. B. Klemp, 1992: The stability of time-split numerical methods for the hydrostatic and the nonhydrostatic elastic equations. *Mon. Wea. Rev.*, **120**, 2109–2127, https://doi.org/10.1175/1520-0493(1992)120<2109:TSOTSN>2.0.CO;2.
+
 Snyder, J. P., 1987: *Map Projections—A Working Manual*. U.S. Geological Survey Professional Paper 1395, https://doi.org/10.3133/pp1395.
 
 Toth, Z., and E. Kalnay, 1993: Ensemble forecasting at NMC: The generation of perturbations. *Bull. Amer. Meteor. Soc.*, **74**, 2317–2330, https://doi.org/10.1175/1520-0477(1993)074<2317:EFANTG>2.0.CO;2.
@@ -146,6 +148,7 @@ Zhang, J., and Coauthors, 2016: Multi-Radar Multi-Sensor (MRMS) quantitative pre
 | Pivotal Weather (2026) | product names, units and layout (titles with UTC and US Eastern times) that the maps imitate | `src/maps/render.py` |
 | Sadourny (1975) | vector-invariant momentum form of the shallow-water test core | `src/dynamics/shallow_water.py` |
 | Simmons and Burridge (1981) | hydrostatically consistent vertical discretisation | `src/dynamics/sigma.py` |
+| Skamarock and Klemp (1992) | divergence damping (optional, `--div-damp`; P-60 test V) | `src/dynamics/subgrid.py`, `src/forecast.py` |
 | Snyder (1987) | Lambert conformal conic formulas | `src/maps/geography.py` |
 | Toth and Kalnay (1993) | bred-vector idea behind the round-off difference mode | `tools/mode_structure.py`, `tools/mode_budget.py` |
 | Wicker and Skamarock (2002) | third-order Runge–Kutta time stepping | `src/dynamics/shallow_water.py`, `src/dynamics/primitive_sigma.py` |

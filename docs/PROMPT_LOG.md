@@ -222,6 +222,7 @@ on itself.
 | 137 | "if you use things from other people make sure its referenced in American Meteorological Society format" | **DIR** | References rule adopted: docs/REFERENCES.md in AMS style, and in-text author–year citations wherever outside work is used |
 | 138 | *(attached: `test_t_result.txt`)* | **OBS** | Test T: the timestep is ruled out (T1 onset unchanged). Hyperdiffusion ×4 delays the onset 1.75 h and roughness is 0.99, so P-60 is a 2–3Δx spatial mode. `tools/mode_budget.py` written for the term-by-term energy source |
 | 139 | *(attached: `test_u_result.txt`)* | **OBS** | Budget: d(sigma_dot) dU/dsigma is the only steady source (1.5–2.5e-3 s⁻¹, against 1.5–1.9e-3 s⁻¹ measured growth). The pressure term oscillates, so the snapshot growth check was the wrong quantity. Candidate (f), the Lorenz computational mode, cited. `mode_budget --hours` gives the time mean and vertical structure |
+| 140 | *(attached: `test_u2_result.txt`)* | **OBS** | U2: time-mean growth 1.08e-3 and PGF mean 15 % of the shear term, both predictions hold. (f) refuted: theta correlation 1.00 at every level, so the mode is deep and smooth. Candidate (g), a divergent grid-scale mode: divergence damping implemented (4 tests), and test V designed |
 
 **Observation.** Prompt 53 is 18 words and is the most consequential
 instruction in the project. Before it, nine candidate causes had been patched

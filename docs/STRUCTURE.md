@@ -119,6 +119,7 @@ NWP_Deployment_Package/
 |   |   |-- test_backend.py               # backend tests: torch reproduces numpy to round-off; no cache leakage
 |   |   |-- test_boundaries.py            # suite for boundaries.py
 |   |   |-- test_convection.py            # suite for convection.py
+|   |   |-- test_div_damping.py           # divergence damping: rotational flow untouched, 2dx decay rate, torch = numpy, default bit-identical
 |   |   |-- test_initialization.py        # suite for initialization.py
 |   |   |-- test_interpolate.py           # suite for interpolate.py
 |   |   |-- test_primitive3d.py           # suite for primitive3d.py

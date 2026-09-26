@@ -32,6 +32,9 @@ The last snapshot's vertical structure is printed: the correlation of the
 mode between adjacent levels (u, v, theta on full levels; sigma_dot on
 half levels, row k meaning half levels k and k+1, with half level 0 the
 lid, where sigma_dot is zero). A value near -1 is a level-to-level zigzag.
+The last column is rms(divergence) / rms(vorticity) of the mode on the
+upper level of each pair: much above 1 is a divergent (gravity-wave-like)
+mode, much below 1 a rotational one.
 
 Rows run south to north; level 0 is the lid.
 """
@@ -50,7 +53,7 @@ from grid import CGrid                                         # noqa: E402
 from sigma import (SigmaLevels, hydrostatic_geopotential,       # noqa: E402
                    continuity, vertical_advection, pressure_gradient_force,
                    KAPPA, P0)
-from subgrid import hyperdiffusion                              # noqa: E402
+from subgrid import hyperdiffusion, divergence_damping          # noqa: E402
 from turbulence import vertical_mixing                          # noqa: E402
 from surface import surface_drag                                # noqa: E402
 from primitive_sigma import PrimitiveSigma                      # noqa: E402
@@ -90,6 +93,8 @@ def terms(m, u, v, th, pi):
     z = np.zeros_like(u)
     t["hyperdiffusion"] = ((hyperdiffusion(u, gr, m.hyper), hyperdiffusion(v, gr, m.hyper))
                            if m.hyper > 0 else (z, z))
+    if getattr(m, "div_damp", 0.0) > 0:
+        t["divergence damping"] = divergence_damping(u, v, gr, m.div_damp)
     if m.drag:
         ddu, ddv, _ = surface_drag(u, v, th, pi, lev, z0=m.z0, theta_s=m.theta_surface)
         t["surface drag"] = (ddu, ddv)
@@ -160,7 +165,11 @@ def budget_at(A, B, i, j, m, lev, half, box_rc=None, quiet=False):
         return out
     struct = {"u": adj(d["u"][box]), "v": adj(d["v"][box]),
               "theta": adj(d["theta"][box]), "sigma_dot": adj(dsd)}
-    rms = {"wind": np.sqrt((du ** 2 + dv ** 2).mean(axis=(1, 2))),
+    Dm = (gr.dx_forward(dU) + gr.dy_forward(dV))[box]
+    Zm = (gr.dx_backward(dV) - gr.dy_backward(dU))[box]
+    rms = {"div/vort": np.sqrt((Dm ** 2).mean(axis=(1, 2))) / np.maximum(
+               np.sqrt((Zm ** 2).mean(axis=(1, 2))), 1e-30),
+           "wind": np.sqrt((du ** 2 + dv ** 2).mean(axis=(1, 2))),
            "theta": np.sqrt((d["theta"][box] ** 2).mean(axis=(1, 2))),
            "sigma_dot": np.sqrt((dsd ** 2).mean(axis=(1, 2)))}
     return {"err": err / ref, "P": P, "Ps": Ps, "rc": (int(r0), int(c0)), "struct": struct,
@@ -230,13 +239,14 @@ def main():
     r = res[-1]
     print(f"\nvertical structure at t+{ta[pairs[-1][0]]:.2f} h (box r{r['rc'][0]} c{r['rc'][1]}): "
           f"correlation of the mode between adjacent levels (-1 zigzag, +1 smooth)")
-    print(f"  {'levels':>9} {'u':>6} {'v':>6} {'theta':>6} {'s_dot':>6} | rms: {'wind':>8} {'theta':>8} {'s_dot':>8}")
+    print(f"  {'levels':>9} {'u':>6} {'v':>6} {'theta':>6} {'s_dot':>6} | rms: {'wind':>8} {'theta':>8} {'s_dot':>8} | div/vort (upper level)")
     nz = len(r["struct"]["u"]) + 1
     for k in range(nz - 1):
         sd = r["struct"]["sigma_dot"][k] if k < len(r["struct"]["sigma_dot"]) else float("nan")
         print(f"  L{k:02d}/L{k + 1:02d} {r['struct']['u'][k]:6.2f} {r['struct']['v'][k]:6.2f} "
               f"{r['struct']['theta'][k]:6.2f} {sd:6.2f} | {r['rms']['wind'][k]:8.1e} "
-              f"{r['rms']['theta'][k]:8.1e} {r['rms']['sigma_dot'][k]:8.1e}")
+              f"{r['rms']['theta'][k]:8.1e} {r['rms']['sigma_dot'][k]:8.1e} | "
+              f"{r['rms']['div/vort'][k]:6.2f}")
 
 if __name__ == "__main__":
     main()
