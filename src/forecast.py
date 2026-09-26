@@ -383,6 +383,11 @@ def main():
     p.add_argument("--relax-alpha", type=float, default=1.0,
                    help="Relaxation weight per step at the outer edge "
                         "(the cosine ramp scales from it); 0 < alpha <= 1")
+    p.add_argument("--dt-factor", type=float, default=1.0,
+                   help="Multiply the CFL timestep (P-60 test T; must be in (0, 1])")
+    p.add_argument("--hyper-factor", type=float, default=1.0,
+                   help="Multiply the recommended hyperdiffusion coefficient "
+                        "(P-60 test T)")
     p.add_argument("--ri-crit", type=float, default=None,
                    help="Richardson number below which vertical mixing acts "
                         "(default: turbulence.RI_CRIT, 0.25; P-60 test S)")
@@ -465,9 +470,19 @@ def main():
         raise SystemExit(f"--sponge-levels {args.sponge_levels} is outside 0..{lev.nz - 1}")
     if args.ri_crit is not None and not args.ri_crit > 0:
         raise SystemExit(f"--ri-crit {args.ri_crit} must be positive")
+    if not 0.0 < args.dt_factor <= 1.0:
+        raise SystemExit(f"--dt-factor {args.dt_factor} is outside (0, 1]")
+    if not args.hyper_factor >= 0.0:
+        raise SystemExit(f"--hyper-factor {args.hyper_factor} is negative")
+    hyper = None
+    if args.hyper_factor != 1.0:
+        from subgrid import recommended_hyper_coeff
+        hyper = args.hyper_factor * recommended_hyper_coeff(grid)
     model = PrimitiveSigma(grid, lev, terrain=terrain, stochastic=stoch,
-                           sponge_levels=args.sponge_levels,
+                           sponge_levels=args.sponge_levels, hyper=hyper,
                            ri_crit=args.ri_crit, mixing=not args.no_mixing)
+    if args.hyper_factor != 1.0:
+        print(f"  hyperdiffusion : x{args.hyper_factor:g} ({model.hyper:.3g})")
     print(f"  mixing         : "
           + ("off" if args.no_mixing else f"on below Ri {model.ri_crit:g}"))
     print(f"  sponge         : {args.sponge_levels} levels below the lid")
@@ -519,7 +534,11 @@ def main():
         print("  backend        : numpy (one core)\n")
 
     info = {}
-    snaps = run_forecast(model, driver, relax, args.hours * 3600,
+    dt_run = None
+    if args.dt_factor != 1.0:
+        dt_run = args.dt_factor * model.max_dt()
+        print(f"  timestep used  : {dt_run:.1f} s (x{args.dt_factor:g})\n")
+    snaps = run_forecast(model, driver, relax, args.hours * 3600, dt=dt_run,
                          output_every=args.output_every * 3600,
                          deadline_s=(None if args.deadline_min is None
                                      else 60.0 * args.deadline_min),

@@ -2900,6 +2900,66 @@ the 06Z case and a second jet case, and a stable-regime mixing function
 chosen for physical reasons rather than a threshold tuned to this
 failure.
 
+**Test S result (prompt 136).**
+
+| Run | Setting | Onset (first 15 min with > 20 points changing > 5 m/s) | Where | 8 h |
+|---|---|---|---|---|
+| Q0 | Ri_c 0.25 | 4.00–4.25 h (32) | L03–L05, r76–78 c86–90 | diverged 7.45 h |
+| S1 | Ri_c 1.0 | 4.00–4.25 h (43) | L05, r77 c88 | completed (5.4 min) |
+| S0 | no mixing | 4.00–4.25 h (48) | L04, r77 c88 | diverged 7.37 h |
+
+Minimum Ri in the box at L03/L04 for S1 was 0.91, 0.53, 0.41 and 0.37 at
+1, 2, 3 and 4 h (Q0: 0.91, 0.44, 0.30, 0.28). Extending mixing to Ri < 1
+barely slows the sharpening.
+
+- **(e), S1 onset after 5 h with box Ri ≥ 0.5: refuted.** The onset is
+  unchanged, and Ri is 0.41 by 3 h.
+- **S0 identical to Q0 until mixing acts, onset in 4.0–4.75 h: holds.**
+  Every `locate_growth` line matches Q0 through 2.50–2.75 h. The first
+  difference is at 2.75–3.00 h (3.5 against 3.3 m/s) at the south-east
+  zone-boundary point r10 c99, so mixing first acts about 2.75 h.
+
+Vertical mixing does not control the P-60 onset: off, as it is, or
+extended to Ri < 1, the onset is 4.00–4.25 h at r77 c88.
+
+*Side finding (P-56, not P-60).* Without mixing, one point on the
+south-east zone boundary runs away first (r10–12 c97–99, edge 10, L03–L05,
+over the sea). Its v changes by 4.3, 10.6 and then 36.5 m/s per 15 min
+over 3.25–4.00 h. With the default mixing the same point peaks at
+3.3 m/s. Mixing had been holding a zone-boundary point in check.
+
+**Three P-60 candidates refuted: (a), (b), (e). (c) cannot be tested
+cleanly. Change of strategy.** Guessing a mechanism and testing it has
+now failed three times. The next test instead splits the possibilities,
+each arm separating one broad class from the rest.
+
+**Test T (predictions first).** Q case, default settings otherwise,
+torch, 8 h.
+
+- **T1, `--dt-factor 0.5`** (timestep about 15.8 → 7.9 s; the Q runs took 1828 steps for 8 h).
+  - A time-stepping instability would change its growth rate. T1's
+    onset would be at least 1 h later (5.0–5.25 h or after), or absent
+    within 8 h.
+  - An onset within 4.0–4.75 h rules out time discretization.
+- **T2, `--hyper-factor 4`** (2Δx damped in 45 min instead of 3 h; 4Δx
+  in about 12 h).
+- **Roughness** of the Q0n–Q0t u difference at 3–4 h, now printed by
+  `mode_structure.py`. It is the share of variance a 3×3 mean removes.
+  Calibration: 2–4Δx 0.9–1.0, 6Δx 0.56–0.80, 8Δx 0.35–0.58, 10Δx
+  0.24–0.42, 20Δx 0.06–0.12. At 1 h the difference is still raw
+  round-off (0.96 on the synthetic pair), so only 3–4 h counts.
+  - A grid-scale mode (≤ about 6Δx): roughness ≥ 0.8 and T2's onset at
+    least 1 h later.
+  - A resolved mode (≥ about 10Δx): roughness ≤ 0.4 and T2's onset
+    within 4.0–4.75 h.
+  - **Declared in advance:** roughness 0.4–0.8 is inconclusive, and T2
+    alone decides.
+
+If neither T1 nor T2 moves the onset and the mode is smooth, it is a
+resolved structure: something in the analysed state, or resolved
+dynamics. The next step is then to look at the analysis over Maine, not
+another switch.
+
 
 
 ---

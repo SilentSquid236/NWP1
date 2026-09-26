@@ -13,8 +13,10 @@ instability lives hours before it is visible in the fields.
 
 Part 1 prints, for each requested hour, where |B - A| is largest for u, v
 and theta (level, row, column, edge distance, lat/lon), which three levels
-carry most of the wind difference in a box around that point, and the
-e-folding time of the wind difference since the previous hour.
+carry most of the wind difference in a box around that point, how rough
+the u difference is there ("rough": the share of its variance a 3x3 mean
+removes, about 1 for a 2dx checkerboard and about 0 for a smooth mode),
+and the e-folding time of the wind difference since the previous hour.
 
 Part 2 prints, level by level, the stability of A's flow in a box around
 the mode (the last requested hour's u/v maximum, or --box ROW COL), at
@@ -40,6 +42,21 @@ OMEGA = 7.2921e-5
 def edge(shape, r, c):
     ny, nx = shape
     return int(min(r, c, ny - 1 - r, nx - 1 - c))
+
+
+def roughness(d, r, c, h):
+    """Share of the variance of d (2D) in a box that a 3x3 mean removes.
+
+    About 1 for a 2dx checkerboard, about 0 for a field smooth on the grid
+    scale. It tells a grid-scale mode from a resolved one.
+    """
+    ny, nx = d.shape
+    r0, r1 = max(r - h, 1), min(r + h + 1, ny - 1)
+    c0, c1 = max(c - h, 1), min(c + h + 1, nx - 1)
+    raw = d[r0:r1, c0:c1]
+    sm = sum(d[r0 + i:r1 + i, c0 + j:c1 + j] for i in (-1, 0, 1) for j in (-1, 0, 1)) / 9.0
+    v = float(raw.var())
+    return 1.0 - float(sm.var()) / v if v > 0 else float("nan")
 
 
 def centre_winds(u, v):
@@ -111,6 +128,7 @@ def main():
                 prof = np.sqrt((box ** 2).mean(axis=(1, 2)))
                 top = np.argsort(prof)[::-1][:3]
                 extra = "  " + " ".join(f"L{t:02d} {prof[t] / prof.max():4.0%}" for t in top)
+                extra += f"  rough {roughness(du[kw], rw, cw, h):.2f}"
                 wmax = float(wind.max())
                 if prev is not None and wmax > 0 and prev[1] > 0 and wmax != prev[1]:
                     tau = (ta[i] - prev[0]) * 60.0 / np.log(wmax / prev[1])

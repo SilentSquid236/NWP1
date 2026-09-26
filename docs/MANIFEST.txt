@@ -17,9 +17,9 @@ b660cbbe87e8813c      6530  docs/CAPABILITIES.md
 1bc65de9fd15e3cf     24015  docs/LEARNING_LOG.md
 6026c87422e8fbd4      4956  docs/METHODOLOGY.md
 1eeb6616080945dd      6884  docs/POSTPROCESSING.md
-6142df1fd5f953e9     69149  docs/PROBLEMS.md
-9bf5fea25fe4211d     27534  docs/PROMPT_LOG.md
-f1220c81eeaaa108    175609  docs/RESEARCH_LOG.md
+2e9d21fbc319627a     69676  docs/PROBLEMS.md
+aa8b3a1726106de5     27953  docs/PROMPT_LOG.md
+115fb731f84f4781    178663  docs/RESEARCH_LOG.md
 78c3574bb1b0dd88      4845  docs/STABILITY.md
 1baa4da84c182394     19150  docs/STRUCTURE.md
 a155ccce967d26bc      4340  docs/TOKEN_COST.md
@@ -114,7 +114,7 @@ cc678b6db4c6beab      8872  src/dynamics/test_radiation.py
 faaac3c9ae87abca      6814  src/dynamics/turbulence.py
 b9ad5d54a3e1dd79      4813  src/dynamics/vertical.py
 11ea32d1050e29c3      7067  src/dynamics/visualize_instability.py
-4071c52f8465f463     25083  src/forecast.py
+f63c1c34877d4fd8     26117  src/forecast.py
 6d3ddbafa4ac2307     20865  src/ingest_hrrr.py
 69b14ed26fdc09f9      9258  src/ingest_obs.py
 6907fa3c46f6c97c     17128  src/make_maps.py
@@ -154,7 +154,7 @@ d94c449fc1d99d31      6562  tools/daily.sh
 c4cb3526b7e6e2d4      1544  tools/fetch_boundaries.py
 edb3f3ac38d9ddf0      2666  tools/locate_growth.py
 c058d577f05ab07a      3379  tools/manifest.py
-5aaa1661c8d5caaa      6706  tools/mode_structure.py
+83014e969fc71ad7      7507  tools/mode_structure.py
 4918089c6dc57dd2      1698  tools/newlog.py
 45e8d2a8e14a5c73      4712  tools/problem.py
 6c96dc317323396d      3990  tools/pull.sh
