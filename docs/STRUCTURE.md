@@ -178,6 +178,7 @@ NWP_Deployment_Package/
 |   |-- newlog.py                         # append a dated research-log entry from the template
 |   |-- problem.py                        # adds to and audits docs/PROBLEMS.md
 |   |-- pull.sh                           # update from GitHub over curl -- no git needed on the server
+|   |-- score_by_lead.py                  # verification RMSE and bias by variable and forecast hour, two archives side by side
 |   |-- stale.py                          # flags measurements whose file moved after the number was taken
 |   |-- tokens.py                         # token ledger: billed cost vs API-equivalent shadow price
 |   `-- tree.py                           # generates docs/STRUCTURE.md

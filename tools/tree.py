@@ -145,6 +145,7 @@ NOTES = {
     "tools/mode_budget.py": "which tendency term feeds a growing mode (kinetic-energy budget of the round-off difference)",
     "tools/check_refs.py": "every author-year citation has an AMS-format entry in docs/REFERENCES.md",
     "src/dynamics/test_div_damping.py": "divergence damping: rotational flow untouched, 2dx decay rate, torch = numpy, default bit-identical",
+    "tools/score_by_lead.py": "verification RMSE and bias by variable and forecast hour, two archives side by side",
     "tools/compare_forecasts.py": "hour-by-hour difference between two forecast files (e.g. numpy vs torch)",
     "tools/check_backend.py": "on a new machine: torch vs numpy speed and agreement at several thread counts",
     "src/verify_pending.py": "verifies every archived forecast whose window has closed, once",

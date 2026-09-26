@@ -3169,6 +3169,75 @@ If V1 holds, divergence damping is a treatment, not yet a default. It
 needs the 06Z case, a second jet case, and verification scores no worse
 than without it.
 
+**Test V result (prompt 141): (g) holds.** Q case, default zone, torch,
+8 h.
+
+| Run | ν actually used | 2Δx / 10Δx e-fold | Largest 15-min change, 0–6.25 h | Intervals with > 5 m/s | 8 h |
+|---|---|---|---|---|---|
+| Q0 | 0 | — | 33.3 m/s | from 4.00 h | diverged 7.45 h |
+| V1 | 5.88e4 m²/s | 10.2 / 107 min | 4.6 m/s | **none** | completed (2.6 min) |
+| V2 | 1.77e4 m²/s | 34 / 355 min | 4.3 m/s | **none** | completed (2.5 min) |
+
+- **V1 no onset within 8 h: holds.** Not one point changes by more than
+  5 m/s in any interval of the printed 0.25–6.25 h, and the run completed
+  8 h.
+- **V2's onset at least 2 h later, or absent: holds** (absent, same
+  evidence).
+- **Cost check: holds.** max|u| and max|v| stay 27.6 and 33.2 m/s in
+  both runs, the same as Q0 through 3.75 h (and to 6.25 h).
+- **The mode is divergent: holds.** rms(divergence) / rms(vorticity) of
+  the Q0n–Q0t mode at 3 h is 51.7, 15.8, 5.45, 2.40, 4.48 and 1.95 at
+  L00–L05, and above 1 at 17 of the 19 level pairs.
+- **What is left** (both runs, 5.25–6.00 h): v changes of 3.8–4.6 m/s at
+  L03, rows 85–86, 10–11 cells from the northern edge. That is the
+  default zone's inner boundary, the P-56 kind of growth, not P-60.
+
+**A bug in `--div-damp`, found in these logs.** The option computed ν
+from `model.max_dt()` before the initial state was loaded, when u = v = 0
+and theta was unset. dt came out 24.5 s instead of 15.8 s, so ν was 0.64
+of the intended C dx dy / dt: 5.88e4 rather than 9.1e4 m²/s for V1. The
+design table above (9.1e4 and 2.7e4) is therefore not what ran. The
+table here quotes the ν the logs print, which is what was used.
+
+Fixed: ν is now computed from the loaded state's CFL step. On the desktop
+synthetic case C = 0.01 now gives 9.45e4 m²/s, against 9.42e4 expected
+from C dx dy / dt. Weaker damping than designed was enough: even V2's
+1.77e4 removes the onset.
+
+**Test W (predictions first): 24 h, both cases, with and without the
+wide weak zone.** C = 0.0064, which with the fix reproduces V1's ν on the
+Q case (about 5.8e4 m²/s; about 5.4e4 at the 06Z case's 17.1 s step).
+
+| Run | Case | Zone |
+|---|---|---|
+| W1 | Q (12Z 2026-09-25, jet) | default |
+| W2 | Q | width 15, alpha 0.1 |
+| W3 | 06Z 2026-09-23 (calm) | default |
+| W4 | 06Z | width 15, alpha 0.1 |
+
+Predictions:
+
+- **W1:** no interior P-60 onset through 24 h. Either it completes 24 h,
+  or it fails from zone-boundary growth, with the median edge distance of
+  the > 5 m/s points at 12 or less.
+- **W2:** completes 24 h with no interval in which more than 20 points
+  change by more than 5 m/s.
+- **W3:** divergence damping does not touch the 06Z corner mode, which
+  the budget showed is fed by d.grad U and mixing near the ground. W3
+  diverges in 15–18 h at the south-west corner, 9–13 cells in.
+- **W4:** completes 24 h, as P1 did.
+- **Skill, via the new `tools/score_by_lead.py`:**
+  - W2 against Q0n over hours 1–4, before Q0n's onset: temperature and
+    wind RMSE within ± 0.2 (K, m/s) of Q0n.
+  - W4 against the 06Z default run over hours 1–12: within ± 0.2 as well.
+  - That is the damping, and the zone change, costing no skill before
+    the default fails.
+
+If W2 and W4 hold, the proposal is a new default of width 15, alpha 0.1
+and C = 0.0064. It would stand on one calm case and one jet case. That
+meets the two-case rule set for the relaxation change, and it would still
+be checked on the first live cycles.
+
 
 
 ---

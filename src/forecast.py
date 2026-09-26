@@ -488,13 +488,6 @@ def main():
         print(f"  hyperdiffusion : x{args.hyper_factor:g} ({model.hyper:.3g})")
     if args.div_damp < 0:
         raise SystemExit(f"--div-damp {args.div_damp} is negative")
-    if args.div_damp > 0:
-        dt0 = model.max_dt()
-        model.div_damp = args.div_damp * grid.dx * grid.dy / dt0
-        rate = 4.0 * model.div_damp / grid.dx ** 2
-        print(f"  div. damping   : C {args.div_damp:g}, nu {model.div_damp:.3g} m2/s "
-              f"(2dx e-folds in {1.0 / rate / 60.0:.1f} min, 10dx in "
-              f"{1.0 / (rate * np.sin(np.pi / 10) ** 2) / 60.0:.0f} min)")
     print(f"  mixing         : "
           + ("off" if args.no_mixing else f"on below Ri {model.ri_crit:g}"))
     print(f"  sponge         : {args.sponge_levels} levels below the lid")
@@ -536,6 +529,18 @@ def main():
     print(f"  relaxation     : width {args.relax_width}, "
           f"alpha {args.relax_alpha:g} at the edge, "
           f"interior {relax.interior_fraction:.0%}")
+    if args.div_damp > 0:
+        # nu from the CFL step of the LOADED initial state. (Before 2026-09-26
+        # this ran before the state was assigned, when u = v = 0 and theta was
+        # unset, so dt came out 24.5 s instead of 15.8 s on the Q case and nu
+        # was 0.64 of the intended C dx dy / dt. Test V's logs print the nu
+        # actually used, which is what its record quotes.)
+        dt0 = model.max_dt()
+        model.div_damp = args.div_damp * grid.dx * grid.dy / dt0
+        rate = 4.0 * model.div_damp / grid.dx ** 2
+        print(f"  div. damping   : C {args.div_damp:g}, nu {model.div_damp:.3g} m2/s "
+              f"(2dx e-folds in {1.0 / rate / 60.0:.1f} min, 10dx in "
+              f"{1.0 / (rate * np.sin(np.pi / 10) ** 2) / 60.0:.0f} min)")
     print(f"  timestep       : {model.max_dt():.1f} s "
           f"(external wave ~290 m/s sets this)\n")
 
