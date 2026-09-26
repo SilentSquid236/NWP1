@@ -3040,6 +3040,72 @@ checks.
 The check also found Sadourny (1975), cited in the shallow-water core,
 which the first inventory had missed.
 
+**Measurement U result (prompt 139): the P-60 kinetic-energy budget.** Q0n
+against Q0t; box ± 8 round the mode; P/E in 1/s.
+
+| Term | 2 h | 3 h | 4 h |
+|---|---|---|---|
+| vertical advection: d(sigma_dot) dU/dsigma | **+2.13e-3** | **+1.46e-3** | **+2.52e-3** |
+| vertical advection: sigma_dot d/dsigma d | −2.2e-6 | −2.4e-6 | +1.9e-6 |
+| horizontal advection (both parts) | +4.3e-5 | −2.5e-5 | −4.4e-5 |
+| pressure gradient | −1.02e-3 | +2.10e-3 | −5.25e-3 |
+| sponge | −3.4e-4 | −4.1e-4 | −2.8e-4 |
+| hyperdiffusion | −8.0e-5 | −8.5e-5 | −8.5e-5 |
+| sum | 7.2e-4 | 3.04e-3 | −3.14e-3 |
+
+- **Check 1 holds.** The terms rebuild the core's tendency difference to
+  within 1.5e-12 at every hour.
+- **Check 2, as specified, fails.** Energy growth at 3 h was to be 0.75–
+  3.0e-3 s⁻¹; it is 3.04e-3. At 2 h it is 7.2e-4, just below the band,
+  and at 4 h it is negative. The cause is visible in the table: the
+  pressure-gradient term changes sign from hour to hour (−1.0, +2.1,
+  −5.3e-3). An oscillating mode trades kinetic and potential energy
+  through that term, so one snapshot of its kinetic-energy budget swings
+  with the phase. The check was specified for the wrong quantity. It
+  should be the time mean.
+- **The expectation holds.** At every hour the one steady positive term
+  is the mode's vertical motion acting on the base flow's vertical
+  shear, d(sigma_dot) dU/dsigma, at 1.5–2.5e-3 s⁻¹. Without the
+  oscillating pressure term, that source minus the sponge and
+  hyperdiffusion sinks (about 4e-4) leaves about 1.6e-3 s⁻¹. The
+  measured energy growth is 1.5–1.9e-3 s⁻¹, from the amplitudes
+  1.3e-10, 2.0e-9 and 5.6e-8 at 2, 3 and 4 h.
+- **The 06Z corner mode is different** (12 h, south-west corner, L15–L19).
+  Its sources are horizontal advection with the mode carrying the base
+  flow (d.grad U, 1.45e-4) and vertical mixing (+8.2e-5). That fits a
+  low-level, mixing-active boundary-zone problem (P-56). It is not P-60.
+
+**What this points to.** Horizontally the mode is 2–3Δx (test T). Its
+energy comes from the vertical shear, through its own vertical motion,
+while the grid-scale Ri stays at or above 0.28. Continuous theory does
+not allow shear instability there (Miles 1961; Howard 1961). So the
+restoring force the discrete mode feels is weaker than the one Ri
+measures.
+
+A known way that happens: the core uses the Lorenz grid (u, v and theta
+on the same full levels, sigma_dot on half levels). The Lorenz grid
+carries a vertical computational mode, a level-to-level zigzag in theta
+that the hydrostatic pressure gradient barely feels (Arakawa and Konor
+1996). **Candidate (f): the P-60 mode rides on the Lorenz computational
+mode.**
+
+**Measurement U2 (predictions first).** `mode_budget.py --hours 2,4`, the
+mean over the nine 15-minute snapshots, plus the mode's vertical
+structure at 4 h.
+
+1. The time-mean energy growth is within a factor 2 of 1.68e-3 s⁻¹
+   (0.84–3.4e-3). That is the check re-specified for the time mean.
+2. The pressure-gradient term's time mean is small: its magnitude under
+   30 % of the mean d(sigma_dot) dU/dsigma term. d(sigma_dot) dU/dsigma
+   stays the largest positive mean term.
+3. If (f) holds, theta in the mode zigzags. Its adjacent-level
+   correlation is below −0.5 across the mode's levels (L00–L06) at 4 h.
+   If that correlation is above 0 there, (f) is refuted: the mode is
+   smooth in the vertical and grid-scale only in the horizontal. The
+   next question is then how the C-grid's divergence, and so
+   sigma_dot, responds at 2–3Δx. Between −0.5 and 0 is **declared
+   inconclusive in advance**.
+
 
 
 ---

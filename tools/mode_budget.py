@@ -3,6 +3,7 @@
 Which term of the equations feeds the fastest-growing mode?
 
     python tools/mode_budget.py A.npz B.npz --hour 3 [--box ROW COL] [--half 8]
+    python tools/mode_budget.py A.npz B.npz --hours 2,4      # time mean
 
 A and B are two runs of the same case that differ only by round-off (the
 numpy and torch backends). At the chosen hour their difference d = B - A
@@ -23,6 +24,14 @@ Two checks come first:
 - the terms must add to the core's own tendency (`PrimitiveSigma.tendencies`);
 - the implied energy growth rate, sum(P) / sum(du^2 + dv^2), must be
   compared with 2 / (e-folding time) from `mode_structure.py`.
+
+With --hours FROM,TO the budget is averaged over every snapshot in that
+range. An oscillating mode trades kinetic and potential energy through the
+pressure-gradient term, so one snapshot's budget swings with the phase.
+The last snapshot's vertical structure is printed: the correlation of the
+mode between adjacent levels (u, v, theta on full levels; sigma_dot on
+half levels, row k meaning half levels k and k+1, with half level 0 the
+lid, where sigma_dot is zero). A value near -1 is a level-to-level zigzag.
 
 Rows run south to north; level 0 is the lid.
 """
@@ -94,65 +103,39 @@ def terms(m, u, v, th, pi):
     return t, sd
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[1])
-    ap.add_argument("a")
-    ap.add_argument("b")
-    ap.add_argument("--hour", type=float, default=3.0)
-    ap.add_argument("--box", nargs=2, type=int, metavar=("ROW", "COL"))
-    ap.add_argument("--half", type=int, default=8)
-    a = ap.parse_args()
-
-    A, B = np.load(a.a, allow_pickle=True), np.load(a.b, allow_pickle=True)
-    ta, tb = A["times_s"] / 3600.0, B["times_s"] / 3600.0
-    i = int(np.argmin(np.abs(ta - a.hour)))
-    j = int(np.argmin(np.abs(tb - ta[i])))
-    if abs(tb[j] - ta[i]) > 0.01:
-        sys.exit("no common snapshot at that hour")
+def budget_at(A, B, i, j, m, lev, half, box_rc=None, quiet=False):
+    """Budget of the B - A mode at A's snapshot i (B's j). Returns a dict."""
     sA = {k: np.asarray(A[k][i], dtype=float) for k in ("u", "v", "theta", "pi")}
     d = {k: np.asarray(B[k][j], dtype=float) - sA[k] for k in sA}
     wind = np.hypot(d["u"], d["v"])
     scale = 1e-3 / float(wind.max())
     d = {k: scale * x for k, x in d.items()}
-
-    lev = SigmaLevels(len(A["sigma"]), p_top=float(A["p_top"]))
-    if not np.allclose(lev.sigma, A["sigma"]):
-        sys.exit("the file's sigma levels do not match SigmaLevels")
-    grid = build_grid(A["lat"], A["lon"])
-    m = PrimitiveSigma(grid, lev, terrain=np.asarray(A["terrain"], dtype=float))
-    m.set_reference(sA["u"], sA["v"])
-
-    if a.box:
-        r0, c0 = a.box
+    if box_rc:
+        r0, c0 = box_rc
     else:
         _, r0, c0 = np.unravel_index(int(np.argmax(wind)), wind.shape)
-    h = a.half
-    box = (slice(None), slice(max(r0 - h, 0), r0 + h + 1), slice(max(c0 - h, 0), c0 + h + 1))
+    h = half
+    rows, cols = slice(max(r0 - h, 0), r0 + h + 1), slice(max(c0 - h, 0), c0 + h + 1)
+    box = (slice(None), rows, cols)
 
+    m.set_reference(sA["u"], sA["v"])
     s1 = {k: sA[k] + d[k] for k in sA}
     tA, sdA = terms(m, sA["u"], sA["v"], sA["theta"], sA["pi"])
     t1, sd1 = terms(m, s1["u"], s1["v"], s1["theta"], s1["pi"])
 
-    # Check 1: the separated terms rebuild the core's own tendency difference.
     duA, dvA, _, _ = m.tendencies(sA["u"], sA["v"], sA["theta"], sA["pi"])
     du1, dv1, _, _ = m.tendencies(s1["u"], s1["v"], s1["theta"], s1["pi"])
     core = (du1 - duA, dv1 - dvA)
     mine = (sum(t1[k][0] - tA[k][0] for k in tA), sum(t1[k][1] - tA[k][1] for k in tA))
     err = max(float(np.abs(mine[q] - core[q]).max()) for q in (0, 1))
     ref = max(float(np.abs(core[q]).max()) for q in (0, 1))
-    print(f"hour {ta[i]:.2f}, box +-{h} round r{r0} c{c0} "
-          f"({float(A['lat'][r0, c0]):.2f}N {float(A['lon'][r0, c0]):.2f}), mode scaled to 1 mm/s")
-    print(f"check 1: terms rebuild the core's tendency difference to {err / ref:.1e} (relative)")
 
     du, dv = d["u"][box], d["v"][box]
     E = float((du ** 2 + dv ** 2).sum())
-    P = {k: float((du * (t1[k][0] - tA[k][0])[box] + dv * (t1[k][1] - tA[k][1])[box]).sum())
+    P = {k: float((du * (t1[k][0] - tA[k][0])[box] + dv * (t1[k][1] - tA[k][1])[box]).sum()) / E
          for k in tA}
-
-    # Advection split: base flow carrying the mode, and the mode carrying the base flow.
     gr = m.grid
-    uA, vA = sA["u"], sA["v"]
-    dU, dV = d["u"], d["v"]
+    uA, vA, dU, dV = sA["u"], sA["v"], d["u"], d["v"]
     split = {
         "  U.grad d (base carries mode)": (-m._horiz_adv(dU, uA, gr.v_to_u(vA)),
                                            -m._horiz_adv(dV, gr.u_to_v(uA), vA)),
@@ -163,25 +146,97 @@ def main():
         "  d(sigma_dot) d/dsigma U": (-vertical_advection(uA, sd1 - sdA, lev),
                                       -vertical_advection(vA, sd1 - sdA, lev)),
     }
-    Ps = {k: float((du * x[0][box] + dv * x[1][box]).sum()) for k, x in split.items()}
+    Ps = {k: float((du * x[0][box] + dv * x[1][box]).sum()) / E for k, x in split.items()}
 
-    tot = sum(P.values())
-    print(f"check 2: energy growth rate sum(P)/E = {tot / E:.2e} 1/s "
-          f"(an amplitude e-folding of {2.0 / (tot / E) / 60.0:.0f} min if positive)\n")
-    print(f"  {'term':34} {'P / E (1/s)':>12}  {'share of sum |P|':>16}")
-    ab = sum(abs(x) for x in P.values())
-    for k, x in sorted(P.items(), key=lambda kv: -kv[1]):
-        print(f"  {k:34} {x / E:12.2e}  {x / ab:16.0%}")
+    # Vertical structure: correlation of the mode between adjacent levels in
+    # the box. Near -1 is a level-to-level zigzag (2 dz), near +1 smooth.
+    dsd = (sd1 - sdA)[box]
+    def adj(x):
+        out = []
+        for k in range(x.shape[0] - 1):
+            a, b = x[k].ravel(), x[k + 1].ravel()
+            den = float(np.sqrt((a * a).sum() * (b * b).sum()))
+            out.append(float((a * b).sum()) / den if den > 0 else float("nan"))
+        return out
+    struct = {"u": adj(d["u"][box]), "v": adj(d["v"][box]),
+              "theta": adj(d["theta"][box]), "sigma_dot": adj(dsd)}
+    rms = {"wind": np.sqrt((du ** 2 + dv ** 2).mean(axis=(1, 2))),
+           "theta": np.sqrt((d["theta"][box] ** 2).mean(axis=(1, 2))),
+           "sigma_dot": np.sqrt((dsd ** 2).mean(axis=(1, 2)))}
+    return {"err": err / ref, "P": P, "Ps": Ps, "rc": (int(r0), int(c0)), "struct": struct,
+            "rms": rms}
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[1])
+    ap.add_argument("a")
+    ap.add_argument("b")
+    ap.add_argument("--hour", type=float, default=3.0)
+    ap.add_argument("--hours", default=None,
+                    help="FROM,TO: every common snapshot in that range; prints the "
+                         "time-mean budget (the mode oscillates, so one snapshot "
+                         "of its kinetic energy budget swings with it)")
+    ap.add_argument("--box", nargs=2, type=int, metavar=("ROW", "COL"))
+    ap.add_argument("--half", type=int, default=8)
+    a = ap.parse_args()
+
+    A, B = np.load(a.a, allow_pickle=True), np.load(a.b, allow_pickle=True)
+    ta, tb = A["times_s"] / 3600.0, B["times_s"] / 3600.0
+    lev = SigmaLevels(len(A["sigma"]), p_top=float(A["p_top"]))
+    if not np.allclose(lev.sigma, A["sigma"]):
+        sys.exit("the file's sigma levels do not match SigmaLevels")
+    grid = build_grid(A["lat"], A["lon"])
+    m = PrimitiveSigma(grid, lev, terrain=np.asarray(A["terrain"], dtype=float))
+
+    if a.hours:
+        lo, hi = (float(x) for x in a.hours.split(","))
+        idx = [i for i in range(len(ta)) if lo - 1e-6 <= ta[i] <= hi + 1e-6]
+    else:
+        idx = [int(np.argmin(np.abs(ta - a.hour)))]
+    pairs = []
+    for i in idx:
+        j = int(np.argmin(np.abs(tb - ta[i])))
+        if abs(tb[j] - ta[i]) <= 0.01:
+            pairs.append((i, j))
+    if not pairs:
+        sys.exit("no common snapshot in that range")
+
+    res = [budget_at(A, B, i, j, m, lev, a.half, a.box) for i, j in pairs]
+    names = list(res[0]["P"])
+    print(f"check 1 (terms rebuild the core's tendency difference): worst "
+          f"{max(r['err'] for r in res):.1e} relative over {len(res)} snapshot(s)")
+    print(f"\n  {'hour':>6} {'box':>9} {'sum P/E':>10}  " +
+          "  ".join(f"{n[:10]:>10}" for n in names))
+    for (i, _), r in zip(pairs, res):
+        print(f"  {ta[i]:6.2f} r{r['rc'][0]:3d}c{r['rc'][1]:3d} {sum(r['P'].values()):10.2e}  " +
+              "  ".join(f"{r['P'][n]:10.2e}" for n in names))
+    mean = {n: float(np.mean([r["P"][n] for r in res])) for n in names}
+    means = {n: float(np.mean([r["Ps"][n] for r in res])) for n in res[0]["Ps"]}
+    tot = sum(mean.values())
+    print(f"\ncheck 2: time-mean energy growth rate sum(P)/E = {tot:.2e} 1/s over "
+          f"{ta[pairs[0][0]]:.2f}-{ta[pairs[-1][0]]:.2f} h "
+          f"(compare 2 / e-folding time from mode_structure.py)\n")
+    print(f"  {'term (time mean)':34} {'P / E (1/s)':>12}  {'share of sum |P|':>16}")
+    ab = sum(abs(x) for x in mean.values())
+    for k, x in sorted(mean.items(), key=lambda kv: -kv[1]):
+        print(f"  {k:34} {x:12.2e}  {x / ab:16.0%}")
         if k == "horizontal advection":
-            for s in list(Ps)[:2]:
-                print(f"  {s:34} {Ps[s] / E:12.2e}")
+            for s in list(means)[:2]:
+                print(f"  {s:34} {means[s]:12.2e}")
         if k == "vertical advection":
-            for s in list(Ps)[2:]:
-                print(f"  {s:34} {Ps[s] / E:12.2e}")
-    prof = np.sqrt((du ** 2 + dv ** 2).sum(axis=(1, 2)))
-    print("\n  levels carrying the mode's energy: " +
-          " ".join(f"L{k:02d} {prof[k] ** 2 / (prof ** 2).sum():.0%}" for k in np.argsort(prof)[::-1][:5]))
+            for s in list(means)[2:]:
+                print(f"  {s:34} {means[s]:12.2e}")
 
+    r = res[-1]
+    print(f"\nvertical structure at t+{ta[pairs[-1][0]]:.2f} h (box r{r['rc'][0]} c{r['rc'][1]}): "
+          f"correlation of the mode between adjacent levels (-1 zigzag, +1 smooth)")
+    print(f"  {'levels':>9} {'u':>6} {'v':>6} {'theta':>6} {'s_dot':>6} | rms: {'wind':>8} {'theta':>8} {'s_dot':>8}")
+    nz = len(r["struct"]["u"]) + 1
+    for k in range(nz - 1):
+        sd = r["struct"]["sigma_dot"][k] if k < len(r["struct"]["sigma_dot"]) else float("nan")
+        print(f"  L{k:02d}/L{k + 1:02d} {r['struct']['u'][k]:6.2f} {r['struct']['v'][k]:6.2f} "
+              f"{r['struct']['theta'][k]:6.2f} {sd:6.2f} | {r['rms']['wind'][k]:8.1e} "
+              f"{r['rms']['theta'][k]:8.1e} {r['rms']['sigma_dot'][k]:8.1e}")
 
 if __name__ == "__main__":
     main()

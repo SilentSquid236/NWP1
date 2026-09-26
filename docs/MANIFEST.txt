@@ -17,10 +17,10 @@ b660cbbe87e8813c      6530  docs/CAPABILITIES.md
 1bc65de9fd15e3cf     24015  docs/LEARNING_LOG.md
 6026c87422e8fbd4      4956  docs/METHODOLOGY.md
 1eeb6616080945dd      6884  docs/POSTPROCESSING.md
-6ce100e3c72a7d21     69966  docs/PROBLEMS.md
-e4f638ac0c28103d     28484  docs/PROMPT_LOG.md
-ab2cab75f6e85e36     12475  docs/REFERENCES.md
-21b6b1f0ae014285    183027  docs/RESEARCH_LOG.md
+c544441977e47bfb     70470  docs/PROBLEMS.md
+a53ecb82354592cd     28866  docs/PROMPT_LOG.md
+eb7e7fc3164daa9d     12923  docs/REFERENCES.md
+2b0c2e08122de652    186667  docs/RESEARCH_LOG.md
 78c3574bb1b0dd88      4845  docs/STABILITY.md
 8c55fe08801b2865     19505  docs/STRUCTURE.md
 a155ccce967d26bc      4340  docs/TOKEN_COST.md
@@ -156,7 +156,7 @@ d94c449fc1d99d31      6562  tools/daily.sh
 c4cb3526b7e6e2d4      1544  tools/fetch_boundaries.py
 edb3f3ac38d9ddf0      2666  tools/locate_growth.py
 c058d577f05ab07a      3379  tools/manifest.py
-f92bb4841892a00f      8672  tools/mode_budget.py
+691a8e443e75410e     11790  tools/mode_budget.py
 8cab187f70798041      7564  tools/mode_structure.py
 4918089c6dc57dd2      1698  tools/newlog.py
 45e8d2a8e14a5c73      4712  tools/problem.py

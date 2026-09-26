@@ -35,6 +35,8 @@ row in the table at the end.
 
 Alduchov, O. A., and R. E. Eskridge, 1996: Improved Magnus form approximation of saturation vapor pressure. *J. Appl. Meteor.*, **35**, 601–609, https://doi.org/10.1175/1520-0450(1996)035<0601:IMFAOS>2.0.CO;2.
 
+Arakawa, A., and C. S. Konor, 1996: Vertical differencing of the primitive equations based on the Charney–Phillips grid in hybrid σ–*p* vertical coordinates. *Mon. Wea. Rev.*, **124**, 511–528, https://doi.org/10.1175/1520-0493(1996)124<0511:VDOTPE>2.0.CO;2.
+
 Arakawa, A., and V. R. Lamb, 1977: Computational design of the basic dynamical processes of the UCLA general circulation model. *Methods in Computational Physics: Advances in Research and Applications*, Vol. 17, Academic Press, 173–265, https://doi.org/10.1016/B978-0-12-460817-7.50009-4.
 
 Barnes, S. L., 1964: A technique for maximizing details in numerical weather map analysis. *J. Appl. Meteor.*, **3**, 396–409, https://doi.org/10.1175/1520-0450(1964)003<0396:ATFMDI>2.0.CO;2.
@@ -116,6 +118,7 @@ Zhang, J., and Coauthors, 2016: Multi-Radar Multi-Sensor (MRMS) quantitative pre
 | Reference | Used for | Where |
 |---|---|---|
 | Alduchov and Eskridge (1996) | Magnus constants 17.625 and 243.04 °C for RH from dewpoint | `src/verification/fetchers.py` |
+| Arakawa and Konor (1996) | the vertical computational mode of the Lorenz grid (u, v and theta on the same levels), a P-60 candidate | `docs/RESEARCH_LOG.md`, `docs/PROBLEMS.md` |
 | Arakawa and Lamb (1977) | C-grid staggering | `src/dynamics/grid.py` |
 | Barnes (1964); Koch et al. (1983) | successive-correction analysis, multi-pass with convergence parameter gamma | `src/analysis/barnes.py` |
 | Blaylock (2026) | HRRR download (seeding and diagnosis only) | `src/ingest_hrrr.py`, `diagnose_herbie.py` |
