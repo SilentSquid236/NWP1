@@ -214,6 +214,8 @@ on itself.
 | 129 | *(pasted: server `test_backend.py` 3/3 and `check_backend.py`)* | **OBS** | torch agrees on the server (2e-12) but gives only 2.8× at 8 threads; the AI's "about 5 min for 24 h" had been extrapolated from the desktop, where NumPy is slow; real-case timing requested |
 | 130 | *(attached: `test_p_result.txt`)* | **OBS** | P1 (width 15, alpha 0.1) completed 24 h with no growth: the first clean 24 h real-data forecast. P2 (alpha 0.03) reached 24 h but was running away at the zone boundary. Test Q (12Z with soundings; also the real-case torch check) designed |
 | 131 | "Hover and click works and the times are all good" | **OBS** | Viewer confirmed in a browser: hover readout, click-for-sounding and valid times all correct. Nothing on the maps is still unconfirmed |
+| 132 | *(pasted: torch 06Z real-case run and hourly comparison)* | **OBS** | Torch matches NumPy on a real case: both diverge at 16.31 h; difference 1.4e-12 → 1.4e-8. 1.45× faster (19.2 vs 27.9 min), short of the 2.8× benchmark |
+| 133 | *(attached: `test_q_result.txt`)* | **OBS** | Test Q: both main predictions refuted. The default diverged at 7.45 h and width 15 with alpha 0.1 at 12.65 h, both from a jet-level onset in central Maine at 4 h, 17–21 cells in (P-60 opened). Torch matches at 2.39×. `tools/mode_structure.py` and `--sponge-levels` added for test R |
 
 **Observation.** Prompt 53 is 18 words and is the most consequential
 instruction in the project. Before it, nine candidate causes had been patched

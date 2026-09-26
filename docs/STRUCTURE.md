@@ -170,6 +170,7 @@ NWP_Deployment_Package/
 |   |-- fetch_boundaries.py               # fetches the Natural Earth lines ahead of time, or writes the bundled copy
 |   |-- locate_growth.py                  # where a saved forecast starts to run away: largest change per snapshot, edge distance
 |   |-- manifest.py                       # writes and checks docs/MANIFEST.txt, file by file
+|   |-- mode_structure.py                 # where the fastest-growing mode lives (difference of two round-off-different runs) and the initial stability there
 |   |-- newlog.py                         # append a dated research-log entry from the template
 |   |-- problem.py                        # adds to and audits docs/PROBLEMS.md
 |   |-- pull.sh                           # update from GitHub over curl -- no git needed on the server

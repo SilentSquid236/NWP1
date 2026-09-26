@@ -383,6 +383,9 @@ def main():
     p.add_argument("--relax-alpha", type=float, default=1.0,
                    help="Relaxation weight per step at the outer edge "
                         "(the cosine ramp scales from it); 0 < alpha <= 1")
+    p.add_argument("--sponge-levels", type=int, default=5,
+                   help="Levels below the lid in the wind sponge (P-60 test R); "
+                        "the default of 5 is the measured choice")
     p.add_argument("--stochastic", action="store_true",
                    help="Enable SPPT-style tendency perturbations")
     p.add_argument("--seed", type=int, default=None)
@@ -453,7 +456,11 @@ def main():
                                        length_scale=300e3, seed=args.seed)
         print(f"  stochastic     : {stoch}")
 
-    model = PrimitiveSigma(grid, lev, terrain=terrain, stochastic=stoch)
+    if not 0 <= args.sponge_levels < lev.nz:
+        raise SystemExit(f"--sponge-levels {args.sponge_levels} is outside 0..{lev.nz - 1}")
+    model = PrimitiveSigma(grid, lev, terrain=terrain, stochastic=stoch,
+                           sponge_levels=args.sponge_levels)
+    print(f"  sponge         : {args.sponge_levels} levels below the lid")
 
     # PREPARE THE INITIAL STATE. Order measured, not assumed.
     #

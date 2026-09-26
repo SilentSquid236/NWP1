@@ -2688,6 +2688,84 @@ revision after it changed the hour matching (P-58) and the title times,
 and the current build no longer shows the problem. Nothing on the viewer
 is still unconfirmed.
 
+**Torch on a real case (prompt 132, 06Z 2026-09-23, default settings).**
+The torch × 8 run diverged at **16.31 h**, the same as NumPy. The largest
+relative difference was 1.4e-12 at 1 h, 1.0e-11 at 7 h, 2.9e-10 at 10 h
+and 1.4e-8 at 16 h. It grew only once the state became unstable, as
+predicted. Wall time was 19.2 min against 27.9 min, **1.45×**. That is well
+short of the 2.8× from `check_backend.py`, and not yet explained.
+
+**Test Q result (prompt 133, 12Z 2026-09-25, first guess `sounding_mean`,
+max|v| 33 m/s at the start).**
+
+| Run | Setting | Backend | Outcome | Wall |
+|---|---|---|---|---|
+| Q0n | default zone | numpy | diverged 7.45 h | 9.1 min |
+| Q0t | default zone | torch × 8 | diverged 7.45 h | 3.8 min (2.39×) |
+| Q1 | width 15, alpha 0.1 | torch × 8 | diverged 12.65 h | 6.6 min |
+
+The three ran side by side. Scored against the predictions:
+
+- **Q0 fails in 10–17 h near the zone boundary: refuted.** It failed
+  sooner, at 7.45 h, and not at the zone boundary.
+- **Q1 completes 24 h with no bad interval: refuted.** It diverged at
+  12.65 h. Its first interval with points changing by > 5 m/s was
+  4.25–4.50 h (214 points).
+- **Q0t matches Q0n to ≤ 1e-9 in the first hours: holds** through 3.75 h
+  (8.0e-10), with 2.0e-9 at 4 h. Both diverged at 7.45 h.
+- **Torch ≥ 2.5× faster: narrowly missed**, at 2.39×.
+
+**What the failure is (P-60).** Both runs are quiet until 4.00–4.25 h,
+then blow up at the same place:
+
+- levels L03–L05 (about 270–330 hPa, jet level);
+- rows 76–78, columns 86–90 (central Maine);
+- 17–21 cells from the nearest edge.
+
+The zone settings made no difference to the onset, only to how long the
+wreck took to reach 150 m/s. From 5 h on, 5 100–11 500 points change by
+> 5 m/s each 15 minutes, so Q1's extra 5 h are not forecast hours.
+
+The numpy–torch difference is the useful measurement. It is round-off
+amplified by whatever grows fastest, and it grows with an **e-folding time
+of 24 min from the first snapshot**. So the mode is present in the
+initial state, not created by the edge later. That is too fast for
+inertial instability (at most about f, an e-folding near 3 h). It is fast
+enough for shear or static instability, or a numerical mode. The onset
+band also straddles the base of the wind sponge (L00–L04), the vertical
+counterpart of P-56's lateral zone edge.
+
+**Decisions.**
+
+- Width 15 with alpha 0.1 does **not** become the default. It fixed one
+  mechanism on one case and was no help against the other.
+- **Torch is cleared for production.** Two real cases diverge at the same
+  step as NumPy, with differences at round-off that grow only through the
+  instability. Set `NWP_BACKEND=torch NWP_THREADS=8`.
+
+**Next: test R (predictions first).**
+
+1. `tools/mode_structure.py` on the Q0n/Q0t pair, and as a check of the
+   tool on the 06Z pair.
+   - The Q mode sits in the onset box (rows 70–84, columns 80–96,
+     L03–L05) from hour 1.
+   - The 06Z mode sits at the south-west zone boundary (edge distance
+     9–13) by hour 10, where `locate_growth` put that failure. If it does
+     not, the tool is wrong and Part 1 is not evidence.
+2. Stability in the Q initial state at the onset box, which decides
+   between the candidates:
+   - Ri < 0.25 or N2 < 0 at L03–L05 there means the analysed flow is
+     unstable: candidate (a).
+   - Ri > 1 and eta/f > 0 at every level there points to (b).
+3. Sponge depth, Q case, default zone, torch, 8 h:
+   - sponge 8 levels (**R8**) and sponge 3 levels (**R3**), against 5.
+   - If (b), the onset level moves with the sponge base: to about
+     L06–L08 in R8 and L01–L03 in R3, and the onset time changes.
+   - If (a), the onset stays at L03–L05 in central Maine at 4.0–4.5 h in
+     both.
+   - Either result eliminates one candidate. If both runs move, or
+     neither does, both candidates are open.
+
 
 
 ---
