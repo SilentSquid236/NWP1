@@ -212,6 +212,7 @@ on itself.
 | 127 | "would using more cpu increase the speed of these tasks" | **CON** | answered from measurements: not for a single run until the core leaves NumPy; yes today for parallel test variants; not for the network-bound ingest |
 | 128 | "do the pytorch port" | DIR | one physics source with NumPy/torch backends; NumPy path bit-identical; torch agrees to round-off and runs 8.4× faster at 4–8 threads on the desktop; server check written, default left NumPy until it passes |
 | 129 | *(pasted: server `test_backend.py` 3/3 and `check_backend.py`)* | **OBS** | torch agrees on the server (2e-12) but gives only 2.8× at 8 threads; the AI's "about 5 min for 24 h" had been extrapolated from the desktop, where NumPy is slow; real-case timing requested |
+| 130 | *(attached: `test_p_result.txt`)* | **OBS** | P1 (width 15, alpha 0.1) completed 24 h with no growth: the first clean 24 h real-data forecast. P2 (alpha 0.03) reached 24 h but was running away at the zone boundary. Test Q (12Z with soundings; also the real-case torch check) designed |
 
 **Observation.** Prompt 53 is 18 words and is the most consequential
 instruction in the project. Before it, nine candidate causes had been patched

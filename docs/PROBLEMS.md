@@ -447,6 +447,8 @@ service, which is P-06 and is where this project's defects have always been.
 
 **Test O (2026-09-25).** With no relaxation the run dies at 6.67 h at the physical southern edge (edge distance 0), so some zone is needed. With alpha 0.1 at width 10 it lasts to 21.67 h (from 16.31 h), still failing about 10 cells in at the south-west corner. Strength of the pull toward the frozen state is the strongest control found (+5.4 h); width 15 gave about +2 h. Next: test P (width 15 + alpha 0.1; alpha 0.03), then a 12Z case with soundings before any default changes.
 
+**Test P (2026-09-26).** Width 15 with alpha 0.1 completed 24 h on the 06Z case with no 15-minute change above 5 m/s anywhere: the first clean 24 h real-data forecast. Width 10 with alpha 0.03 also reached 24 h, but the zone-boundary growth was rising at the end. Next: test Q, a 12Z case with soundings, before changing the default.
+
 ---
 
 

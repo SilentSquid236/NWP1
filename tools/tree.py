@@ -140,6 +140,7 @@ NOTES = {
     "src/dynamics/backend.py": "array backends for the core: NumPy (default) or PyTorch (multi-threaded CPU, float64)",
     "src/dynamics/backend_reference.py": "the realistic reference integration used to compare backends",
     "src/dynamics/test_backend.py": "backend tests: torch reproduces numpy to round-off; no cache leakage",
+    "tools/compare_forecasts.py": "hour-by-hour difference between two forecast files (e.g. numpy vs torch)",
     "tools/check_backend.py": "on a new machine: torch vs numpy speed and agreement at several thread counts",
     "src/verify_pending.py": "verifies every archived forecast whose window has closed, once",
     "src/analysis/sources.py": "one adapter per observation source; missing sources skipped and logged",

@@ -165,6 +165,7 @@ NWP_Deployment_Package/
 |   |-- bench_threads.py                  # numpy vs torch thread scaling on model-sized arrays, before any port
 |   |-- check_backend.py                  # on a new machine: torch vs numpy speed and agreement at several thread counts
 |   |-- checklayout.py                    # checks for src/src nesting, missing and duplicate modules
+|   |-- compare_forecasts.py              # hour-by-hour difference between two forecast files (e.g. numpy vs torch)
 |   |-- daily.sh                          # one forecast cycle from cron (obs -> analysis -> forecast); `verify` mode scores closed windows
 |   |-- fetch_boundaries.py               # fetches the Natural Earth lines ahead of time, or writes the bundled copy
 |   |-- locate_growth.py                  # where a saved forecast starts to run away: largest change per snapshot, edge distance

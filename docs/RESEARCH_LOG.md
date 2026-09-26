@@ -2632,6 +2632,54 @@ A 12Z case with real soundings is needed before any default changes. The
 06Z state has a standard-atmosphere first guess, and a setting tuned on
 one windless night is not a result.
 
+**Test P result (server, prompt 130). Both runs completed 24 h, the first
+real-data sigma forecasts in this project to do so.**
+
+| | P1: width 15, alpha 0.1 | P2: width 10, alpha 0.03 |
+|---|---|---|
+| Outcome | **completed 24 h** (45.7 min, NumPy) | completed 24 h (45.6 min) |
+| max\|u\|, max\|v\| over the run | 10.0, 11.1 m/s | 22.5, 18.5 m/s |
+| 15-min intervals with a point changing > 5 m/s | **0 of 94** | 14 of 94, from 21 h (at most 9 points) |
+| Largest 15-min change | 2.3 m/s | 15.2 m/s, rising at the end |
+| Where the change is largest | spread over 10–43 cells in (112 of 188 lines at 14–20; no narrow band), all under 2.3 m/s | 9–12 cells in (149 of 188 lines), south-west corner, 730–870 m |
+
+Scored against the predictions:
+
+- P1 survives 24 h: **holds**, and with no sign of the zone-boundary growth.
+- P2 outlives O2 (21.67 h): **holds**, it reached 24 h.
+- P2's growth moves toward edge distance 0–4 if the pull is too weak:
+  **refuted**. It stayed at the zone boundary (9–12 cells in) and was
+  growing when the run ended, so it would probably have failed within a
+  few hours.
+
+Weaker pull keeps delaying the same zone-boundary failure. The wider, weak
+zone is the only setting found that removes it for 24 h. **One case is
+not a result**, though: this is the 06Z standard-atmosphere night, with
+winds under 12 m/s and nothing much for an edge to fight.
+
+**Next: test Q, a 12Z case with real soundings (predictions first).**
+Build 2026-09-25 12Z from observations, then run three 24 h forecasts
+side by side:
+
+- **Q0n**, default zone, NumPy.
+- **Q0t**, default zone, torch × 8. This is the real-case backend check:
+  it should match Q0n to round-off early (≤ 1e-9 in the first hours).
+  Differences may grow only where the run is already failing. It should
+  be ≥ 2.5× faster in wall time.
+- **Q1**, width 15 and alpha 0.1, torch × 8.
+
+Predictions:
+
+- Q0 fails before 24 h, somewhere in 10–17 h, near the zone's inner
+  boundary. That is the 12Z 2026-09-21 case again, which died at 13.7 h.
+- Q1 completes 24 h with no 15-minute interval where more than 20 points
+  change by > 5 m/s. It fails if it dies before 24 h or shows the band at
+  the zone boundary.
+
+If Q1 holds, width 15 / alpha 0.1 becomes the default: two cases, one calm
+and one with a jet. If it fails, the zone's form, not its strength, is
+next.
+
 
 
 ---
