@@ -126,9 +126,39 @@ NOTES = {
     "tools/newlog.py": "append a dated research-log entry from the template",
     "tools/tree.py": "generates docs/STRUCTURE.md",
     "tools/problem.py": "adds to and audits docs/PROBLEMS.md",
-    "tools/daily.sh": "one day of the archive from cron: ingest, forecast, verify",
+    "tools/daily.sh": "one forecast cycle from cron (obs -> analysis -> forecast); `verify` mode scores closed windows",
+    "tools/bench_threads.py": "numpy vs torch thread scaling on model-sized arrays, before any port",
+    "src/ingest_obs.py": "one cycle's initial state from observations at or before the cycle time",
+    "src/make_maps.py": "renders a run's product maps and its HTML viewer (<rundir>/maps/index.html)",
+    "src/maps/__init__.py": "forecast maps package",
+    "src/maps/geography.py": "Lambert conformal projection in NumPy; Natural Earth state/coast lines, fetched once and cached",
+    "src/maps/derive.py": "map diagnostics from the sigma state or the analysis: heights, pressure levels, MSLP, vorticity",
+    "src/maps/render.py": "the product maps (surface, upper air, analysis with reports, forecast-minus-observed)",
+    "src/maps/viewer.py": "self-contained Pivotal-style HTML viewer: hover readout, click-for-sounding (skew-T, hodograph)",
+    "src/maps/test_maps.py": "map tests: projection, clipping, standard-atmosphere diagnostics, rendering, viewer",
+    "tools/fetch_boundaries.py": "fetches the Natural Earth lines ahead of time, or writes the bundled copy",
+    "src/dynamics/backend.py": "array backends for the core: NumPy (default) or PyTorch (multi-threaded CPU, float64)",
+    "src/dynamics/backend_reference.py": "the realistic reference integration used to compare backends",
+    "src/dynamics/test_backend.py": "backend tests: torch reproduces numpy to round-off; no cache leakage",
+    "tools/mode_structure.py": "where the fastest-growing mode lives (difference of two round-off-different runs) and the initial stability there",
+    "tools/compare_forecasts.py": "hour-by-hour difference between two forecast files (e.g. numpy vs torch)",
+    "tools/check_backend.py": "on a new machine: torch vs numpy speed and agreement at several thread counts",
+    "src/verify_pending.py": "verifies every archived forecast whose window has closed, once",
+    "src/analysis/sources.py": "one adapter per observation source; missing sources skipped and logged",
+    "src/analysis/build.py": "first guess, sounding superobs, Barnes increments, hydrostatic heights",
+    "src/analysis/barnes.py": "successive-correction analysis of increments against a first guess",
+    "src/analysis/geo.py": "the forecast's grid, bilinear sampling, ETOPO terrain via ERDDAP",
+    "src/analysis/probe_obs_blowup.py": "P-56: where the first observation-built forecast dies",
+    "src/analysis/probe_terrain_b.py": "P-56 test B: same observations over HRRR terrain (diagnostic only)",
+    "src/analysis/testdata/asos_2026092112_sample.csv": "live IEM ASOS payload, every 10th row",
+    "src/analysis/testdata/ndbc_41025_5day_sample.txt": "live NDBC 5-day file, head",
+    "src/analysis/testdata/ndbc_active_sample.xml": "live NDBC station list, 25 stations",
+    "src/analysis/testdata/raob_KIAD_2026092112.csv": "live IEM sounding, Sterling VA",
+    "src/analysis/testdata/raob_KOKX_2026092112.csv": "live IEM sounding, Upton NY",
+    "src/analysis/testdata/raob_network.geojson": "live IEM RAOB station table, analysis box",
     "tools/checklayout.py": "checks for src/src nesting, missing and duplicate modules",
     "tools/pull.sh": "update from GitHub over curl -- no git needed on the server",
+    "tools/locate_growth.py": "where a saved forecast starts to run away: largest change per snapshot, edge distance",
     "tools/manifest.py": "writes and checks docs/MANIFEST.txt, file by file",
     "tools/tokens.py": "token ledger: billed cost vs API-equivalent shadow price",
     "tools/stale.py": "flags measurements whose file moved after the number was taken",
@@ -298,7 +328,7 @@ def main():
     body = "\n".join(walk(root))
     out = HEADER + "NWP_Deployment_Package/\n" + body + "\n" + FOOTER
     path = os.path.join(root, "docs", "STRUCTURE.md")
-    with open(path, "w", encoding="utf-8") as f:
+    with open(path, "w", encoding="utf-8", newline="\n") as f:  # LF on Windows too
         f.write(out)
     print(out)
     # Count the tree, not the header sentence that explains the marker --

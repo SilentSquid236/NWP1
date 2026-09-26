@@ -56,6 +56,10 @@ RANGE_LIMITS = {
     "UGRD": (-150.0, 150.0),      # m/s
     "VGRD": (-150.0, 150.0),
     "HGT": (-500.0, 60000.0),     # gpm
+    # Sea-level pressure. 870 hPa is below any recorded extratropical low; a
+    # report of 101 hPa (an altimeter of "3.00" inHg, seen from SMQ on
+    # 2026-09-21) is a decode error, not weather.
+    "PMSL": (87000.0, 108500.0),  # Pa
 }
 
 # Default observation + representativeness error by source and variable.
@@ -123,10 +127,14 @@ def buddy_check(obs, neighbours, n_sigma=4.0, min_buddies=2):
     consensus to compare against, and rejecting on one buddy is worse than
     not checking.
     """
-    vals = [o.value for o in neighbours
-            if o.variable == obs.variable and o.station != obs.station
-            and np.isfinite(o.value)]
-    if len(vals) < min_buddies:
+    nb = [o for o in neighbours
+          if o.variable == obs.variable and o.station != obs.station
+          and np.isfinite(o.value)]
+    vals = [o.value for o in nb]
+    # Count STATIONS, not values: one neighbouring sounding contributes many
+    # significant levels within 5 % in pressure, and a "consensus" of one
+    # instrument is not a consensus (KRNK vs KGSO, 2026-09-21).
+    if len({o.station for o in nb}) < min_buddies:
         return True, "too few buddies to check"
 
     med = float(np.median(vals))
@@ -184,6 +192,7 @@ def run_qc(observations, backgrounds=None, blacklist=None,
         nb = [o for o in kept
               if o is not obs
               and o.variable == obs.variable
+              and _same_level(o, obs)
               and abs((o.time - obs.time).total_seconds()) < 1800
               and _haversine_km(obs.lat, obs.lon, o.lat, o.lon) < buddy_radius_km]
         ok, why = buddy_check(obs, nb, buddy_sigma)
@@ -197,6 +206,20 @@ def run_qc(observations, backgrounds=None, blacklist=None,
             final.append(obs)
 
     return final, rejected, summary
+
+
+def _same_level(a, b, rel=0.05):
+    """
+    Buddies must be at the same level: both surface, or pressures within 5 %.
+
+    Without this a radiosonde's 250 hPa temperature was "compared" with a
+    neighbouring sounding's 1000 hPa one, and on 2026-09-21 12Z the buddy
+    check rejected 2441 of 2441 upper-air values it saw -- plausible-looking
+    QC that deleted every sounding above 650 hPa but three.
+    """
+    if (a.pressure is None) != (b.pressure is None):
+        return False
+    return a.pressure is None or abs(a.pressure - b.pressure) <= rel * b.pressure
 
 
 def _haversine_km(lat1, lon1, lat2, lon2):

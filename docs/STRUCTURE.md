@@ -47,8 +47,25 @@ NWP_Deployment_Package/
 |   `-- nwp-sync/
 |       `-- SKILL.md                      # skill: patch route, pull.sh, apply_sync
 |-- src/
+|   |-- analysis/
+|   |   |-- testdata/
+|   |   |   |-- asos_2026092112_sample.csv # live IEM ASOS payload, every 10th row
+|   |   |   |-- ndbc_41025_5day_sample.txt # live NDBC 5-day file, head
+|   |   |   |-- ndbc_active_sample.xml    # live NDBC station list, 25 stations
+|   |   |   |-- raob_KIAD_2026092112.csv  # live IEM sounding, Sterling VA
+|   |   |   |-- raob_KOKX_2026092112.csv  # live IEM sounding, Upton NY
+|   |   |   `-- raob_network.geojson      # live IEM RAOB station table, analysis box
+|   |   |-- barnes.py                     # successive-correction analysis of increments against a first guess
+|   |   |-- build.py                      # first guess, sounding superobs, Barnes increments, hydrostatic heights
+|   |   |-- geo.py                        # the forecast's grid, bilinear sampling, ETOPO terrain via ERDDAP
+|   |   |-- probe_obs_blowup.py           # P-56: where the first observation-built forecast dies
+|   |   |-- probe_terrain_b.py            # P-56 test B: same observations over HRRR terrain (diagnostic only)
+|   |   |-- sources.py                    # one adapter per observation source; missing sources skipped and logged
+|   |   `-- test_analysis.py              # suite for analysis.py
 |   |-- dynamics/                      # the model itself
 |   |   |-- README.md                     # orientation for this directory
+|   |   |-- backend.py                    # array backends for the core: NumPy (default) or PyTorch (multi-threaded CPU, float64)
+|   |   |-- backend_reference.py          # the realistic reference integration used to compare backends
 |   |   |-- balance_check.py              # initial-state balance and Nh/U by terrain height
 |   |   |-- boundaries.py                 # Davies relaxation, limited-area driver (6/6)
 |   |   |-- convection.py                 # dry convective adjustment (post-step, conservative)
@@ -98,6 +115,7 @@ NWP_Deployment_Package/
 |   |   |-- sweep_boundary_layer.py       # mixing x drag x terrain x noise matrix
 |   |   |-- terrain_matrix2.py            # terrain rows re-measured with convection
 |   |   |-- terrain_probe.py              # terrain baseline with and without the filter
+|   |   |-- test_backend.py               # backend tests: torch reproduces numpy to round-off; no cache leakage
 |   |   |-- test_boundaries.py            # suite for boundaries.py
 |   |   |-- test_convection.py            # suite for convection.py
 |   |   |-- test_initialization.py        # suite for initialization.py
@@ -112,6 +130,12 @@ NWP_Deployment_Package/
 |   |   |-- turbulence.py                 # Richardson-number vertical mixing
 |   |   |-- vertical.py                   # pressure-coordinate vertical operators
 |   |   `-- visualize_instability.py      # cross-sections and growth curves
+|   |-- maps/
+|   |   |-- derive.py                     # map diagnostics from the sigma state or the analysis: heights, pressure levels, MSLP, vorticity
+|   |   |-- geography.py                  # Lambert conformal projection in NumPy; Natural Earth state/coast lines, fetched once and cached
+|   |   |-- render.py                     # the product maps (surface, upper air, analysis with reports, forecast-minus-observed)
+|   |   |-- test_maps.py                  # map tests: projection, clipping, standard-atmosphere diagnostics, rendering, viewer
+|   |   `-- viewer.py                     # self-contained Pivotal-style HTML viewer: hover readout, click-for-sounding (skew-T, hodograph)
 |   |-- postproc/                      # learned correction of a finished forecast
 |   |   |-- bias_correction.py            # Kalman-filter bias correction, MOS (7/7)
 |   |   `-- test_bias_correction.py       # suite for bias_correction.py
@@ -127,17 +151,26 @@ NWP_Deployment_Package/
 |   |-- autoregressive_dataset.py         # training pairs for the emulator; numeric f-hour sort  [SUPERSEDED]
 |   |-- forecast.py                       # end-to-end driver, sigma core over real terrain
 |   |-- ingest_hrrr.py                    # Herbie fetch, domain cut, stride coarsening -> .npz
+|   |-- ingest_obs.py                     # one cycle's initial state from observations at or before the cycle time
+|   |-- make_maps.py                      # renders a run's product maps and its HTML viewer (<rundir>/maps/index.html)
 |   |-- nwp_emulator_3d.py                # Conv3d state-to-state emulator  [SUPERSEDED -- bounded by its teacher]
 |   |-- test_forecast.py                  # driver suite (11/11)
 |   |-- test_hrrr_search.py               # GRIB search-string suite (6/6)
 |   |-- test_verify.py                    # suite for verify.py
 |   |-- train_autoregressive.py           # emulator training loop  [SUPERSEDED by the physics core]
-|   `-- verify.py                         # verify a forecast against observations and archive the pairs
+|   |-- verify.py                         # verify a forecast against observations and archive the pairs
+|   `-- verify_pending.py                 # verifies every archived forecast whose window has closed, once
 |-- tools/                             # maintenance scripts
 |   |-- apply_sync.py                     # applies a sync archive safely -- no nesting, never touches data/
+|   |-- bench_threads.py                  # numpy vs torch thread scaling on model-sized arrays, before any port
+|   |-- check_backend.py                  # on a new machine: torch vs numpy speed and agreement at several thread counts
 |   |-- checklayout.py                    # checks for src/src nesting, missing and duplicate modules
-|   |-- daily.sh                          # one day of the archive from cron: ingest, forecast, verify
+|   |-- compare_forecasts.py              # hour-by-hour difference between two forecast files (e.g. numpy vs torch)
+|   |-- daily.sh                          # one forecast cycle from cron (obs -> analysis -> forecast); `verify` mode scores closed windows
+|   |-- fetch_boundaries.py               # fetches the Natural Earth lines ahead of time, or writes the bundled copy
+|   |-- locate_growth.py                  # where a saved forecast starts to run away: largest change per snapshot, edge distance
 |   |-- manifest.py                       # writes and checks docs/MANIFEST.txt, file by file
+|   |-- mode_structure.py                 # where the fastest-growing mode lives (difference of two round-off-different runs) and the initial stability there
 |   |-- newlog.py                         # append a dated research-log entry from the template
 |   |-- problem.py                        # adds to and audits docs/PROBLEMS.md
 |   |-- pull.sh                           # update from GitHub over curl -- no git needed on the server

@@ -44,7 +44,7 @@ Set the data root per machine:
 # WSL
 export NWP_DATA_ROOT=/mnt/c/Users/Epier/Desktop/NWP/NWP_Deployment_Package/data
 # server
-export NWP_DATA_ROOT=/data5/pierce/Data5/NWP/data
+export NWP_DATA_ROOT=/data5/pierce/AINWP/data   # since 2026-09-22; also the default when unset
 ```
 
 Add it to `~/.bashrc` on each so you don't have to think about it again.
@@ -58,6 +58,37 @@ python src/forecast.py --run-dir data/tensors_3d/analysis_20260801_00 --hours 12
 python src/train_autoregressive.py --dry-run  # verify wiring, one batch
 python src/train_autoregressive.py --epochs 5
 python src/train_autoregressive.py --resume   # continue from latest.pth
+```
+
+### Forecast maps
+
+`tools/daily.sh` draws them after every cycle; by hand:
+
+```bash
+python src/make_maps.py --run-dir data/tensors_3d/obs_20260923_06
+# -> data/tensors_3d/obs_20260923_06/maps/index.html  (open in a browser)
+```
+
+A Pivotal-style viewer. Products are listed on the left:
+- Surface: MSLP and thickness; lowest-level temperature, its 1-hr change,
+  and wind.
+- Upper air: 925, 850 and 700 mb temperature, height and wind; 700 mb
+  vertical velocity; 500 mb vorticity; 300 and 250 mb jet.
+- Analysis: the hour-0 analysis with the thinned station reports and
+  soundings it was built from.
+- Verification: forecast minus observed by station, after `daily.sh verify`.
+
+Forecast hours run along the top, and the arrow keys step through them.
+Hovering reads out the values under the cursor. Clicking opens the model
+sounding there (skew-T, barbs, hodograph, lapse rates, shear and freezing
+level), taken every second grid point. Only numpy and matplotlib are needed. The
+state and coast lines are fetched once from Natural Earth and cached. The
+model is dry, so there is no precipitation, dewpoint or radar product, and
+"near-surface" means the lowest model level, as each map says. To view it
+from the desktop, copy the folder:
+
+```bash
+scp -r pierce@<server>:/data5/pierce/AINWP/data/tensors_3d/obs_<stamp>/maps .
 ```
 
 ## Shared-server etiquette
@@ -218,7 +249,18 @@ cd src/postproc && python test_bias_correction.py  # 7
 cd src/verification && python test_fetchers.py     # 9
 cd src && python test_forecast.py                  # 7
 python test_netpolicy.py                           # 9
+python src/maps/test_maps.py                       # 15
+cd src/dynamics && python test_backend.py          # 3 (needs PyTorch; skips otherwise)
 ```
+
+### Faster forecasts: the PyTorch backend
+
+`python src/forecast.py ... --backend torch --threads 8` runs the same
+float64 physics multi-threaded. It agrees with NumPy to round-off (below
+1e-12 relative after 300 steps) and is 8.4x faster on the desktop at 4-8
+threads (a forecast hour in 10.5 s against 90 s). On a new machine, run
+`python tools/check_backend.py` first. `daily.sh` uses it when
+`NWP_BACKEND=torch` is set.
 
 70 tests. Physics tests assert analytic answers or convergence order, not
 tolerances chosen to pass.

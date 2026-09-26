@@ -32,6 +32,8 @@ this is the same shape with the constants exposed.
 
 import numpy as np
 
+from backend import xp_of
+
 from sigma import RD, G0, P0, KAPPA
 
 RI_CRIT = 0.25          # below this, shear overcomes stratification
@@ -94,13 +96,14 @@ def richardson(u, v, theta, pi, lev):
     and theta live -- that is where the shear and the stratification are both
     naturally defined.
     """
+    xp = xp_of(u, theta, pi)
     p = lev.pressure(pi)
     T = theta * (p / P0) ** KAPPA
 
     # Layer thickness in metres, hydrostatic.
     T_half = 0.5 * (T[:-1] + T[1:])
-    dz = RD * T_half / G0 * np.log(p[1:] / p[:-1])       # >0, index 0 = top
-    dz = np.maximum(np.abs(dz), 1.0)
+    dz = RD * T_half / G0 * xp.log(p[1:] / p[:-1])       # >0, index 0 = top
+    dz = xp.maximum(xp.abs(dz), 1.0)
 
     dth = theta[1:] - theta[:-1]
     th_half = 0.5 * (theta[:-1] + theta[1:])
@@ -112,8 +115,8 @@ def richardson(u, v, theta, pi, lev):
     dv = (v[1:] - v[:-1]) / dz
     S2 = du ** 2 + dv ** 2
 
-    with np.errstate(divide="ignore", invalid="ignore"):
-        Ri = np.where(S2 > 1e-12, N2 / S2, np.inf)
+    with xp.errstate(divide="ignore", invalid="ignore"):
+        Ri = xp.where(S2 > 1e-12, N2 / S2, xp.inf)
     return Ri, N2, S2, dz
 
 
@@ -125,16 +128,17 @@ def eddy_diffusivity(Ri, S2, ri_crit=RI_CRIT, k_max=K_MAX,
     f(Ri) = (1 - Ri/Ri_c)^2 for 0 <= Ri < Ri_c, 1 for Ri <= 0 (static
     instability mixes at full strength), 0 above Ri_c.
     """
-    S = np.sqrt(np.maximum(S2, 0.0))
+    xp = xp_of(Ri, S2)
+    S = xp.sqrt(xp.maximum(S2, 0.0))
 
-    f = np.zeros_like(Ri)
+    f = xp.zeros_like(Ri)
     unstable = Ri <= 0
     marginal = (Ri > 0) & (Ri < ri_crit)
     f[unstable] = 1.0
     f[marginal] = (1.0 - Ri[marginal] / ri_crit) ** 2
 
     K = mixing_length ** 2 * S * f
-    return np.clip(K, 0.0, k_max)
+    return xp.clip(K, 0.0, k_max)
 
 
 def vertical_mixing(u, v, theta, pi, lev, ri_crit=RI_CRIT, k_max=K_MAX,
@@ -149,9 +153,11 @@ def vertical_mixing(u, v, theta, pi, lev, ri_crit=RI_CRIT, k_max=K_MAX,
     Ri, N2, S2, dz = richardson(u, v, theta, pi, lev)
     K = eddy_diffusivity(Ri, S2, ri_crit, k_max, mixing_length)
 
+    xp = xp_of(u)
+
     def mix(a):
         flux = K * (a[1:] - a[:-1]) / dz            # at interfaces
-        out = np.zeros_like(a)
+        out = xp.zeros_like(a)
         # Divergence of the flux; zero flux through top and bottom boundaries.
         out[1:-1] = (flux[1:] - flux[:-1]) / (0.5 * (dz[1:] + dz[:-1]))
         out[0] = flux[0] / dz[0]

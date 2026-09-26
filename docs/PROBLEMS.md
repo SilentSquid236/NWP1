@@ -87,6 +87,8 @@ the chunked and whole-hour runs diverge — min Ri 0.012 against 0.022 at hour 6
 integration differently is not a neutral act. The working guard rides along as
 a callback and only reads the clock.
 
+**Update 2026-09-22.** `forecast.run_forecast` now checks for non-finite values and |u| > 150 m/s at the progress cadence (~200 checks per run), not only on the hour. It stopped P-56 at 3.75 h, mid-hour. The same check still does not exist inside `PrimitiveSigma.run()`, which the sweep scripts use.
+
 ---
 
 ## P-01 — Tall terrain fails above Nh/U ≈ 1
@@ -379,6 +381,142 @@ must never cost the raw observations.
 service, which is P-06 and is where this project's defects have always been.
 
 ---
+
+## P-53 — Observation-only initial state and frozen lateral boundaries
+**Category** G, I · **First seen** 2026-09-22 · **Status** OPEN
+
+**Symptom.** Not a failure yet: a design with a known cost. With no model output allowed and nothing observed after the cycle time, the lateral boundaries can only be held to the initial analysis. At ~20 m/s air crosses ~860 km in 12 h of a ~1300 km domain, so error from the frozen edges should reach much of the interior by hour 12.
+
+**What is known.** Initial state from every reliable observation at the cycle time (`src/analysis/`); upper air from the previous run's forecast where soundings are missing; analysis area extended beyond the domain. Measurement to make: forecast error against distance from the nearest edge, by lead time (research log 2026-09-22, prediction P5).
+
+**Ruled out.** none yet.
+
+---
+
+
+## P-54 — The radiosonde fetcher's request is rejected by IEM
+**Category** A · **First seen** 2026-09-22 · **Status** OPEN
+
+**Symptom.** `fetchers.raob_url()` sends `ts1`/`ts2` and several `station` values in one request. IEM now answers HTTP 422: it requires `sts`/`ets` (ISO, start before end), accepts one 4-character station per request, and wants the `K` prefix (`KOKX`). Every radiosonde fetch would have failed on the server.
+
+**What is known.** Measured on the desktop, 2026-09-22 12Z the day before: with one request per station, 10 of 21 active IDs in and around the domain returned data; Albany, Wallops, CAR and ILN (12Z) and both Canadian sites returned nothing. `NORTHEAST_RAOB` also omits RNK (Blacksburg), which is inside the domain. Fix: new request builder in `src/analysis/sources.py`, one station per request, station list from IEM's RAOB network table.
+
+**Ruled out.** none yet.
+
+---
+
+
+## P-55 — daily.sh looks for the ingested frames in the wrong directory
+**Category** I · **First seen** 2026-09-22 · **Status** OPEN
+
+**Symptom.** Predicted, not yet observed: `tools/daily.sh` gives `forecast.py --run-dir $DATA/tensors/analysis_<stamp>`, but `ingest_hrrr.py` writes to `config.TENSOR_DIR` = `$DATA/tensors_3d/analysis_<stamp>`. The forecast step should fail with 'No live_hrrr_f*.npz', and verify be skipped.
+
+**What is known.** Found by reading the two paths side by side, 2026-09-22, while the first hand run (P-07) was in progress. Confirm or refute from that run's log. The new per-cycle script derives both paths from one variable.
+
+**Ruled out.** none yet.
+
+---
+
+
+## P-56 — The first observation-built forecast diverges at 3.75 h
+**Category** F?, G? · **First seen** 2026-09-22 · **Status** OPEN
+
+**Symptom.** 2026-09-21 12Z from observations only, 24 h requested: max|u| 46 m/s for 3 h, then 372 m/s at 3.75 h, stopped inside the hour by the new guard. Desktop, 12 km grid, ETOPO terrain 0–1161 m.
+
+**What is known.** Probe (`src/analysis/probe_obs_blowup.py`, 5-min snapshots): the runaway is the meridional wind at level 17 of 20 (near the ground), first growing by more than 20 % between 2.50 and 2.59 h, 14 cells from the edge, over 812 m of terrain in northern Maine. Only 2 points grew by more than 5 m/s, in a ~5.5 Δx pattern. The initial divergence did not reach the filter's target (4.7e-4 → 9.2e-5 1/s). Next: record every field around (row 82, col 89) from 2.0 h, check the static stability of that column in the initial state (the surface blend adds increments to the lowest 1000 m), and compare with an HRRR-seeded run of the same cycle (`--source hrrr`), which has survived 12 h before.
+
+**Ruled out.** the edges: max|u| was pinned at the lid by the frozen boundary, and the runaway began 14 cells inside it.
+
+**Second case, server, 2026-09-22 18Z.** Standard-atmosphere first guess (no soundings, no previous run), initial max|u| 6.2 m/s; the wind grew steadily from hour 3 (10 → 18 → 15 → 38 m/s) and reached 435 m/s at 6.31 h. A near-calm start dying rules out jet strength. Shared by both cases, and not by the HRRR runs that survived 12 h: the observation-built lower atmosphere (surface blend), ETOPO block-averaged terrain, and frozen single-frame edges.
+
+**Ruled out, test A (2026-09-22).** The surface blend: with it switched off the run still diverged, at 4.10 h, first growing at 2.84–2.92 h in v at level 17 over 712 m of terrain in central NY, 47 cells from every edge.
+
+**Terrain implicated (2026-09-22).** The same state over flat ground held max|u| at 46 m/s to 12 h, then went non-finite at 13.0 h (a sudden negative pressure or column depth, a different signature). Next suspect: below-ground pressure-level values in the observation analysis, which HRRR supplies smoothly and the analysis does not. Test and prediction in the research log.
+
+**Ruled out, below-ground values (2026-09-22).** Extrapolating the 7507 pressure-level values under the terrain (up to 7.55 K) left the run dying at exactly 3.75 h. Next: test B, HRRR terrain under the observation state (server).
+
+**Reframed, 2026-09-23.** Test C, an HRRR start with frozen edges, died at 3.16 h, and the record shows no real-data forecast of the sigma core had ever run before 2026-09-22. So this is not an observation problem: no real state over real terrain has survived. The earlier text's comparison with "HRRR runs that reached 12 h" was wrong; those runs never existed. Leading mechanism: slope. Real terrain at 12 km reaches 0.0316, against 0.0086 for the steepest idealised terrain that survived 12/12. Test S (slope-limited ETOPO) in the research log.
+
+**Early failure explained (test S, 2026-09-23).** ETOPO at 12 km reaches a slope of 0.0536 (model measure), against 0.0086 for the steepest idealised terrain that survived. Smoothed to 0.0083 (11 passes, peak 1161 → 881 m), the same state survived to 13.7 h instead of 3.75 h. Ingest now limits slope to 0.0086 by default. **What remains** is a second failure at hours 13–14, seen on both flat and smoothed terrain: theta minimum falling and sigma_dot growing from hour ~9. Frozen edges are the first suspect.
+
+**Second failure located (2026-09-23).** The first growth came at 11.59–11.67 h, 10 cells from the western (inflow) edge: the inner boundary of the 10-cell relaxation zone. It is violent (theta ±6.7 K and pi 6.2 hPa in 5 min) and near grid scale. Mechanism: the frozen edge pulls the inflow boundary back to hour 0 while the interior has moved on. Candidates: a gentler/wider relaxation for a frozen driver, or inflow-only relaxation. Not yet tested.
+
+**Second case (server 06Z 2026-09-23, 16.31 h).** The largest change stayed 10–13 cells from the edge, almost always at the south-west corner of the zone boundary over 540–880 m terrain (2 of 30 early, small maxima were further north on the same column), from hour 1, in near-windless flow (standard-atmosphere first guess). So an inflow mismatch is not required. Open: the zone boundary itself (H1) or the terrain at that place (H2). Test W, relaxation width 6 vs 15, separates them.
+
+**Test W (2026-09-25).** The growth moves with the relaxation width: edge distance mostly 6–8 at width 6 and 15–17 at width 15. Width 6 ran away over flat coastal ground, so terrain is not required. The failure is made at the inner boundary of the zone, a band pinned to hour 0 beside a free interior. Width 15 delays it by about 2 h. Next: test O, no relaxation (O1) and alpha 0.1 (O2).
+
+**Test O (2026-09-25).** With no relaxation the run dies at 6.67 h at the physical southern edge (edge distance 0), so some zone is needed. With alpha 0.1 at width 10 it lasts to 21.67 h (from 16.31 h), still failing about 10 cells in at the south-west corner. Strength of the pull toward the frozen state is the strongest control found (+5.4 h); width 15 gave about +2 h. Next: test P (width 15 + alpha 0.1; alpha 0.03), then a 12Z case with soundings before any default changes.
+
+**Test P (2026-09-26).** Width 15 with alpha 0.1 completed 24 h on the 06Z case with no 15-minute change above 5 m/s anywhere: the first clean 24 h real-data forecast. Width 10 with alpha 0.03 also reached 24 h, but the zone-boundary growth was rising at the end. Next: test Q, a 12Z case with soundings, before changing the default.
+
+**Test Q (2026-09-26).** On a 12Z case with soundings, width 15 with alpha 0.1 did **not** survive: it diverged at 12.65 h against 7.45 h for the default. Both failed from an interior jet-level disturbance at 4 h that the zone does not control (P-60). The default is unchanged: width 15 with alpha 0.1 removed zone-boundary growth on one case and did nothing for the other failure.
+
+**Seen in P-60 test S (2026-09-26).** With vertical mixing off, the south-east zone-boundary point r10–12 c97–99 (edge 10, L03–L05, over the sea) ran away first: v changed by 36.5 m/s in 15 min at 3.75–4.00 h. With default mixing it peaks at 3.3 m/s, so mixing is holding back a zone-boundary instability at that corner.
+
+---
+
+
+## P-57 — Divergence guard and progress log watch u only
+**Category** E/H · **First seen** 2026-09-25 · **Status** FIXED
+
+**Symptom.** Test W width 15, 18.00 h: the hourly log printed "max|u| 17.9 m/s" while the snapshot had max|v| 91.5 m/s. `run_forecast`'s in-loop guard (the 150 m/s ceiling, P-52) and its finiteness checks also looked only at `model.u`.
+
+**What is known.** The first P-56 runaway started in v. A v runaway could therefore pass the ceiling, or go non-finite, without being reported until u followed. Found by comparing the log with `tools/locate_growth.py`, not by a test. Fixed in `src/forecast.py`: the guard uses max(|u|, |v|) and the finiteness of both, and the hourly line prints max|v|. Past divergence times were detected on u and may be late. Locations and ordering come from snapshots and are unaffected.
+
+**Confirmed by.** `src/test_forecast.py` 11/11 after the change. The first server run with the fix must show max|v| in its hourly lines (test O).
+
+**Ruled out.** none.
+---
+
+
+## P-58 — Maps show only F000: forecast snapshots are not on whole hours
+**Category** A/E · **First seen** 2026-09-25 · **Status** FIXED
+
+**Symptom.** Found by the user on the first server render (prompt 123): the viewer had only F000. `run_forecast` saves a snapshot at the first step at or after each output time, and the step is 17.1 s, so the snapshots sit at 1.0023 h, 2.0045 h, and so on. `make_maps.py` accepted a snapshot only if it was within 1e-6 h of a whole hour, so it kept none, and only the analysis (hour 0) was drawn.
+
+**What is known.** The synthetic test forecast had exact whole-hour times, so it could not catch this. That is an interface assumption about what `forecast.npz` holds, made without reading `run_forecast`'s output rule (the class of P-54: the offline fixture was the AI's idea of the data, not the data). Fixed with `make_maps.match_hours`, which takes the nearest snapshot within 0.1 h. The synthetic forecast now uses the real step rule.
+
+**Confirmed by.** `src/maps/test_maps.py`, "every forecast hour is found although snapshots land seconds late": snapshot times built by the model's rule give hours 1–16 (16 of 16). The synthetic re-render drew 25 times, 0–24.
+
+**Ruled out.** none.
+---
+
+
+## P-59 — No diurnal cycle: the dry core has no surface heating or radiation
+**Category** G · **First seen** 2026-09-25 · **Status** OPEN
+
+**Symptom.** The first real server verification (06Z 2026-09-23, 346–362 surface temperature pairs an hour) has a bias that follows the sun. It is +1.7 to +2.2 °C in the night hours (F001–F005, 07–11Z) and crosses zero at about F006–F007. It reaches **−6.9 °C at F014 (20Z, 4 PM EDT)**, when RMSE is 7.7 °C. Wind speed does the same: +1.6 kt at night, −3.1 kt at F011 (17Z), when daytime mixing is missing.
+
+**What is known.** `src/dynamics` has no surface sensible-heat flux, no radiation and no solar geometry. `radiation.py` is the lid's radiating upper boundary, not physics. So the lowest levels cannot warm by day or cool by night, and a forecast holds roughly the hour-0 temperatures while the real surface warms 6–8 °C into the afternoon. This is the largest error source in the first verified run, larger than anything P-56 has cost so far. Numbers are read from the error maps' header boxes (`maps/err_t_f*.png`); the artifact `verification_20260923_06Z.csv` holds them.
+
+**Candidate responses (none tried).** A surface energy budget with solar geometry and a land/sea surface temperature. Or, as a first step, a prescribed diurnal surface heat flux from solar elevation, which uses no later observations. Either needs a prediction before it is built. Also worth adding: a persistence reference (the hour-0 analysis held fixed) scored the same way, so the model's skill is measured against doing nothing.
+
+**Ruled out.** none.
+---
+
+
+## P-60 — Jet-level instability 17–21 cells inside the domain kills the 12Z case at 4 h
+**Category** C · **First seen** 2026-09-26 · **Status** OPEN
+
+**Symptom.** Test Q started 2026-09-25 12Z from real soundings (first guess `sounding_mean`, max|u| 27.6 and max|v| 33.2 m/s). With the default zone it diverged at **7.45 h**; with width 15 and alpha 0.1 it diverged at **12.65 h**. In both runs the change is small (≤ 3.3 m/s per 15 min) until **4.00–4.25 h**. Then it grows at the same place: levels **L03–L05 (about 270–330 hPa, jet level)**, rows 76–78, columns 86–90 (**45.3–45.5 N, 69.4–68.8 W, central Maine**), **17–21 cells from the nearest edge**. From 5 h on, 5 100–11 500 points change by more than 5 m/s every 15 minutes, so neither forecast is usable after about 4.5 h.
+
+**What is known.** The onset does not depend on the relaxation zone. The same time, place and levels appear with the default zone (10 cells) and with width 15 and alpha 0.1. The onset point lies 7–11 cells inside the default zone's inner boundary and 2–6 inside the wide zone's, so this is not P-56's zone-boundary growth. The numpy and torch runs of the default case (Q0n, Q0t) differ by 1.6e-13 at 0.25 h. That difference grows with an **e-folding time of 24 min** from the start (2.0e-9 at 4 h) and 33 min afterwards: an unstable mode is present from hour 0. On the 06Z 2026-09-23 case the same pair grew with an e-folding time of 263 min for 8 h, then 74 min. An e-folding time of 24 min is faster than inertial instability can grow (its growth rate is at most about f, an e-folding of about 3 h). Shear instability (Ri < 0.25), static instability, or a numerical mode can grow that fast. Levels L00–L04 are the wind sponge, so the onset band L03–L05 straddles the sponge base, as P-56's growth sat at the lateral zone's inner edge.
+
+**Test R (2026-09-26).** The mode is in the Maine box from hour 1. It spans the lid (L00) to L04, where the box's strongest wind (32.6 m/s) is at the lid itself, and its e-folding shortens from 46 to 17 min over hours 0.5–4. It is still in the linear range, so the flow under it becomes more unstable over those hours.
+
+**Measurement R2 (1–4 h).** Round the mode, the minimum Ri at L03/L04 falls from 0.91 to 0.44, 0.30 and 0.28. N2 stays positive and eta/f above 0. Domain points with Ri < 0.25 at L03/L04 go from 0 to 19 to 579 by 4 h, just before the runaway. Mixing is exactly zero for Ri ≥ 0.25, so the sharpening layer has no vertical dissipation.
+
+**Candidates.** (c) The rigid 200 hPa lid cutting through the jet. It cannot be tested cleanly, because the analysis stops at 200 hPa. Next, test T, which tells classes apart rather than guessing one mechanism: timestep ×0.5, hyperdiffusion ×4, and the mode's horizontal roughness.
+
+**Ruled out.**
+- The lateral relaxation settings as the cause of the onset (Q0 vs Q1: same onset).
+- The torch backend. Q0n and Q0t diverge at the same 7.45 h, and their difference is round-off amplified by the mode.
+- (a) An unstable flow at the start. At t+0.25 h round the mode, eta/f ≥ 0.66, Ri ≥ 1.59 and N2 > 0 at every level, and no point in the domain has Ri < 0.25 at L00–L18.
+- (b) The sponge base. With 8 and 3 sponge levels the onset stays at 4.0–4.5 h in the same place. With 8 levels it moves up to the lid, not down with the sponge base.
+- (e) Missing vertical dissipation, and vertical mixing generally. With Ri_c 1.0, and with mixing off, the onset is unchanged (4.00–4.25 h at r77 c88; test S).
+
+---
+
 
 # FIXED
 

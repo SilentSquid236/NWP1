@@ -24,17 +24,22 @@ measured rather than assumed (see docs/RESEARCH_LOG.md, 2026-09-02):
 Measured on the idealised equivalent: no filter 1/12 h, filter only 11/12 h,
 filter then rebalance 12/12 h.
 
-WHAT DEPENDS ON HRRR, AND WHAT DOES NOT
+WHAT THE FORECAST IS BUILT FROM (since 2026-09-22)
 
-  initial conditions   HRRR, at cold start. Once DA cycling exists this
-                       becomes our own previous forecast corrected by
-                       observations, and HRRR is only a first guess.
-  boundary conditions  HRRR, permanently. A bounded domain must be told what
-                       arrives at its edges every timestep. Unavoidable
-                       without going global; every operational regional model
-                       works this way.
-  verification truth   NEVER HRRR. Observations only -- ASOS, mesonets,
-                       radiosondes.
+  initial conditions   OBSERVATIONS valid at the cycle time (src/analysis/,
+                       written by src/ingest_obs.py as obs_analysis_f00.npz).
+                       Where soundings are missing, the upper air is this
+                       model's previous forecast. No HRRR.
+  boundary conditions  the initial analysis, HELD FIXED for the whole run.
+                       Nothing observed after the cycle time may enter, so
+                       there is nothing else to relax toward. A single
+                       driving frame is exactly that: BoundaryDriver returns
+                       it at every time.
+  verification truth   observations only, after the forecast window closes.
+
+  --source hrrr        the old path (live_hrrr_f*.npz from ingest_hrrr.py,
+                       hourly HRRR analyses at the edges) is still readable,
+                       as a labelled baseline and nothing more.
 
 The forecast in between is ours: our equations, our numerics, our errors.
 """
@@ -69,6 +74,7 @@ from grid import CGrid
 from vertical import PressureLevels, theta_from_T, T_from_theta
 from sigma import SigmaLevels
 from primitive_sigma import PrimitiveSigma
+from backend import xp_of, to_numpy
 from interpolate import pressure_to_sigma, surface_pressure_from_heights
 from initialization import filter_initial_state
 from boundaries import DaviesRelaxation, BoundaryDriver
@@ -79,10 +85,37 @@ from subgrid import StochasticPerturbation, balance_initial_state
 # HRRR state -> model state
 # ---------------------------------------------------------------------------
 
+FEATURE_KEYS = ("features", "hrrr_features")
+
+
 def load_state(path):
-    """Load one ingested HRRR field set (.npz)."""
+    """
+    Load one ingested field set (.npz): an observation analysis written by
+    src/ingest_obs.py (key "features") or an HRRR frame (key "hrrr_features").
+    """
     z = np.load(path, allow_pickle=False)
-    return z["hrrr_features"], {k: z[k] for k in z.files if k != "hrrr_features"}
+    key = next((k for k in FEATURE_KEYS if k in z.files), None)
+    if key is None:
+        raise KeyError(f"{path} has none of {FEATURE_KEYS}; it has {z.files}")
+    return z[key], {k: z[k] for k in z.files if k not in FEATURE_KEYS}
+
+
+def driving_frames(run_dir):
+    """
+    The frames for a run, observation analysis first.
+
+    An observation run has ONE frame, obs_analysis_f00.npz, and so frozen
+    boundaries; an HRRR run has live_hrrr_f00..fNN. A directory holding both
+    is refused -- which source drove a forecast must never be a guess.
+    """
+    run_dir = Path(run_dir)
+    key = lambda q: int(q.stem.split("_f")[-1])
+    obs = sorted(run_dir.glob("obs_analysis_f*.npz"), key=key)
+    hrrr = sorted(run_dir.glob("live_hrrr_f*.npz"), key=key)
+    if obs and hrrr:
+        raise SystemExit(f"{run_dir} holds both observation and HRRR frames; "
+                         f"refusing to guess which drives the run")
+    return (obs, "observations") if obs else (hrrr, "hrrr")
 
 
 def hrrr_channels(fields, channels=None):
@@ -190,35 +223,56 @@ class Relaxation3D:
     def __init__(self, grid, width=10, alpha_max=1.0, profile="cosine"):
         self.inner = DaviesRelaxation(grid, width, alpha_max, profile)
         self.alpha = self.inner.alpha[None, :, :]
+        self.alpha2d = self.alpha[0]          # one array, so torch caches it once
         self.width = width
 
     def apply(self, model, ext):
-        a = self.alpha
+        # Backend-neutral: for torch the weights and the driving state are
+        # converted (and cached) so a NumPy array never meets a tensor.
+        xp = xp_of(model.u)
+        a = xp.asarray(self.alpha)
         if "u" in ext:
-            model.u += a * (ext["u"] - model.u)
+            model.u += a * (xp.asarray(ext["u"]) - model.u)
         if "v" in ext:
-            model.v += a * (ext["v"] - model.v)
+            model.v += a * (xp.asarray(ext["v"]) - model.v)
         if "theta" in ext:
-            model.theta += a * (ext["theta"] - model.theta)
+            model.theta += a * (xp.asarray(ext["theta"]) - model.theta)
         # Surface pressure is PROGNOSTIC in the sigma core, so it has to be
         # relaxed at the edges too. Leaving it free while relaxing the wind
         # drives the boundary column toward a mass field the incoming flow
         # does not support.
         if "pi" in ext:
-            model.pi += self.alpha[0] * (ext["pi"] - model.pi)
+            model.pi += xp.asarray(self.alpha2d) * (xp.asarray(ext["pi"]) - model.pi)
 
     @property
     def interior_fraction(self):
         return self.inner.interior_fraction
 
 
+U_CEILING = 150.0     # m/s -- the range limit on observed wind; beyond it
+                      # the state is not weather and the run is over (P-52)
+
+
 def run_forecast(model, driver, relax, duration, dt=None, output_every=None,
-                 progress=True):
+                 progress=True, deadline_s=None, info=None):
     """
     Integrate with boundary relaxation, collecting output states.
 
-    Returns a list of (valid_seconds, u, v, theta) snapshots.
+    Returns a list of (valid_seconds, u, v, theta, pi) snapshots.
+
+    Two ways to stop early, both recorded in `info["stopped"]`:
+
+      deadline  wall clock since the call exceeded `deadline_s`. The hours
+                already reached are kept, so a cut-short run can still be
+                archived and verified (the 1.5 h budget, prompt 98).
+      diverged  checked at the progress cadence, not only on the hour: a
+                non-finite value or |u| > U_CEILING. P-52 was a run that kept
+                refining a meaningless state for a quarter of an hour; with a
+                fixed dt it would not slow down, but it would still spend the
+                rest of its budget on nothing.
     """
+    info = {} if info is None else info
+    info["stopped"] = "completed"
     dt = dt or model.max_dt()
     n_steps = int(np.ceil(duration / dt))
     dt = duration / n_steps
@@ -244,10 +298,35 @@ def run_forecast(model, driver, relax, duration, dt=None, output_every=None,
     # minutes to go".
     t_start = time.time()
     every_n = max(1, n_steps // 200)
+    xp = xp_of(model.u)
+    torch_run = xp.name == "torch"
 
     for k in range(n_steps):
         model.step(dt)
         relax.apply(model, driver.at(model.time))
+
+        if k % every_n == 0:
+            # Both components: the P-56 runaways are in v first, and a guard
+            # on u alone let one reach 91 m/s unreported (P-57).
+            if torch_run:
+                finite = bool(xp.isfinite(model.u).all()) and bool(xp.isfinite(model.v).all())
+                umax = float(max(xp.abs(model.u).max(), xp.abs(model.v).max())) \
+                    if finite else float("inf")
+            else:
+                umax = float(max(np.nanmax(np.abs(model.u)),
+                                 np.nanmax(np.abs(model.v))))
+                finite = np.isfinite(model.u).all() and np.isfinite(model.v).all()
+            if not finite or umax > U_CEILING:
+                print(f"\n  DIVERGED at t+{model.time/3600:.2f} h "
+                      f"(max|u,v| {umax:.0f} m/s) -- stopping", flush=True)
+                info["stopped"] = f"diverged at {model.time/3600:.2f} h"
+                break
+            if deadline_s is not None and time.time() - t_start > deadline_s:
+                print(f"\n  DEADLINE reached at t+{model.time/3600:.2f} h "
+                      f"after {(time.time()-t_start)/60:.1f} min -- stopping",
+                      flush=True)
+                info["stopped"] = f"deadline at {model.time/3600:.2f} h"
+                break
 
         if progress and k and k % every_n == 0:
             el = time.time() - t_start
@@ -261,20 +340,25 @@ def run_forecast(model, driver, relax, duration, dt=None, output_every=None,
 
         if next_i < len(targets) and model.time >= targets[next_i] - 1e-9:
             next_i += 1
-            snapshots.append((model.time, model.u.copy(), model.v.copy(),
-                              model.theta.copy(), model.pi.copy()))
+            snap = [to_numpy(a) if torch_run else a.copy()
+                    for a in (model.u, model.v, model.theta, model.pi)]
+            snapshots.append((model.time, *snap))
             if progress:
                 print(" " * 96, end="\r")      # clear the progress line
-                ps = model.surface_pressure
+                su, sv, sth, spi = snap
+                ps = model.lev.p_top + spi
                 print(f"  +{model.time/3600:5.1f} h  "
-                      f"max|u| {np.abs(model.u).max():6.1f} m/s  "
-                      f"theta {model.theta.min():.1f}-{model.theta.max():.1f} K  "
+                      f"max|u| {np.abs(su).max():6.1f} m/s  "
+                      f"max|v| {np.abs(sv).max():6.1f}  "
+                      f"theta {sth.min():.1f}-{sth.max():.1f} K  "
                       f"p_s {ps.min()/100:.0f}-{ps.max()/100:.0f} hPa  "
-                      f"max|sigma_dot| {np.abs(model.sigma_dot()).max():.2e}")
-            if not np.isfinite(model.u).all():
+                      f"max|sigma_dot| {float(xp.abs(model.sigma_dot()).max()):.2e}")
+            if not (np.isfinite(snap[0]).all() and np.isfinite(snap[1]).all()):
                 print("  FORECAST DIVERGED -- stopping")
+                info["stopped"] = f"diverged at {model.time/3600:.2f} h"
                 break
 
+    info["wall_s"] = time.time() - t_start
     return snapshots
 
 
@@ -291,6 +375,27 @@ def main():
     p.add_argument("--output-every", type=float, default=1.0,
                    help="Snapshot interval in hours")
     p.add_argument("--relax-width", type=int, default=10)
+    p.add_argument("--backend", choices=("numpy", "torch"), default="numpy",
+                   help="array backend for the core: numpy (one core) or "
+                        "torch (multi-threaded CPU, same float64 physics)")
+    p.add_argument("--threads", type=int, default=8,
+                   help="torch threads (the Xeon's measured sweet spot is ~8)")
+    p.add_argument("--relax-alpha", type=float, default=1.0,
+                   help="Relaxation weight per step at the outer edge "
+                        "(the cosine ramp scales from it); 0 < alpha <= 1")
+    p.add_argument("--dt-factor", type=float, default=1.0,
+                   help="Multiply the CFL timestep (P-60 test T; must be in (0, 1])")
+    p.add_argument("--hyper-factor", type=float, default=1.0,
+                   help="Multiply the recommended hyperdiffusion coefficient "
+                        "(P-60 test T)")
+    p.add_argument("--ri-crit", type=float, default=None,
+                   help="Richardson number below which vertical mixing acts "
+                        "(default: turbulence.RI_CRIT, 0.25; P-60 test S)")
+    p.add_argument("--no-mixing", action="store_true",
+                   help="Turn off turbulent vertical mixing (diagnosis only)")
+    p.add_argument("--sponge-levels", type=int, default=5,
+                   help="Levels below the lid in the wind sponge (P-60 test R); "
+                        "the default of 5 is the measured choice")
     p.add_argument("--stochastic", action="store_true",
                    help="Enable SPPT-style tendency perturbations")
     p.add_argument("--seed", type=int, default=None)
@@ -299,19 +404,26 @@ def main():
                         "almost certainly blow up; useful only for showing "
                         "why the balancing step exists.")
     p.add_argument("--out", default=None, help="Where to write forecast .npz")
+    p.add_argument("--deadline-min", type=float, default=None,
+                   help="Stop integrating after this many minutes of wall "
+                        "clock and write the hours reached (cycle budget)")
     args = p.parse_args()
 
     run_dir = Path(args.run_dir)
-    files = sorted(run_dir.glob("live_hrrr_f*.npz"),
-                   key=lambda q: int(q.stem.split("_f")[-1]))
+    files, source = driving_frames(run_dir)
     if not files:
-        print(f"No live_hrrr_f*.npz in {run_dir}. Run ingest_hrrr.py first.")
+        print(f"No obs_analysis_f*.npz or live_hrrr_f*.npz in {run_dir}. "
+              f"Run src/ingest_obs.py (or ingest_hrrr.py) first.")
         return 1
 
     print("NWP forecast")
     print(config.describe())
     print(resources.describe(RESOURCE_PLAN))
-    print(f"  driving frames : {len(files)} from {run_dir}\n")
+    print(f"  driving frames : {len(files)} from {run_dir} ({source})")
+    if len(files) == 1:
+        print("  boundaries     : held at the initial state for the whole run "
+              "(nothing observed later may enter)")
+    print()
 
     levels = PressureLevels(config.PRESSURE_LEVELS)
     # Number of SIGMA levels, deliberately the same count as the analysis has
@@ -354,7 +466,26 @@ def main():
                                        length_scale=300e3, seed=args.seed)
         print(f"  stochastic     : {stoch}")
 
-    model = PrimitiveSigma(grid, lev, terrain=terrain, stochastic=stoch)
+    if not 0 <= args.sponge_levels < lev.nz:
+        raise SystemExit(f"--sponge-levels {args.sponge_levels} is outside 0..{lev.nz - 1}")
+    if args.ri_crit is not None and not args.ri_crit > 0:
+        raise SystemExit(f"--ri-crit {args.ri_crit} must be positive")
+    if not 0.0 < args.dt_factor <= 1.0:
+        raise SystemExit(f"--dt-factor {args.dt_factor} is outside (0, 1]")
+    if not args.hyper_factor >= 0.0:
+        raise SystemExit(f"--hyper-factor {args.hyper_factor} is negative")
+    hyper = None
+    if args.hyper_factor != 1.0:
+        from subgrid import recommended_hyper_coeff
+        hyper = args.hyper_factor * recommended_hyper_coeff(grid)
+    model = PrimitiveSigma(grid, lev, terrain=terrain, stochastic=stoch,
+                           sponge_levels=args.sponge_levels, hyper=hyper,
+                           ri_crit=args.ri_crit, mixing=not args.no_mixing)
+    if args.hyper_factor != 1.0:
+        print(f"  hyperdiffusion : x{args.hyper_factor:g} ({model.hyper:.3g})")
+    print(f"  mixing         : "
+          + ("off" if args.no_mixing else f"on below Ri {model.ri_crit:g}"))
+    print(f"  sponge         : {args.sponge_levels} levels below the lid")
 
     # PREPARE THE INITIAL STATE. Order measured, not assumed.
     #
@@ -386,14 +517,36 @@ def main():
           f"p_s {ps.min()/100:.0f}-{ps.max()/100:.0f} hPa, "
           f"max|sigma_dot| {np.abs(model.sigma_dot()).max():.2e} 1/s")
 
-    relax = Relaxation3D(grid, width=args.relax_width)
+    if not 0.0 < args.relax_alpha <= 1.0:
+        raise SystemExit(f"--relax-alpha {args.relax_alpha} is outside (0, 1]")
+    relax = Relaxation3D(grid, width=args.relax_width,
+                         alpha_max=args.relax_alpha)
     print(f"  relaxation     : width {args.relax_width}, "
+          f"alpha {args.relax_alpha:g} at the edge, "
           f"interior {relax.interior_fraction:.0%}")
     print(f"  timestep       : {model.max_dt():.1f} s "
           f"(external wave ~290 m/s sets this)\n")
 
-    snaps = run_forecast(model, driver, relax, args.hours * 3600,
-                         output_every=args.output_every * 3600)
+    if args.backend == "torch":
+        n = model.to_backend("torch", threads=args.threads)
+        print(f"  backend        : torch, {n} threads (float64)\n")
+    else:
+        print("  backend        : numpy (one core)\n")
+
+    info = {}
+    dt_run = None
+    if args.dt_factor != 1.0:
+        dt_run = args.dt_factor * model.max_dt()
+        print(f"  timestep used  : {dt_run:.1f} s (x{args.dt_factor:g})\n")
+    snaps = run_forecast(model, driver, relax, args.hours * 3600, dt=dt_run,
+                         output_every=args.output_every * 3600,
+                         deadline_s=(None if args.deadline_min is None
+                                     else 60.0 * args.deadline_min),
+                         info=info)
+    if not snaps:
+        print(f"\nNo forecast hour completed ({info.get('stopped')}); "
+              f"nothing written.")
+        return 1
 
     out = Path(args.out or (run_dir / "forecast.npz"))
     np.savez_compressed(
@@ -407,11 +560,20 @@ def main():
         p_top=lev.p_top,
         terrain=terrain,
         lat=meta0.get("lat"), lon=meta0.get("lon"),
+        run_time=meta0.get("run_time", np.array("")),
+        source=np.array(source),
+        hours_requested=args.hours,
+        stopped=np.array(info.get("stopped", "")),
+        wall_s=info.get("wall_s", np.nan),
     )
-    print(f"\nWrote {len(snaps)} snapshots -> {out}")
-    print("Next: verify against observations "
-          "(src/verification) and archive the matches.")
-    return 0
+    print(f"\nWrote {len(snaps)} snapshots -> {out}  ({info.get('stopped')}, "
+          f"{info.get('wall_s', float('nan'))/60:.1f} min)")
+    print("Next: verify once the forecast window has closed "
+          "(src/verify_pending.py).")
+    stopped = info.get("stopped", "")
+    # Output is written in every case; the code says how the run ended, so the
+    # cycle script's log shows a cut-short or diverged run as such.
+    return 0 if stopped == "completed" else (2 if stopped.startswith("deadline") else 3)
 
 
 if __name__ == "__main__":

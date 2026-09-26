@@ -9,9 +9,9 @@ description: Use when moving NWP1 work between places — the GitHub repository,
 
 | where | holds | reached by |
 |---|---|---|
-| GitHub `SilentSquid236/NWP1` | code, `docs/`, `tools/`, `skills/` — **source of truth** | git on Windows; `tools/pull.sh` on the server |
+| GitHub `SilentSquid236/NWP1` | code, `docs/`, `tools/`, `skills/` — **source of truth** | git on Windows; `git pull` (or `tools/pull.sh`) on the server |
 | Windows desktop `Desktop\NWP\NWP_Deployment_Package` | the clone with push credentials | git |
-| shared server (data5 / the Xeon) | the working copy that runs, plus `data/` | `tools/pull.sh` (curl; **no git there**) |
+| shared server (the Xeon), `/data5/pierce/AINWP` | the working copy that runs, and `data/` inside it (git-ignored) | `git pull` — git is on the server since 2026-09-22; `tools/pull.sh` (curl) is the fallback |
 
 `data/` exists only on the server and is **never overwritten** by any sync.
 
@@ -35,6 +35,60 @@ is fine.
 
 ## Getting the repository onto the server
 
+git has been on the server since 2026-09-22 (reported by the human; before
+that it was absent and `tools/pull.sh` was the only route).
+
+**Server layout (since 2026-09-22, late).** Run git in **`/data5/pierce/AINWP`**,
+a fresh clone: `origin` = `https://github.com/SilentSquid236/NWP1.git`, `main`
+tracking `origin/main`, git 2.52.0. Its data root is `/data5/pierce/AINWP/data`
+(git-ignored, and the default when `NWP_DATA_ROOT` is unset, so cron agrees).
+The previous root, `/data5/pierce/NWP`, is kept untouched as a record. Its
+archive is inside the nested `NWP_Deployment_Package/data`, which has its own
+`.git`. **Never delete, move or `git clean` anything there.** The first attempt
+to rebuild git ran in an empty `AINWP` and listed every tracked file as
+"deleted". That was the index describing files that were not there yet, not a
+loss: `git checkout -- .` in an empty folder fills it in.
+
+Kept for any copy that has no usable `.git` — convert it **in place, once**,
+never by deleting or re-cloning the directory:
+
+    git --version                  # record it; the recipe below needs >= 1.8
+    git init
+    git remote add origin https://github.com/SilentSquid236/NWP1.git
+    git fetch origin main
+    git reset origin/main          # moves the index only; no file is touched
+    git branch -M main
+    git branch --set-upstream-to=origin/main main
+    git status                     # read this list before the next line
+    git checkout -- .              # overwrites tracked files that differ
+    python tools/manifest.py --check
+
+After that, an update is
+
+    git pull --ff-only
+    python tools/manifest.py --check
+
+The server **only pulls**. GitHub stays the source of truth and pushes happen
+from Windows. `git fetch` is not rate-limited by `netpolicy.py`; the repository
+is small (the 2026-09-22 zip is 0.67 MB), so that is within the bandwidth rule,
+but do not fetch large refs or LFS content this way.
+
+`data/` is in `.gitignore`, so git neither tracks nor overwrites it — and for
+exactly that reason **`git clean -x` and `git clean -X` delete it, and
+`git stash --all` sweeps it out of the working tree. Never run them on the
+server.** Plain `git clean -f` (no `-x`)
+leaves ignored files alone, but there is no reason to run it there either.
+
+The conversion recipe has never been run: the server root turned out to be a
+checkout already. Treat it as written, not exercised. The untracked copies are
+unprotected against `git clean -f -d`, which would remove `NWP1-main/` and
+`nwp.tar.gz` (a nested repository like `NWP_Deployment_Package/` survives a
+single `-f` but not `-ff`). There is no reason to run `git clean` on the
+server at all.
+
+`tools/pull.sh` still works and is the fallback if git is unavailable or the
+conversion has not been done:
+
     bash tools/pull.sh main --dry
     bash tools/pull.sh main
     python tools/manifest.py --check
@@ -57,5 +111,9 @@ touches `data/`.
 - curl-based pulls only add and overwrite — a file deleted upstream survives
   forever. `manifest.py --check` reports it as EXTRA.
 - Work never pushed at all, so a correct pull delivers a stale tree.
+- `git clean -x` or `-X` on the server deletes `data/` (and `git stash --all`
+  removes it from the tree): it is ignored, and ignored is not protected.
+- On the server the archive is inside `NWP_Deployment_Package/`, which looks
+  like a nesting accident. Tidying it away deletes the archive.
 
 None of these raises an error. Always finish with `tools/manifest.py --check`.

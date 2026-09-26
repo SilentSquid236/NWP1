@@ -5,7 +5,11 @@ Everything is driven by environment variables so the exact same code runs
 unchanged in WSL and on the Xeon server. Set NWP_DATA_ROOT per machine:
 
     WSL:    export NWP_DATA_ROOT=/mnt/c/Users/Epier/Desktop/NWP/NWP_Deployment_Package/data
-    Server: export NWP_DATA_ROOT=/data5/pierce/Data5/NWP/data
+    Server: export NWP_DATA_ROOT=/data5/pierce/AINWP/data
+            (since 2026-09-22; the old archive stays in
+            /data5/pierce/NWP/NWP_Deployment_Package/data -- do not remove it).
+            It equals the default below, so cron, which has no ~/.bashrc,
+            writes to the same place.
 
 If unset, it defaults to ./data relative to this file.
 """
