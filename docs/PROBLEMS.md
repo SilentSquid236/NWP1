@@ -502,7 +502,9 @@ service, which is P-06 and is where this project's defects have always been.
 
 **Test R (2026-09-26).** The mode is in the Maine box from hour 1. It spans the lid (L00) to L04, where the box's strongest wind (32.6 m/s) is at the lid itself, and its e-folding shortens from 46 to 17 min over hours 0.5–4. It is still in the linear range, so the flow under it becomes more unstable over those hours.
 
-**Candidates.** (c) The rigid 200 hPa lid cutting through the jet. Not tested; it needs predictions after the next measurement. Next measurement: stability (Ri, N2, eta/f) round the mode at 1–4 h (`tools/mode_structure.py --at`). If none of them goes unstable by 4 h, the mode is numerical.
+**Measurement R2 (1–4 h).** Round the mode, the minimum Ri at L03/L04 falls from 0.91 to 0.44, 0.30 and 0.28. N2 stays positive and eta/f above 0. Domain points with Ri < 0.25 at L03/L04 go from 0 to 19 to 579 by 4 h, just before the runaway. Mixing is exactly zero for Ri ≥ 0.25, so the sharpening layer has no vertical dissipation.
+
+**Candidates.** (c) The rigid 200 hPa lid cutting through the jet. It cannot be tested cleanly, because the analysis stops at 200 hPa. (e) No vertical dissipation in a sharpening shear layer. Test S: `--ri-crit 1.0` (S1) against `--no-mixing` (S0).
 
 **Ruled out.**
 - The lateral relaxation settings as the cause of the onset (Q0 vs Q1: same onset).

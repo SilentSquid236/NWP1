@@ -383,6 +383,11 @@ def main():
     p.add_argument("--relax-alpha", type=float, default=1.0,
                    help="Relaxation weight per step at the outer edge "
                         "(the cosine ramp scales from it); 0 < alpha <= 1")
+    p.add_argument("--ri-crit", type=float, default=None,
+                   help="Richardson number below which vertical mixing acts "
+                        "(default: turbulence.RI_CRIT, 0.25; P-60 test S)")
+    p.add_argument("--no-mixing", action="store_true",
+                   help="Turn off turbulent vertical mixing (diagnosis only)")
     p.add_argument("--sponge-levels", type=int, default=5,
                    help="Levels below the lid in the wind sponge (P-60 test R); "
                         "the default of 5 is the measured choice")
@@ -458,8 +463,13 @@ def main():
 
     if not 0 <= args.sponge_levels < lev.nz:
         raise SystemExit(f"--sponge-levels {args.sponge_levels} is outside 0..{lev.nz - 1}")
+    if args.ri_crit is not None and not args.ri_crit > 0:
+        raise SystemExit(f"--ri-crit {args.ri_crit} must be positive")
     model = PrimitiveSigma(grid, lev, terrain=terrain, stochastic=stoch,
-                           sponge_levels=args.sponge_levels)
+                           sponge_levels=args.sponge_levels,
+                           ri_crit=args.ri_crit, mixing=not args.no_mixing)
+    print(f"  mixing         : "
+          + ("off" if args.no_mixing else f"on below Ri {model.ri_crit:g}"))
     print(f"  sponge         : {args.sponge_levels} levels below the lid")
 
     # PREPARE THE INITIAL STATE. Order measured, not assumed.

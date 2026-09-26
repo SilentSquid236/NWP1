@@ -2843,6 +2843,63 @@ testing a third** (the rule this project runs on).
    candidate (c), the rigid lid under a jet. It is **not tested yet**.
    It gets written predictions after the measurement in item 1.
 
+**Measurement R2 (prompt 135): stability round the mode at 1–4 h.** The
+box is ± 8 cells round r73 c87, Q0n. Minimum Ri at each interface:
+
+| Interface | 1 h | 2 h | 3 h | 4 h |
+|---|---|---|---|---|
+| L02/L03 | 1.12 | 0.92 | 0.90 | 0.90 |
+| L03/L04 | 0.91 | 0.44 | 0.30 | **0.28** |
+| L04/L05 | 1.62 | 0.95 | 0.58 | 0.39 |
+| L05/L06 | 1.71 | 1.54 | 1.24 | 1.47 |
+
+- N2 in the box stays at or above 5.8e-5 s⁻² at every level and every
+  hour. eta/f stays above 0 at L00–L06 (its box minimum is 0.32–0.87).
+- Over the whole domain, points with Ri < 0.25 at L03/L04 number 0, 0,
+  19 and **579** at 1, 2, 3 and 4 h. The runaway begins at 4.0–4.5 h.
+
+**Scored: neither branch.** The prediction assigned Ri < 0.25 to a
+physical instability and Ri > 1 to a numerical mode. The result, a fall
+from 0.91 to 0.28, lands in the gap between them, which the prediction
+left unassigned. It was not sharp enough.
+
+What it does show: the jet's lower flank (L03–L05) sharpens through the
+same 4 h in which the growth speeds up. **The model has no vertical
+dissipation there.** `eddy_diffusivity` is exactly zero for Ri ≥ 0.25,
+and a desktop check confirms it: with the default settings a 1 h run is
+bit-identical with mixing on and off. Horizontal hyperdiffusion is the
+only thing opposing the sharpening, until Ri crosses 0.25 and mixing
+switches on at up to l²|S|. That happens across hundreds of points at
+3–4 h, just before the runaway.
+
+Candidate (c), the lid, cannot be tested cleanly: the analysis stops at
+200 hPa, the lid itself, so raising the lid would need extrapolated data.
+
+**Candidate (e): no vertical dissipation in a sharpening shear layer.
+Test S (predictions first).** Q case, default zone and sponge, torch,
+8 h. Two new options, `--ri-crit` and `--no-mixing`; the default path
+is bit-identical.
+
+- **S1, `--ri-crit 1.0`.** Mixing acts wherever Ri < 1, weighted
+  (1 − Ri)², so it is weak at 0.5–1.
+- **S0, `--no-mixing`.** This is a control.
+
+Predictions. Onset means the first 15-minute interval with more than 20
+points changing by more than 5 m/s: 4.00–4.25 h in Q0, 4.25–4.50 h in R8
+and R3.
+
+- If (e): S1's box minimum Ri at L03/L04 stays at or above 0.5 through
+  4 h, and S1's onset is after 5.0 h or absent within 8 h. (e) is
+  refuted if S1's onset falls in 4.0–4.75 h.
+- S0 is identical to Q0 until mixing first acts (about 3 h), and its
+  onset stays in 4.0–4.75 h. If S0's onset moves out of that range, the
+  switch-on of mixing below 0.25 is part of the trigger.
+
+If S1 holds, an Ri_c of 1 is still not adopted from one case. It needs
+the 06Z case and a second jet case, and a stable-regime mixing function
+chosen for physical reasons rather than a threshold tuned to this
+failure.
+
 
 
 ---
