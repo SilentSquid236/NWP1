@@ -34,7 +34,7 @@ from primitive_sigma import PrimitiveSigma
 from boundaries import BoundaryDriver
 from forecast import (hrrr_channels, hrrr_to_sigma_state, load_terrain,
                       build_grid, Relaxation3D, run_forecast,
-                      state_to_boundary, load_state)
+                      state_to_boundary, load_state, stabilise_frame)
 
 results = []
 
@@ -359,6 +359,69 @@ def test_final_output_time_is_written():
     report("the final output time is written", ok,
            f"{len(snaps)} snapshots, last at {last:.6f} h")
 
+# ---------------------------------------------------------------------------
+def _superadiabatic_edge_frame():
+    """A stable synthetic state, plus one with a heated surface layer at the edges."""
+    terrain = synthetic_terrain()
+    pi, u, v, th = hrrr_to_sigma_state(synthetic_hrrr(), LEV, terrain)
+    hot = th.copy()
+    edge = np.zeros((NY, NX), bool)
+    edge[:6, :] = edge[-6:, :] = True
+    edge[:, :6] = edge[:, -6:] = True
+    hot[-1][edge] += 4.0          # index -1 is the lowest level
+    hot[-2][edge] += 2.0
+    return pi, u, v, th, hot
+
+
+def test_stable_frame_is_unchanged():
+    """A frame with no instability must come back bit-identical (the jet case)."""
+    pi, u, v, th = hrrr_to_sigma_state(synthetic_hrrr(), LEV, synthetic_terrain())
+    th2, u2, v2, info = stabilise_frame(th, u, v, pi, LEV)
+    ok = (info["unstable_before"] == 0 and info["sweeps"] == 0
+          and np.array_equal(th2, th) and np.array_equal(u2, u)
+          and np.array_equal(v2, v))
+    report("a stable boundary frame is left bit-identical", ok,
+           f"unstable before {info['unstable_before']:.1e}, sweeps {info['sweeps']}")
+
+
+def test_relaxation_toward_stabilised_frame_stays_stable():
+    """
+    P-63. Relaxing a stable model state toward an UNSTABLE frame re-creates
+    instability at the edges on every step; toward the stabilised frame it
+    cannot, because a weighted mean of two stable columns is stable. The
+    frame adjustment must also conserve each column's mass-weighted theta.
+    """
+    from convection import unstable_fraction
+    gr = build_grid(synthetic_hrrr(), LEVELS)
+    pi, u, v, th, hot = _superadiabatic_edge_frame()
+    fixed, fu, fv, info = stabilise_frame(hot, u, v, pi, LEV)
+
+    dm = np.asarray(LEV.dsigma).reshape(-1, 1, 1) * pi[None]
+    drift = np.abs((dm * fixed).sum(0) - (dm * hot).sum(0)).max() / (dm * hot).sum(0).max()
+
+    # The P-63 cycle: the model's own adjustment has just mixed the edge
+    # columns to neutral (`fixed`), then one relaxation step pulls them
+    # toward the frame. Also start from the plain stable state (`th`): a
+    # weighted mean of two stable columns must stay stable.
+    relax = Relaxation3D(gr, width=8, alpha_max=0.1)
+    out = {}
+    for name, start, frame in (("raw", fixed, hot), ("stabilised", fixed, fixed),
+                               ("stabilised from stable", th, fixed)):
+        m = PrimitiveSigma(gr, LEV, terrain=synthetic_terrain())
+        m.pi, m.u, m.v, m.theta = pi.copy(), u.copy(), v.copy(), start.copy()
+        relax.apply(m, state_to_boundary(u, v, frame, pi))
+        out[name] = unstable_fraction(m.theta)
+    ok = (info["unstable_before"] > 0 and info["unstable_after"] == 0
+          and out["raw"] > 0 and out["stabilised"] == 0
+          and out["stabilised from stable"] == 0 and drift < 1e-12)
+    report("relaxing toward the stabilised frame leaves the edges stable", ok,
+           f"frame unstable {info['unstable_before']:.2e} -> 0 in "
+           f"{info['sweeps']} sweeps; after one relaxation of the adjusted "
+           f"edge: raw frame {out['raw']:.2e}, stabilised {out['stabilised']:.1e} "
+           f"(from the stable state {out['stabilised from stable']:.1e}); "
+           f"column drift {drift:.1e}")
+
+
 if __name__ == "__main__":
     print("\nForecast driver integration\n" + "=" * 62)
     for fn in (test_channels_require_height,
@@ -372,7 +435,9 @@ if __name__ == "__main__":
                test_forecast_runs_and_stays_finite,
                test_boundaries_hold_edges_to_driver,
                test_npz_roundtrip,
-               test_final_output_time_is_written):
+               test_final_output_time_is_written,
+               test_stable_frame_is_unchanged,
+               test_relaxation_toward_stabilised_frame_stays_stable):
         try:
             fn()
         except Exception as e:

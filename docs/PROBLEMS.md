@@ -467,7 +467,7 @@ service, which is P-06 and is where this project's defects have always been.
 
 
 ## P-63 — Calm cases run 3.8x slower: the convective adjustment hits its 20-sweep cap every step
-**Category** H, C · **First seen** 2026-09-26 · **Status** OPEN
+**Category** H, C · **First seen** 2026-09-26 · **Status** OPEN (fix in, awaiting test AA)
 
 **Symptom.** At torch × 8, calm cases (06Z 2026-09-23, 18Z 2026-09-22) run about 3 steps/s; the jet case (12Z 2026-09-25) runs 11 steps/s. That holds with each run alone on a quiet server (test Y: 2.9 against 11.1) and with denormals flushed (3.0 against 11.2).
 
@@ -478,6 +478,10 @@ service, which is P-06 and is where this project's defects have always been.
 So the calm case never finishes adjusting within a step, and the instability is back at the next call. A sweep is two Python loops over 20 levels, several hundred small array operations. On a desktop test with 3 K noise the scheme does converge, but it needs 69 sweeps: mixing uncovers new unstable interfaces at segment edges. The cap of 20 is therefore not a guard but binding.
 
 **Candidates (test Z2, `tools/convection_check.py`).** (a) The relaxation re-imposes an unstable frozen boundary state after every step, so the adjustment fights it indefinitely. The fix would be to adjust the driving state once. (b) The interior instability needs more than 20 sweeps. The fix would be a converging algorithm, and a cheaper sweep.
+
+**Z2 result: (a).** In the calm 1 h state, all 1 436 unstable interfaces (7.08e-3) lie within 14 cells of the edge: 747, 470 and 219 at distances 0–4, 5–9 and 10–14, and none deeper. All of them are in the lowest two interfaces, and the largest violation is 0.471 K. The jet state has none. The run has one driving frame, the 18Z analysis, held for 24 h. Its afternoon superadiabatic surface layer is pulled back into the edge columns by the relaxation after every step. With a higher cap the adjustment converges in 30 sweeps, so the cap of 20 is too low for this state, but the state comes back every step.
+
+**Fix (awaiting test AA).** `stabilise_frame` in `src/forecast.py` adjusts each boundary frame once, to convergence, and returns a stable frame unchanged. `--raw-boundaries` gives the old behaviour. Regression tests: `test_stable_frame_is_unchanged` and `test_relaxation_toward_stabilised_frame_stays_stable` (`src/test_forecast.py`, 14/14). It is confirmed if AA1 runs at 8 steps/s or faster and its 1 h state has 0 unstable interfaces.
 
 **Ruled out.** Machine load and denormals (test Y).
 

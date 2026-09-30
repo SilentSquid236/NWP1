@@ -3401,6 +3401,71 @@ calm and jet 1 h states:
   comes first: adjusting the driving state once, or a converging and
   cheaper adjustment.
 
+**Measurement Z2 result (prompt 159; run by the AI directly on the server):
+all of the instability is in the relaxation zone.** The 1 h states from
+test Z, `tools/convection_check.py`, one thread:
+
+| Case | Unstable interfaces | Columns | Largest | By interface | By edge distance 0–4 / 5–9 / 10–14 / 15+ | Sweeps to converge |
+|---|---|---|---|---|---|---|
+| calm (18Z 2026-09-22) | 7.08e-3 (1 436 of 202 730) | 1 012 of 10 670 | 0.471 K | L18/19: 1 012, L17/18: 424 | 747 / 470 / 219 / **0** | 30 (the cap of 20 leaves 9.96e-4) |
+| jet (12Z 2026-09-25) | 0 | 0 | — | — | — | 0 |
+
+- **(a) holds, at 100 %** against the 80 % threshold: not one unstable
+  interface lies deeper than 14 cells. The count falls with distance from
+  the edge, as the relaxation weight does.
+- The second half of (b) is also true: with a higher cap the adjustment
+  converges, in 30 sweeps. So the cap of 20 is too low for this state, but
+  the state is re-created every step, so raising the cap would only make each
+  step more expensive.
+- **Mechanism.** The observation-only runs have one driving frame, the
+  analysis, held for the whole run. At 18Z that analysis carries an
+  afternoon superadiabatic surface layer. Every step the adjustment mixes
+  the edge columns to neutral, then the relaxation (weight up to 0.1 a step)
+  pulls them back toward the unstable frame. The instability is re-created
+  every step, for 24 hours, night included.
+- **A side effect this implies, not yet measured.** The same cycle is a heat
+  source. The relaxation restores the warm surface layer, the adjustment
+  mixes that heat upward, and it repeats every step. The relaxation zone
+  covers half the domain. So the cycle may contribute to the night warm
+  bias of P-59 (+6.2 °C at lead 17 in this case). That is a hypothesis for
+  test AA, not a finding.
+
+**Fix.** Each boundary frame gets the same adjustment the model applies,
+once, when the frame is built, run to convergence (`stabilise_frame` in
+`src/forecast.py`, up to 1 000 sweeps; it raises an error if the frame is
+still unstable). A frame that is already stable comes back unchanged,
+array for array. After the fix, a weighted mean of two stable columns
+(model and frame) is stable, so the relaxation can no longer create
+instability. `--raw-boundaries` restores the old behaviour for comparison.
+Two regression tests in `src/test_forecast.py` (14/14):
+
+- a stable frame is returned bit-identical;
+- relaxing an adjusted edge column toward the raw frame leaves 5.17e-2 of
+  interfaces unstable, and toward the stabilised frame 0. The frame
+  adjustment conserves each column's mass-weighted theta (drift 3e-16).
+
+**Test AA (predictions first).** Torch × 8, new defaults, on the server.
+
+- **AA1, calm (18Z 2026-09-22), 24 h, the fix on**, compared with X1 (same
+  settings, fix off; archive `x1b`):
+  1. The log reports 1 of 1 frames unstable, 1e-3 to 2e-2 of interfaces,
+     converged in 100 sweeps or fewer.
+  2. At least 8 steps/s over the run (X1: about 3). Without the adjustment
+     cost, test Z's calm hour ran at about 10.
+  3. `convection_check` on the 1 h snapshot finds exactly 0 unstable
+     interfaces.
+  4. Temperature and wind RMSE are not worse than X1 by more than 0.2 at any
+     lead from 1 to 23.
+  5. The P-59 side effect: mean temperature bias at leads 12–20, AA1 minus X1.
+     A decrease of 0.2 K or more supports the heat-source hypothesis. A
+     change within ±0.2 K is inconclusive, and an increase of 0.2 K or more
+     refutes it.
+- **AA2, jet (12Z 2026-09-25), 1 h, the fix on and `--raw-boundaries`:** the
+  log reports 0 of 1 frames unstable, and the two outputs are bit-identical.
+- **AA3, calm (06Z 2026-09-23), 1 h, the fix on:** at least 8 steps/s. If
+  slower, `convection_check` shows whether it has an interior instability,
+  which (b) would then have to fix.
+
 
 
 ---

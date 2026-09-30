@@ -79,6 +79,7 @@ from interpolate import pressure_to_sigma, surface_pressure_from_heights
 from initialization import filter_initial_state
 from boundaries import DaviesRelaxation, BoundaryDriver
 from subgrid import StochasticPerturbation, balance_initial_state
+from convection import dry_convective_adjustment, unstable_fraction
 
 
 # ---------------------------------------------------------------------------
@@ -197,6 +198,30 @@ def build_grid(fields, levels, domain=None):
     beta = 2 * omega * np.cos(np.radians(lat0)) / 6_371_000.0
 
     return CGrid(nx, ny, dx, dy, f0=f0, beta=beta, edge_mode="replicate")
+
+
+FRAME_MAX_SWEEPS = 1000   # a one-off per frame, so run to convergence
+
+
+def stabilise_frame(theta, u, v, pi, lev):
+    """
+    Remove static instability from a boundary frame, once (P-63).
+
+    Uses the same mass-weighted adjustment the model applies after every
+    step, but run to convergence. Returns (theta, u, v, info); a frame that is
+    already stable comes back unchanged. Raises if it does not converge,
+    because an edge that stays unstable would bring P-63 straight back.
+    """
+    info = {"unstable_before": unstable_fraction(theta), "sweeps": 0,
+            "unstable_after": 0.0}
+    if info["unstable_before"] == 0:
+        return theta, u, v, info
+    theta, u, v, info = dry_convective_adjustment(
+        theta, u, v, pi, lev, max_sweeps=FRAME_MAX_SWEEPS)
+    if info["unstable_after"] > 0:
+        raise RuntimeError(f"boundary frame still {info['unstable_after']:.2e} "
+                           f"unstable after {info['sweeps']} sweeps")
+    return theta, u, v, info
 
 
 def state_to_boundary(u, v, theta, pi=None):
@@ -415,6 +440,9 @@ def main():
                    help="Skip initial divergence removal. The forecast will "
                         "almost certainly blow up; useful only for showing "
                         "why the balancing step exists.")
+    p.add_argument("--raw-boundaries", action="store_true",
+                   help="Do not convectively adjust the boundary frames "
+                        "(the behaviour before P-63; comparison only)")
     p.add_argument("--out", default=None, help="Where to write forecast .npz")
     p.add_argument("--deadline-min", type=float, default=None,
                    help="Stop integrating after this many minutes of wall "
@@ -460,6 +488,7 @@ def main():
     # state -- if the edges were prepared differently from the interior, the
     # relaxation would drive one toward the other every step.
     times, states = [], []
+    n_unstable_frames, frame_sweeps, frame_frac = 0, 0, 0.0
     for i, f in enumerate(files[:args.hours + 1]):
         fl, _ = load_state(f)
         pi_b, u, v, th = hrrr_to_sigma_state(fl, lev, terrain,
@@ -467,10 +496,31 @@ def main():
         if not args.no_balance:
             u, v, th = filter_initial_state(u, v, th, grid)
             u, v, _ = balance_initial_state(u, v, grid, verbose=False)
+        # ADJUST THE DRIVING STATE ONCE (P-63). The model removes static
+        # instability after every step, but the relaxation then pulls the
+        # edge columns back toward the frame. A frame with an unstable layer
+        # (a daytime superadiabatic surface layer, test Z2: all of it within
+        # 14 cells of the edge, the lowest two interfaces) re-creates the
+        # instability every step, and the adjustment ran to its sweep cap on
+        # every call. The frame gets the same adjustment the model applies,
+        # run to convergence, so the edges drive toward a state the model
+        # itself can hold.
+        if not args.raw_boundaries:
+            th, u, v, cinfo = stabilise_frame(th, u, v, pi_b, lev)
+            if cinfo["unstable_before"] > 0:
+                n_unstable_frames += 1
+                frame_sweeps = max(frame_sweeps, cinfo["sweeps"])
+                frame_frac = max(frame_frac, cinfo["unstable_before"])
         times.append(i * 3600.0)
         states.append(state_to_boundary(u, v, th, pi_b))
     driver = BoundaryDriver(times, states)
     print(f"  boundaries     : {driver}")
+    if args.raw_boundaries:
+        print("  frame adjust   : off (--raw-boundaries)")
+    else:
+        print(f"  frame adjust   : {n_unstable_frames} of {len(states)} frames "
+              f"unstable (max {frame_frac:.2e} of interfaces), "
+              f"converged in <= {frame_sweeps} sweeps")
 
     stoch = None
     if args.stochastic:
