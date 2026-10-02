@@ -459,15 +459,113 @@ service, which is P-06 and is where this project's defects have always been.
 
 **The night side (test X, 18Z 2026-09-22 run through the night, 2026-09-26).** With the damping on, the temperature bias rises from +1.3 °C at lead 5 to **+6.2 °C at lead 17 (11Z, around sunrise)**, with RMSE 7.3 °C. It then falls to −1.4 °C by lead 23 (17Z). Without surface cooling the nights stay far too warm, as the days stay too cool (−6.9 °C at 20Z on the 06Z run).
 
+**Step 1, a prescribed diurnal surface heat flux (`--surface-heating`, 2026-10-01; tests AE, AE2, AE20, AG, AH).**
+- Over 19 campaign cycles the temperature RMSE falls by 0.25 K on average (better at 21 of 24 leads, in 16 of 19 cycles). The model goes from never beating persistence to beating it at 17 of 24 leads.
+- The swing of the bias narrows by about 23 % in the three single cases. The jet case's afternoon cold bias improves by 2 K.
+- With momentum mixed by the adjustment, one cycle diverges (P-67).
+- It is off by default. Remaining: the evening warm bias the next day (the heat is not removed at night), no clouds, and the wind is unscorable until P-68.
+
 ---
 
 
+## P-64 — Cycling never used the previous forecast: snapshots land one step past the hour
+**Category** B, A · **First seen** 2026-10-01 · **Status** OPEN (fix in, awaiting test)
+
+**Symptom.** In the test AD campaign every chained cycle logged a fallback. At 06Z and 18Z the log said "first guess: previous_analysis … (6 h old; previous forecast unusable)". At 00Z and 12Z it said "sounding_mean (previous forecast lacked the lead time)". The ingest documentation says the upper air of a sounding-poor cycle comes from the previous run's 6 h forecast. That has not happened in any cycle.
+
+**What is known.** `run_forecast` emitted a snapshot at the first step at or past each target and stamped it with that step's time. At a 17.13 s step, the 6 h snapshot of a 24 h run is at 21 607.79 s, 7.8 s late (`times_s` of obs_20260926_00: 3614.28, 7212.98, …). `build.first_guess_from_forecast` accepts a lead only within 1e-3 h, 3.6 s. A discrete-time quantity was compared with a continuous one at a tolerance below the discretisation.
+
+**Fix (in the working copy, not yet on the server).**
+- (1) When the output interval divides the run, `run_forecast` takes a whole number of steps per interval: 211 steps of 17.0616 s instead of 17.13 s. It stamps each snapshot with its target, and the emission tolerance is half a step. Results therefore change slightly: the step is 0.4 % shorter.
+- (2) `first_guess_from_forecast` accepts 0.02 h (72 s), more than one step, so older files qualify.
+- Regression test `test_output_times_are_on_the_hour`: 24 snapshots, maximum offset 0.0 s, the 6 h snapshot at 21 600.000 s. `test_forecast.py` 15/15; `test_analysis.py` 21/21.
+
+**Not yet measured.** Whether the forecast first guess gives a better 06/18Z analysis than the 6 h old analysis. The ingest's withheld-station score can decide it (rebuild with `--from-raw`). The user had also been asked to confirm the previous-analysis fallback, which until now has been the only path in use.
+
+---
 
 
+## P-65 — Surface-heating land mask from smoothed terrain counts half the ocean as land
+**Category** G, D · **First seen** 2026-10-01 · **Status** OPEN (fix in, awaiting test)
 
+**Symptom.** Test AE logged "land 85%" for a domain whose southeast part is the Atlantic and the Gulf of Maine.
+
+**What is known.** The mask was `terrain > 0` on the run's `terrain.npz`, which is slope-limited (P-56). The smoothing spreads land heights over the sea: only 15.5 % of it is exactly 0 m (26.1 % ≤ 1 m), against 31.9 % of the raw ETOPO grid in `data/static`, where the ocean is clipped to 0. So about half the ocean was heated by day and cooled by night in test AE.
+
+**Fix (working copy).** The land mask is read from the unsmoothed `data/static/terrain_etopo_<ny>x<nx>.npz`, with a warning fallback to the old mask. Test AE has to be repeated with it, and its first results are reported as contaminated by this.
+
+---
+
+
+## P-67 — Surface heating destabilises the 28 Sep 00Z cycle at 22.5 h
+**Category** C, G · **First seen** 2026-10-01 · **Status** OPEN
+
+**Symptom.** In AE20 (`--surface-heating`, correct land mask, PAV, new defaults), the 00Z 2026-09-28 run diverged at 22.46 h (367 m/s). The same cycle without heating (campaign AD) completed 24 h. max|u| holds at 14–17 m/s until 14 h, then grows through the next day: 22 m/s at 17 h, 24 at 21 h, 39 at 22 h, then it diverges, late afternoon local time (22Z).
+
+**What is known.** `tools/locate_growth.py`:
+- The largest hourly changes are in the lowest levels (L17–L19, about 100–300 m above ground) at rows 65–81, columns 41–72: northern New York and New England, terrain up to 515 m (mean 196 m), 15–30 cells from the edge.
+- From the first hours, at night, hourly changes reach 4–8 m/s with 10–30 points over 5 m/s.
+- From 12 h they reach 11–17 m/s, and at 21–22 h the change rises to 29–31 m/s at L15 (about 500 m).
+- The unheated run has the same noisy patch (5–11 m/s hourly changes at L18, rows 65–80, columns 41–64), but it stays bounded (max|u| near 14 m/s throughout).
+
+So the heating amplifies something already present rather than creating it.
+
+**Candidates (test AG, one change each, heating otherwise on):**
+- (a) the adjustment's instant mixing of momentum through the daytime mixed layer;
+- (b) the steady night cooling over sloping terrain (drainage, or the sigma pressure-gradient error made worse by strong surface inversions);
+- (c) the daytime heating itself.
+
+**Test AG (one change each).**
+- AG1, no momentum mixing: completes (max|u| ≤ 15.6 m/s).
+- AG2, no night cooling: completes (≤ 15.4).
+- AG3, night cooling only: diverges at 17.48 h.
+
+So it is the steady night cooling of the lowest layer together with the adjustment's instant momentum mixing; neither alone causes it. The candidate configuration is heating with `--no-conv-momentum` (test AH, 20 cycles). The cold-pool dynamics are not yet explained.
+
+**Consequence.** `--surface-heating` stays off by default until this is understood.
+
+---
+
+
+## P-68 — Wind verified at the lowest model level (~300 m) against 10 m observations
+**Category** A, E · **First seen** 2026-10-01 · **Status** OPEN
+
+**Symptom.** Over the 20 campaign cycles, persistence at lead 1 has a pooled wind bias of −2 m/s in both u and v and an RMSE of about 3.5 m/s. Persistence at lead 1 is the analysis, which assimilated these observations.
+
+**What is known.** By cycle, the persistence wind speed at the stations is 1.7–2.3 times the observed 10 m speed (11.1 against 4.8 m/s at 27 Sep 12Z; 2.0 against 0.9 at 30 Sep 06Z). The operator takes u and v of the lowest model level, about 300 m above the ground (`model_level_height_m` in the matches), with no reduction to 10 m. So every wind score, model or persistence, carries a speed-ratio error that has nothing to do with the forecast. The temperature operator has a related known weakness: a standard lapse rate from 300 m to the station, wrong in a mixed layer by day and in an inversion by night.
+
+**Step 1 (2026-10-01).** `verify.py --wind-operator log10m`: the model's neutral log law from z1 above the model ground to 10 m (factor about 0.59), with z0 = 0.1 m as in the model's drag. Default unchanged.
+
+**Test AI, the 20 campaign cycles re-scored from the archived observations:**
+- Persistence lead-1 speed ratio 1.86 → 1.10.
+- Persistence lead-1 RMSE: u 3.49 → 2.28, v 3.11 → 1.94.
+- Temperature identical.
+- The model still loses to persistence in wind (u +0.34, v +0.15 m/s pooled), and its speed ratio grows from 1.17 to 1.51 over 24 h, against 1.10 to 1.32 for persistence.
+
+**Open.** Whether to make `log10m` the default (the user's decision). A stability-dependent reduction, since the neutral log law over-reduces above about 50 m. The model's wind growth with lead time is a model error, not an operator one.
+
+---
+
+
+# FIXED
+
+## P-66 — Verification takes 10-14 min per run: all-pairs buddy search in QC
+**Category** H · **First seen** 2026-10-01 · **Status** FIXED · **Fixed** 2026-10-01
+
+**Symptom.** On the server each `verify.py` run spent 10–14 min after the ASOS fetch, which itself took about 1 s. The fetch-free `--report-only` runs were just as slow. A campaign of 20 cycles × (model + persistence + heated) would have taken about 13 h of single-threaded verification. The production cycle verifies once a day, inside a 1.5 h budget.
+
+**What is known.** `run_qc` (`src/verification/observations.py`) finds each observation's buddies by scanning every other observation in Python (same variable, same level, within 30 min and 150 km). That is O(n²) over the 10⁴–10⁵ observations of a 24 h window. The same function runs in the ingest (64–195 s per cycle) and in `make_maps.py`.
+
+**Fix (working copy).** `buddy_neighbours` groups by variable, sorts by time, finds the 30-minute window by binary search, and applies the level and distance tests with NumPy, using the same formulas in the same order. The old search stays as `buddy_neighbours_reference`. Test `test_fast_buddy_search_matches_reference` (3 672 observations, 44 200 neighbour links, 56 rejections): identical neighbours, in the same order, and identical verdicts; 0.07 s against 3.47 s. `test_verification.py` 10/10; `test_analysis.py` 21/21.
+
+**Confirmed by.** A real 24 h ASOS window on the server (`asos_2026092601_2026092700`, 50 170 observations):
+- fast search 7.6 s, all-pairs reference 849.1 s;
+- identical verdicts (0 differ; 645 buddy rejections in each).
+
+---
 
 ## P-63 — Calm cases run 3.8x slower: the convective adjustment hits its 20-sweep cap every step
-**Category** H, C · **First seen** 2026-09-26 · **Status** OPEN (fix in, awaiting test AA)
+**Category** H, C · **First seen** 2026-09-26 · **Status** FIXED · **Fixed** 2026-10-01
 
 **Symptom.** At torch × 8, calm cases (06Z 2026-09-23, 18Z 2026-09-22) run about 3 steps/s; the jet case (12Z 2026-09-25) runs 11 steps/s. That holds with each run alone on a quiet server (test Y: 2.9 against 11.1) and with denormals flushed (3.0 against 11.2).
 
@@ -483,12 +581,22 @@ So the calm case never finishes adjusting within a step, and the instability is 
 
 **Fix (awaiting test AA).** `stabilise_frame` in `src/forecast.py` adjusts each boundary frame once, to convergence, and returns a stable frame unchanged. `--raw-boundaries` gives the old behaviour. Regression tests: `test_stable_frame_is_unchanged` and `test_relaxation_toward_stabilised_frame_stays_stable` (`src/test_forecast.py`, 14/14). It is confirmed if AA1 runs at 8 steps/s or faster and its 1 h state has 0 unstable interfaces.
 
+**Test AA: the frame fix is right, but it is not the cost.** The frame was unstable (9.14e-3), the fix cleared it, and skill moved by at most 0.02. The jet case stayed bit-identical. The speed stayed at 3.2 steps/s (06Z case: 2.9).
+
+**Test AB (class split at every call): the algorithm is the cost.** Every call in both calm cases runs to the 20-sweep cap and leaves instability behind. The violations at call start are 1e-8–1e-3 K (96 % and 79 %), not round-off. They sit on layers the adjustment itself mixed to neutral, which each step nudges by about 1e-4 K. Clearing them needs 23–24 sweeps. The jet case has no neutral layers, so it costs nothing. **Fix candidate:** pool-adjacent-violators (`dry_convective_adjustment_pav`, `--conv-scheme pav`), exact in one pass. It mixes less than the sweep scheme (the least-change stable state), so it changes the answer, and test AC judges it on skill.
+
 **Ruled out.** Machine load and denormals (test Y).
 
+**Fix.** Two parts. (1) The boundary frame is adjusted once, to convergence (`stabilise_frame`, test AA), so the relaxation no longer re-imposes an unstable layer. (2) The convective adjustment is pool-adjacent-violators (`dry_convective_adjustment_pav`, now the default; `--conv-scheme sweep` gives the old scheme). PAV is exact in one pass, the least-change stable state.
+
+**Confirmed by.** Test AC (2026-10-01), on the server against the sweep scheme:
+- Calm 18Z 2026-09-22, 24 h: 8.1 min (26.6 with the sweep scheme); 0 unstable interfaces in all 24 hourly states (the sweep run: in 24 of 24).
+- Calm 06Z 2026-09-23: 7.8 against 27.2 min.
+- Skill identical to the 0.01 printed at every lead in both.
+- The jet case is bit-identical.
+- `test_convection.py` 12/12 where torch is installed (the desktop torch environment and the server, 2026-10-01), and 11/11 without torch, where the torch-agreement test is skipped (the run after PAV became the default). The suite calls both schemes directly, so the default does not enter it. That includes the P-63 near-neutral chain the 20-sweep cap leaves behind.
+
 ---
-
-
-# FIXED
 
 ## P-62 — Every forecast lost its final output time (float sum of steps)
 **Category** D · **First seen** 2026-09-26 · **Status** FIXED · **Fixed** 2026-09-26

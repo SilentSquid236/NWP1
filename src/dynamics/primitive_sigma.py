@@ -37,7 +37,7 @@ from subgrid import (hyperdiffusion, recommended_hyper_coeff, hyper_stability_dt
 import turbulence
 from turbulence import vertical_mixing, richardson, mixing_stability_dt
 from surface import surface_drag, drag_stability_dt, ROUGHNESS
-from convection import dry_convective_adjustment
+from convection import dry_convective_adjustment, dry_convective_adjustment_pav
 from radiation import radiative_top_flux, top_flux_stability_dt
 
 
@@ -68,6 +68,15 @@ class PrimitiveSigma:
         # Divergence damping coefficient, m^2/s. Off (0) unless set; see
         # subgrid.divergence_damping and P-60.
         self.div_damp = 0.0
+        # Convective adjustment algorithm: "pav" (pool-adjacent-violators,
+        # exact in one pass; the default since test AC, P-63) or "sweep"
+        # (segment mixing, capped at 20 sweeps; the old model).
+        self.conv_scheme = "pav"
+        # Whether the adjustment mixes u and v with theta (P-67 test AG).
+        self.conv_mix_momentum = True
+        # Prescribed diurnal surface heat flux (diurnal.DiurnalHeating), or
+        # None for the old model with no sun (P-59).
+        self.surface_heating = None
         self.stochastic = stochastic
 
         # Reference-state pressure-gradient force. The plain form is stable on
@@ -383,10 +392,27 @@ class PrimitiveSigma:
         # completed step rather than inside the Runge-Kutta stages -- an
         # intermediate stage would otherwise re-create the instability the
         # final state is meant to be free of.
+        #
+        # The surface heat flux goes in first, at mid-step time, so the
+        # adjustment below mixes a layer the sun has just made unstable in
+        # the same step.
+        if self.surface_heating is not None:
+            rate = self.surface_heating.theta_tendency(
+                self.time + 0.5 * dt, to_numpy(self.pi), self.lev)
+            if xp_of(self.theta).name != "numpy":
+                import torch
+                rate = torch.from_numpy(rate)
+            self.theta[-1] = self.theta[-1] + dt * rate
         if self.convection:
+            if self.conv_scheme == "pav":
+                adjust = dry_convective_adjustment_pav
+            elif self.conv_scheme == "sweep":
+                adjust = dry_convective_adjustment
+            else:
+                raise ValueError(f"unknown conv_scheme {self.conv_scheme!r}")
             self.theta, self.u, self.v, self._conv_info = \
-                dry_convective_adjustment(self.theta, self.u, self.v,
-                                          self.pi, self.lev)
+                adjust(self.theta, self.u, self.v, self.pi, self.lev,
+                       mix_momentum=self.conv_mix_momentum)
 
         if self.radiative_top:
             phi_top = self.geopotential()[0]

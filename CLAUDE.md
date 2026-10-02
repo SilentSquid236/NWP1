@@ -167,6 +167,15 @@ recorded with `tools/tokens.py --add`.
   Runs made before then used width 10, alpha 1 and no damping. Compare
   like with like; `--relax-width 10 --relax-alpha 1 --div-damp 0` gives
   the old model.
+- **Changed again on 2026-10-01 (P-63, P-64):**
+  - The convective adjustment is pool-adjacent-violators (`--conv-scheme pav`);
+    `--conv-scheme sweep` is the old scheme.
+  - Boundary frames are adjusted once (`--raw-boundaries` for the old way).
+  - The step is now chosen so snapshots fall exactly on the hour (about 0.4 %
+    shorter).
+  - The diurnal surface heating (`--surface-heating`, P-59) is off unless
+    asked for.
+  - `--persistence` writes the do-nothing reference forecast.
 
 - Index 0 in every vertical array is the **model lid**, not the ground. On the
   analysis's PRESSURE levels (`config.PRESSURE_LEVELS`) index 0 is 1000 hPa —

@@ -79,6 +79,26 @@ class SigmaInterpolator(GridInterpolator):
         """Grid-cell terrain height at a point."""
         return self.horizontal(self.terrain, lat, lon)
 
+    def wind_10m_factor(self, theta3d, lat, lon, z0=0.1):
+        """
+        Factor that takes the lowest-level wind down to 10 m (P-68).
+
+        Neutral log law, ln(10/z0) / ln(z1/z0), with z1 the lowest level's
+        height above the MODEL ground and z0 the model's own roughness length.
+        It is the same profile the model's surface drag assumes
+        (surface.neutral_drag_coefficient), so the operator and the model agree
+        on what the lowest level means. Returns (factor, z1_above_ground), or
+        (None, None) outside the domain.
+        """
+        z1 = self.lowest_level_height(theta3d, lat, lon)
+        h = self.model_elevation(lat, lon)
+        if z1 is None or h is None:
+            return None, None
+        agl = float(z1 - h)
+        if agl <= 10.0:
+            return 1.0, agl
+        return float(np.log(10.0 / z0) / np.log(agl / z0)), agl
+
     def lowest_level_height(self, theta3d, lat, lon):
         """
         Height above sea level of the lowest model level.

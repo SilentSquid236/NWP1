@@ -173,7 +173,7 @@ def build_interpolator(fc, snapshot):
 # ---------------------------------------------------------------------------
 
 def match_snapshot(fc, snapshot, obs, valid_time, lead_hours,
-                   window_min=30):
+                   window_min=30, wind_operator="lowest"):
     """
     Pair one forecast snapshot with the observations valid near it.
 
@@ -211,10 +211,20 @@ def match_snapshot(fc, snapshot, obs, valid_time, lead_hours,
                     theta, o.lat, o.lon, getattr(o, "elevation", None))
             else:
                 value = op.temperature(theta, o.lat, o.lon, o.pressure)
-        elif o.variable == "UGRD":
-            value = op.at_observation(u, o.lat, o.lon, o.pressure)
-        elif o.variable == "VGRD":
-            value = op.at_observation(v, o.lat, o.lon, o.pressure)
+        elif o.variable in ("UGRD", "VGRD"):
+            value = op.at_observation(u if o.variable == "UGRD" else v,
+                                      o.lat, o.lon, o.pressure)
+            # P-68: a 10 m anemometer against the lowest level (~300 m above
+            # the ground) needs a reduction, or every wind score is mostly
+            # the speed ratio. "lowest" keeps the old operator for comparison.
+            if (value is not None and o.pressure is None
+                    and wind_operator == "log10m"):
+                f, agl = op.wind_10m_factor(theta, o.lat, o.lon)
+                if f is not None:
+                    info = {"wind_operator": "log10m", "wind_factor": f,
+                            "model_level_agl_m": agl,
+                            "forecast_lowest_level": float(value)}
+                    value = value * f
         else:
             skip(f"variable not verified: {o.variable}")
             continue
@@ -250,7 +260,8 @@ def match_snapshot(fc, snapshot, obs, valid_time, lead_hours,
 # ---------------------------------------------------------------------------
 
 def verify(forecast_path, archive_root, run_time=None, window_min=30,
-           report_only=False, networks=None, verbose=True):
+           report_only=False, networks=None, verbose=True,
+           wind_operator="lowest"):
     fc = load_forecast(forecast_path)
     times_s = np.asarray(fc["times_s"], dtype=float)
 
@@ -311,7 +322,8 @@ def verify(forecast_path, archive_root, run_time=None, window_min=30,
     all_matches, all_skips = [], {}
     for i, vt in enumerate(valid_times):
         lead = float(times_s[i]) / 3600.0
-        m, sk = match_snapshot(fc, i, kept, vt, lead, window_min)
+        m, sk = match_snapshot(fc, i, kept, vt, lead, window_min,
+                               wind_operator=wind_operator)
         m = [r for r in m
              if (r["valid_time"], r["station"], r["variable"]) not in seen]
         all_matches.extend(m)
@@ -333,6 +345,7 @@ def verify(forecast_path, archive_root, run_time=None, window_min=30,
             "qc": qc_info,
             "n_matches": len(all_matches),
             "skipped": all_skips,
+            "wind_operator": wind_operator,
             "written": datetime.now(timezone.utc).isoformat(),
         }, f, indent=2)
 
@@ -362,6 +375,10 @@ def main():
                    help="Match observations within this many minutes")
     p.add_argument("--report-only", action="store_true",
                    help="Use cached observations; touch no network.")
+    p.add_argument("--wind-operator", choices=("lowest", "log10m"), default="lowest",
+                   help="Surface wind: the lowest model level as it is (the "
+                        "default, unchanged), or reduced to 10 m with the "
+                        "model's neutral log law (P-68)")
     p.add_argument("--summary", action="store_true",
                    help="Print scores for the whole archive and exit.")
     args = p.parse_args()
@@ -399,7 +416,8 @@ def main():
     print(config.describe())
     matches, paths = verify(args.forecast, root, run_time=run_time,
                             window_min=args.window_min,
-                            report_only=args.report_only)
+                            report_only=args.report_only,
+                            wind_operator=args.wind_operator)
 
     if matches:
         print()

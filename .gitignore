@@ -13,3 +13,7 @@ __pycache__/
 *.pyc
 .venv/
 .ipynb_checkpoints/
+
+# Claude Science remote-compute scratch root on the server (job workdirs,
+# development copies); never part of the repository.
+scratch/

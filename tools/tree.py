@@ -50,7 +50,8 @@ NOTES = {
     "src/dynamics/subgrid.py": "hyperdiffusion, SPPT, Helmholtz balancing (7/7)",
     "src/dynamics/turbulence.py": "Richardson-number vertical mixing",
     "src/dynamics/surface.py": "bulk aerodynamic drag, log law, Louis stability",
-    "src/dynamics/convection.py": "dry convective adjustment (post-step, conservative)",
+    "src/dynamics/convection.py": "dry convective adjustment: PAV (default) and the old sweep scheme",
+    "src/dynamics/diurnal.py": "prescribed diurnal surface heat flux from solar elevation (P-59, optional)",
     "src/dynamics/radiation.py": "radiative upper boundary: wave flux through the lid",
     "src/dynamics/radiation_probe.py": "where a reflected wave shows up, rigid vs radiative",
     "src/dynamics/radiation_vs_sponge.py": "development and terrain survival, both boundaries",
@@ -97,6 +98,7 @@ NOTES = {
     "src/dynamics/visualize_instability.py": "cross-sections and growth curves",
     "src/dynamics/instability_cross_section.png": "figure: w and theta' through the mountain",
     "src/dynamics/instability_growth.png": "figure: max|u| against forecast hour",
+    "docs/diurnal_heating_skill.png": "pooled 2 m temperature RMSE and bias: persistence, dry model, dry model + surface heating (tests AD, AH)",
 
     # --- verification / postproc -------------------------------------------
     "src/verification/observations.py": "ASOS / mesonet / raob record types and QC",
@@ -147,6 +149,8 @@ NOTES = {
     "src/dynamics/test_div_damping.py": "divergence damping: rotational flow untouched, 2dx decay rate, torch = numpy, default bit-identical",
     "tools/score_by_lead.py": "verification RMSE and bias by variable and forecast hour, two archives side by side",
     "tools/convection_check.py": "where a state is statically unstable and how many adjustment sweeps it needs",
+    "tools/ad_aggregate.py": "pool verification archives over cycles: per-lead bias/RMSE, A against B (tests AD, AE20, AH, AI)",
+    "tools/ae_analysis.py": "per-case heating scores: RMSE, bias swing, persistence wins, interior daytime wind (test AE)",
     "tools/compare_forecasts.py": "hour-by-hour difference between two forecast files (e.g. numpy vs torch)",
     "tools/check_backend.py": "on a new machine: torch vs numpy speed and agreement at several thread counts",
     "src/verify_pending.py": "verifies every archived forecast whose window has closed, once",
@@ -285,14 +289,15 @@ that was is not recoverable, which is the whole argument for the column.
 | `test_subgrid.py` | hyperdiffusion, SPPT, balancing | 7/7 | 2026-09-12 |
 | `test_surface.py` | drag, log law, Ekman spiral | 6/6 | 2026-09-12 |
 | `test_initialization.py` | spectral filter, noise threshold | 5/5 | 2026-09-12 |
-| `test_convection.py` | dry convective adjustment | 5/5 | 2026-09-12 |
+| `test_convection.py` | dry convective adjustment, PAV | 12/12 | 2026-10-01 |
+| `test_diurnal.py` | diurnal surface heat flux | 5/5 | 2026-10-01 |
 | `test_interpolate.py` | pressure -> sigma conversion | 8/8 | — |
 | `test_radiation.py` | radiative upper boundary | 7/7 | 2026-09-12 |
 | `test_primitive_sigma.py` | the 3D core | 7/7 | 2026-09-12 |
 | `test_primitive3d.py` | superseded pressure core | 8/8 | — |
-| `test_forecast.py` | end-to-end driver | 11/11 | — |
+| `test_forecast.py` | end-to-end driver | 15/15 | 2026-10-01 |
 | `test_hrrr_search.py` | GRIB interface | 6/6 | — |
-| `test_verification.py` | observation handling | 9/9 | 2026-09-10 |
+| `test_verification.py` | observation handling | 10/10 | 2026-10-01 |
 | `test_sigma_operator.py` | sigma observation operator | 7/7 | — |
 | `test_verify.py` | verification archiver | 7/7 | — |
 | `test_fetchers.py` | IEM / MRMS clients | 9/9 | 2026-09-10 |

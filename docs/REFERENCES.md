@@ -24,6 +24,8 @@ registry:
 - CrossRef has no DOI for the PyTorch paper. Its volume, editors and
   pages were checked against the NeurIPS proceedings page and dblp.
 
+Added later and resolved the same way: Ayer et al. (1955), Cooper (1969) and Kopp and Lean (2011), on 1 October 2026. The CrossRef record for Kopp and Lean (2011) carries no article number; L01706 is the journal's identifier and was not checked against the registry.
+
 Web services have no fixed version, so their entries carry the access
 date.
 
@@ -39,6 +41,8 @@ Arakawa, A., and C. S. Konor, 1996: Vertical differencing of the primitive equat
 
 Arakawa, A., and V. R. Lamb, 1977: Computational design of the basic dynamical processes of the UCLA general circulation model. *Methods in Computational Physics: Advances in Research and Applications*, Vol. 17, Academic Press, 173–265, https://doi.org/10.1016/B978-0-12-460817-7.50009-4.
 
+Ayer, M., H. D. Brunk, G. M. Ewing, W. T. Reid, and E. Silverman, 1955: An empirical distribution function for sampling with incomplete information. *Ann. Math. Stat.*, **26**, 641–647, https://doi.org/10.1214/aoms/1177728423.
+
 Barnes, S. L., 1964: A technique for maximizing details in numerical weather map analysis. *J. Appl. Meteor.*, **3**, 396–409, https://doi.org/10.1175/1520-0450(1964)003<0396:ATFMDI>2.0.CO;2.
 
 Blaylock, B. K., 2026: Herbie: Retrieve numerical weather prediction model data. Zenodo, accessed 26 September 2026, https://doi.org/10.5281/zenodo.4567540.
@@ -50,6 +54,8 @@ Bolton, D., 1980: The computation of equivalent potential temperature. *Mon. Wea
 Bougeault, P., 1983: A non-reflective upper boundary condition for limited-height hydrostatic models. *Mon. Wea. Rev.*, **111**, 420–429, https://doi.org/10.1175/1520-0493(1983)111<0420:ANRUBC>2.0.CO;2.
 
 Buizza, R., M. Miller, and T. N. Palmer, 1999: Stochastic representation of model uncertainties in the ECMWF ensemble prediction system. *Quart. J. Roy. Meteor. Soc.*, **125**, 2887–2908, https://doi.org/10.1002/qj.49712556006.
+
+Cooper, P. I., 1969: The absorption of radiation in solar stills. *Sol. Energy*, **12**, 333–346, https://doi.org/10.1016/0038-092X(69)90047-4.
 
 Cressman, G. P., 1959: An operational objective analysis system. *Mon. Wea. Rev.*, **87**, 367–374, https://doi.org/10.1175/1520-0493(1959)087<0367:AOOAS>2.0.CO;2.
 
@@ -74,6 +80,8 @@ Iowa Environmental Mesonet, 2026b: Upper-air sounding (RAOB) download service an
 Klemp, J. B., and D. R. Durran, 1983: An upper boundary condition permitting internal gravity wave radiation in numerical mesoscale models. *Mon. Wea. Rev.*, **111**, 430–444, https://doi.org/10.1175/1520-0493(1983)111<0430:AUBCPI>2.0.CO;2.
 
 Koch, S. E., M. desJardins, and P. J. Kocin, 1983: An interactive Barnes objective map analysis scheme for use with satellite and conventional data. *J. Climate Appl. Meteor.*, **22**, 1487–1503, https://doi.org/10.1175/1520-0450(1983)022<1487:AIBOMA>2.0.CO;2.
+
+Kopp, G., and J. L. Lean, 2011: A new, lower value of total solar irradiance: Evidence and climate significance. *Geophys. Res. Lett.*, **38**, L01706, https://doi.org/10.1029/2010GL045777.
 
 Louis, J.-F., 1979: A parametric model of vertical eddy fluxes in the atmosphere. *Bound.-Layer Meteor.*, **17**, 187–202, https://doi.org/10.1007/BF00117978.
 
@@ -122,12 +130,14 @@ Zhang, J., and Coauthors, 2016: Multi-Radar Multi-Sensor (MRMS) quantitative pre
 | Alduchov and Eskridge (1996) | Magnus constants 17.625 and 243.04 °C for RH from dewpoint | `src/verification/fetchers.py` |
 | Arakawa and Konor (1996) | the vertical computational mode of the Lorenz grid (u, v and theta on the same levels), a P-60 candidate | `docs/RESEARCH_LOG.md`, `docs/PROBLEMS.md` |
 | Arakawa and Lamb (1977) | C-grid staggering | `src/dynamics/grid.py` |
+| Ayer et al. (1955) | pool-adjacent-violators convective adjustment (P-63) | `src/dynamics/convection.py`, `docs/RESEARCH_LOG.md` |
 | Barnes (1964); Koch et al. (1983) | successive-correction analysis, multi-pass with convergence parameter gamma | `src/analysis/barnes.py` |
 | Blaylock (2026) | HRRR download (seeding and diagnosis only) | `src/ingest_hrrr.py`, `diagnose_herbie.py` |
 | Blumberg et al. (2017) | layout of the click-for-sounding panel (skew-T and hodograph) | `src/maps/viewer.py` |
 | Bolton (1980) | saturation vapour pressure | `src/analysis/build.py` |
 | Bougeault (1983); Klemp and Durran (1983) | radiating upper boundary (optional, not ported to torch) | `src/dynamics/radiation.py` |
 | Buizza et al. (1999) | SPPT-style stochastic tendency perturbations (optional) | `src/dynamics/subgrid.py`, `src/forecast.py` |
+| Cooper (1969) | solar declination for the diurnal surface heat flux (P-59) | `src/dynamics/diurnal.py` |
 | Cressman (1959) | background to the analysis design | `docs/DATA_ASSIMILATION.md` |
 | Davies (1976) | lateral boundary relaxation zone | `src/dynamics/boundaries.py`, `src/forecast.py` |
 | Dowell et al. (2022); NOAA (2026a) | HRRR, which may seed a forecast but never verify one | `src/ingest_hrrr.py` |
@@ -135,6 +145,7 @@ Zhang, J., and Coauthors, 2016: Multi-Radar Multi-Sensor (MRMS) quantitative pre
 | Harris et al. (2020) | NumPy, the numerical base of the whole code | throughout |
 | Hunter (2007) | Matplotlib, all maps and figures | `src/maps/render.py`, `src/make_maps.py` |
 | Iowa Environmental Mesonet (2026a, b) | surface (ASOS) and upper-air (RAOB) observations | `src/analysis/sources.py`, `src/verification/fetchers.py` |
+| Kopp and Lean (2011) | total solar irradiance, 1361 W/m² (P-59) | `src/dynamics/diurnal.py` |
 | Louis (1979) | shape of the Richardson-number stability functions | `src/dynamics/turbulence.py`, `src/dynamics/surface.py` |
 | Manabe et al. (1965) | dry convective adjustment | `src/dynamics/convection.py` |
 | Miles (1961); Howard (1961) | Ri < 0.25 as the shear-instability criterion; the mixing threshold | `src/dynamics/turbulence.py`, P-60 |

@@ -359,6 +359,40 @@ def test_final_output_time_is_written():
     report("the final output time is written", ok,
            f"{len(snaps)} snapshots, last at {last:.6f} h")
 
+
+def test_output_times_are_on_the_hour():
+    """
+    P-64. With a stable step of 17.13 s, hourly snapshots used to land one
+    step past the hour (6 h + 7.8 s), and the next cycle's ingest, which asks
+    for 6 h to within 3.6 s, never found its first guess. Every snapshot must
+    now be stamped exactly on its target, with the step no longer than the
+    stable one.
+    """
+    class Stub:
+        def __init__(self):
+            self.u = np.zeros((2, 4, 4)); self.v = self.u.copy()
+            self.theta = self.u + 300.0; self.pi = np.full((4, 4), 8e4)
+            self.time = 0.0; self.dts = []
+        def max_dt(self): return 17.13
+        def step(self, dt): self.time += dt; self.dts.append(dt)
+        def sigma_dot(self): return np.zeros((3, 4, 4))
+
+    class NoRelax:
+        def apply(self, model, ext): pass
+
+    class NoDriver:
+        def at(self, t): return {}
+
+    m = Stub()
+    snaps = run_forecast(m, NoDriver(), NoRelax(), 24 * 3600.0,
+                         output_every=3600.0, progress=False)
+    times = np.array([s[0] for s in snaps])
+    err = float(np.abs(times - 3600.0 * np.arange(1, 25)).max())
+    ok = len(snaps) == 24 and err == 0.0 and max(m.dts) <= 17.13
+    report("hourly snapshots are stamped exactly on the hour", ok,
+           f"{len(snaps)} snapshots, max offset {err:.1e} s, step {max(m.dts):.4f} s "
+           f"(stable limit 17.13 s), 6 h snapshot at {times[5]:.3f} s")
+
 # ---------------------------------------------------------------------------
 def _superadiabatic_edge_frame():
     """A stable synthetic state, plus one with a heated surface layer at the edges."""
@@ -436,6 +470,7 @@ if __name__ == "__main__":
                test_boundaries_hold_edges_to_driver,
                test_npz_roundtrip,
                test_final_output_time_is_written,
+               test_output_times_are_on_the_hour,
                test_stable_frame_is_unchanged,
                test_relaxation_toward_stabilised_frame_stays_stable):
         try:

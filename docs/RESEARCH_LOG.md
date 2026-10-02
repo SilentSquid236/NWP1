@@ -3466,9 +3466,575 @@ Two regression tests in `src/test_forecast.py` (14/14):
   slower, `convection_check` shows whether it has an interior instability,
   which (b) would then have to fix.
 
+**Test AA result (prompt 160; run and collected by the AI on the server,
+commit 444fe9f): the frame fix is correct, and the slowdown has a second
+cause.**
+
+| Prediction | Result | |
+|---|---|---|
+| AA1-1: frame unstable, 1e-3 to 2e-2, ≤ 100 sweeps | 1 of 1, 9.14e-3, 34 sweeps | held |
+| AA1-2: ≥ 8 steps/s | 3.2 (X1: 3.1) | **refuted** |
+| AA1-3: 0 unstable interfaces at 1 h | 175 (8.63e-4), largest **7.73e-10 K**, all ≤ 14 cells from the edge, 174 of them at L17/18; 3 sweeps to clear | **refuted** — but the violations are now round-off size (Z2: 1 436, largest 0.471 K) |
+| AA1-4: RMSE not worse than X1 by > 0.2 | T −0.01 to +0.02, u 0.00 to +0.01, v 0.00 to +0.01 | held |
+| AA1-5: night bias, leads 12–20 | −0.00 to −0.01 K | inconclusive by the declared band; any heat-source effect is < 0.02 K |
+| AA2: 0 frames unstable; bit-identical | 0 of 1; max diff 0.0 in u, v, theta, pi | held |
+| AA3: ≥ 8 steps/s | 2.9; frame 2.04e-3 unstable, 34 sweeps; 1 h state 19 violations, largest 1.13e-9 K, all at the edge | **refuted** |
+
+- The fix removes the real instability from the edges, costs nothing in
+  skill, and leaves the stable jet case bit-identical. It stays in.
+- The heat-source hypothesis of Z2 is not supported: the night bias moved
+  by 0.01 K. The re-imposed layer was not what P-59 is made of.
+- The speed is unchanged. That is the third explanation of P-63's cost to
+  be refuted, after denormals and machine load (test Y). Under the stop
+  rule, the next test splits the unstable interfaces into classes rather
+  than guessing at a fourth mechanism.
+- What the saved states cannot show: they are taken after the relaxation,
+  not at the moment the adjustment runs. The violations left in them are
+  near 1e-9 K, which points to one candidate. The adjustment leaves layers
+  exactly neutral, each step moves them by round-off, and a tolerance of
+  1e-10 K counts that as instability. That is a hypothesis; AB measures it.
+
+**Test AB (predictions first; class-splitting).** A wrapper around
+`dry_convective_adjustment` (as in test Z) records, at the start of every
+call in the calm 1 h runs (18Z 2026-09-22 and 06Z 2026-09-23, torch × 8,
+fix on): the unstable interfaces split by violation size (< 1e-8 K, 1e-8 to
+1e-3 K, ≥ 1e-3 K), by edge distance (≤ 14 cells or deeper), and by level;
+the sweeps used and the time; and, every 30th call, the sweeps needed to
+converge with a cap of 1 000.
+
+- **Round-off class:** at least 80 % of the unstable interfaces at the start
+  of the calls are below 1e-8 K. The fix would be a physical tolerance in the
+  adjustment (1e-10 K is 1 000 times below anything that matters).
+- **Real class:** at least 80 % are 1e-3 K or larger. Then the step itself
+  makes real instability every step, and the next measurement finds which
+  tendency does it.
+- Anything in between is mixed, and inconclusive for choosing a fix.
+- Either way, sweeps and time per call should track the number of unstable
+  interfaces. If the cap is hit on calls with only round-off violations,
+  the sweep itself is not converging on them, which is a defect in the
+  algorithm, not in the state.
+- The prediction: **the round-off class.**
+
+**Test AB result (prompt 160, same session; the predictions file on the
+server is timestamped 21:15:43 EDT, before the run): not round-off, and the
+defect is in the algorithm.**
+
+| | calm 18Z 2026-09-22 | calm 06Z 2026-09-23 |
+|---|---|---|
+| sweeps per call | **20 (the cap) on all 210** | 20 on all 211 |
+| adjustment time | 52.1 s of 74.8 s | 53.3 s of 76.3 s |
+| unstable at call start | about 775 a call, steady | about 224 a call |
+| size < 1e-8 / 1e-8 to 1e-3 / ≥ 1e-3 K | 0.9 % / **96.2 %** / 2.9 % | 0.0 % / **79.4 %** / 20.6 % |
+| largest violation, first call / after | 4.92 K / about 1.6e-3 K | 2.57 K / about 1.7e-3 K |
+| in the relaxation zone | 72.6 % | 100 % |
+| by interface | 16/17: 14 469, 17/18: 75 538, 18/19: 72 798 | 17/18: 19 999, 18/19: 27 181 |
+| left unstable after the call | every call (mean 8.84e-4) | every call (mean 9.34e-5) |
+| sweeps to converge, cap 1 000 | 34 on the first call, then 23 | 34, then 24 |
+
+- **The round-off prediction is refuted:** under 1 % of the violations are
+  below 1e-8 K. By the declared bands the result is mixed (96 % in the
+  middle band), so it does not choose between a tolerance and a tendency
+  hunt.
+- **What it shows instead.** The first call meets the real instability
+  (4.92 K; in the 18Z case, 400 of the 1 858 interfaces are in the interior,
+  where the initial state itself is superadiabatic) and mixes it to exactly
+  neutral. From then on, every step moves those neutral layers by about
+  1e-4 K. A steady few hundred interfaces become slightly unstable, and the
+  sweep scheme needs 23–24 sweeps to clear them. At the cap of 20 it leaves
+  some behind, and the next step starts the same way. The jet case never had
+  an unstable layer, so it has no neutral layers, and it costs nothing.
+- **So the cost is the algorithm, not the state.** A scheme that mixes only
+  the currently unstable segments needs many sweeps on a column of chained
+  near-neutral layers, because each mix can unsettle the interface next to
+  it. That is candidate (b) of Z2.
+- **Fix: pool-adjacent-violators (PAV).** One pass per column from the
+  ground up merges each new layer into the block below while the block mean
+  is higher (Ayer et al. 1955). It gives the stable state closest to the
+  input in the mass-weighted least-squares sense: the least mixing that
+  removes the instability.
+- **An expectation that was checked and was wrong.** I expected PAV to reach
+  the same state as the sweep scheme run to convergence. On the desktop it
+  does not: 16 K apart on a column with 3 K noise, 2e-4 K on a near-neutral
+  one. The sweep scheme merges every contiguous run of layers next to an
+  unstable interface, across the stable interfaces in between, so it mixes
+  more than it needs to. PAV therefore changes the model's answer as well as
+  its cost, and test AC has to judge it on skill, not identity.
+- The same desktop check reproduces the P-63 defect in a synthetic column: a
+  neutral bottom block nudged by 1e-4 K. The 20-sweep cap leaves 2–9 % of
+  interfaces unstable, and convergence takes 42–142 sweeps. PAV clears it in
+  one pass, in 4–5 ms against 21–30 ms for 20 sweeps (1 600 columns).
+
+## 2026-10-01 — P-63 fixed, a 20-cycle stability campaign, and a first sun
+
+**Summary.**
+- **P-63:** fixed (the frame fix of test AA and the PAV adjustment; the cause was found in tests AA and AB on 29 September). Calm cases now run
+  3.3 times faster, with identical skill.
+- **Stability:** the dry model completed 20 of 20 consecutive real cycles
+  (26–30 Sep), 23 real 24 h forecasts in all since the new defaults.
+- **Skill against persistence (P-59, P-68):** the dry model is worse than
+  persistence at every lead, so it does not beat doing nothing. The prescribed
+  surface heating brings temperature level with persistence (−0.24 K against
+  no heating, 17 of 24 leads better than persistence). It is stable only with
+  momentum mixing off (P-67).
+- **Wind:** the verification compared a ~300 m wind with 10 m observations
+  (P-68). With a 10 m operator, the model's real wind error remains (+0.34
+  m/s u), and it grows with lead time.
+- **Pipeline defects found and fixed:** cycling never used the previous
+  forecast (P-64), the land mask (P-65), and a 110 times slower QC (P-66).
+
+**For the collaboration study.** This was the first long block run without
+the human: about 11 hours, after "keep going". It became possible because
+the AI could reach the server directly (prompts 152–158). Every test still
+had its predictions written before the run. Because the AI cannot commit,
+the predictions were also left as timestamped files on the server
+(`*_predictions.txt`, written by the same job before its first run). Two
+of the AI's own claims were wrong and were caught by checks, not by the
+human:
+- that PAV reaches the converged sweep state (a unit test showed 16 K);
+- a hand-copied AF summary (recomputed from the table: 1.578/1.599, not
+  1.553/1.585).
+
+Two failures were found by watching for anomalies rather than by tests:
+- P-64 surfaced as a fallback message repeated in 18 logs;
+- P-66 surfaced as a verification that was 600 times slower than its fetch.
+
+**Test AC (predictions first; prompt 161, written 2026-10-01 before any
+run).** `--conv-scheme pav` against the sweep scheme, both with the frame
+fix, torch × 8. These runs use a development copy on the server (commit
+444fe9f plus the uncommitted PAV and persistence changes, under
+`scratch/dev`, data from the normal data root). The git checkout is not
+touched, because the user commits.
+
+- **AC1, calm (18Z 2026-09-22), 24 h, PAV** against AA1 (sweep):
+  1. Completes 24 h.
+  2. At least 8 steps/s (AA1: 3.2).
+  3. Every hourly snapshot has exactly 0 unstable interfaces. The model's
+     state is fully adjusted after each step, and the relaxation then mixes
+     two stable columns.
+  4. Temperature and wind RMSE are within ±0.2 of AA1 at every lead. PAV
+     mixes less than the sweep scheme, so near-surface layers change, but
+     only where the column was unstable.
+- **AC2, jet (12Z 2026-09-25), 1 h, PAV:** bit-identical to AA2. That case
+  never has an unstable interface, and PAV returns a stable state
+  unchanged.
+- **AC3, calm (06Z 2026-09-23), 24 h, PAV against AC3s, the sweep scheme,
+  same settings:** both complete 24 h; PAV at 8 steps/s or more and the
+  sweep scheme at 3.5 or less; RMSE within ±0.2 at every lead.
+- **Persistence reference, for both calm cases:** the initial state held
+  for 24 h (`--persistence`) and verified the same way. No prediction is
+  needed: it is the baseline the model is scored against from now on.
+- **Decision rule:** if 1–4 and AC2 and AC3 hold, PAV becomes the default.
+  A skill change outside ±0.2 at any lead stops the adoption until it is
+  understood.
+
+**Test AC result (2026-10-01, run and collected by the AI): PAV holds on
+everything scored.**
+
+| Prediction | Result | |
+|---|---|---|
+| AC1 completes 24 h | yes | held |
+| AC1 ≥ 8 steps/s | 24 h in 8.1 min, about 10.4 steps/s (AA1: 26.6 min) | held |
+| AC1: 0 unstable interfaces in every hourly snapshot | 0 in 24 of 24 (the sweep run AC3s: unstable in 24 of 24, up to 9.4e-5) | held |
+| AC1 RMSE within ±0.2 of AA1 | identical to the 0.01 printed, at every lead, for T, u and v | held |
+| AC2 bit-identical to AA2 | max diff 0.0 in u, v, theta, pi | held |
+| AC3 and AC3s complete; PAV ≥ 8, sweep ≤ 3.5 steps/s | 7.8 min (about 10.8 steps/s) against 27.2 min (about 3.1) | held |
+| AC3 RMSE within ±0.2 of AC3s | re-verified after IEM 503 errors: identical to the 0.01 printed, at every lead, for T, u and v | held |
+
+**The persistence reference (18Z 2026-09-22), the first time the model has
+been scored against doing nothing:**
+- **Temperature:** the model is better by 0.2–0.44 K at leads 5–20 and worse
+  by 0.16–0.45 K at leads 1–4 and 21–24. Both errors are dominated by the
+  missing diurnal cycle (P-59), RMSE up to 7.3 K for the model and 7.7 K for
+  persistence.
+- **Wind: persistence is better at almost every lead.** u RMSE model minus
+  persistence rises from about 0 at lead 1 to +0.5 at 8–10 h and +1.07 at
+  24 h; v is +0.3 to +0.6 from lead 3 on. The model's u bias grows to
+  +2.4 m/s, against +1.4 for persistence. So the near-surface wind gets
+  worse than the analysis as the dry model runs. This is one case; the
+  campaign below tests whether it holds generally.
+- **06Z 2026-09-23 against persistence is worse.** Temperature is 0.1–0.16 K
+  better for 5 h, then worse at leads 7–23, by up to +1.30 K at lead 18. The
+  model's next-afternoon cold bias is −6.81 K against −5.81 for
+  persistence: without the sun, the model drifts colder than simply holding
+  the night-time state. u is worse at leads 2–7 and 17–24 (up to +0.35), and
+  v at leads 1–5 and 16–24 (up to +0.58).
+
+**Decision: PAV is the default** (`--conv-scheme pav`; `sweep` reproduces the
+old model). Every AC prediction held. P-63 is FIXED, and calm cases now
+run at the speed of the jet case.
+
+**Test AD (predictions first): a 20-cycle stability campaign.** Every 00,
+06, 12 and 18Z cycle from 26 to 30 September 2026, ingested from
+observations, in two chains (26–28 and 29–30 September; the first cycle of
+each chain is a cold start, and the rest use the previous run's 6 h forecast
+as in production). Each forecast is 24 h, PAV, new defaults, torch × 8, two
+at a time. Each is verified with its persistence reference.
+
+1. **Stability: all 20 forecasts complete 24 h,** with no divergence and no
+   deadline stop. A failure is registered as a new problem, with its place
+   and time from `tools/locate_growth.py`.
+2. Every forecast takes 15 min or less of wall clock.
+3. Every hourly snapshot of every run has 0 unstable interfaces.
+4. All 20 ingests produce an analysis.
+5. **Skill against persistence, averaged over the 20 cycles** (expectations
+   from one case, not decisions): wind RMSE, model minus persistence, is
+   above +0.2 m/s for u and v at leads 6–24 h. For temperature the
+   difference is within ±0.5 K, which is inconclusive by design, because
+   neither has a diurnal cycle.
+
+**Where the wind error comes from (18Z 2026-09-22, model AC1 against
+persistence, split by station position).** At the ~100 stations inside the
+relaxation zone, the model is within +0.1 to +0.3 m/s (vector RMSE) of
+persistence at every lead, which is expected, because the zone is relaxed
+toward the frozen initial state. At the ~225 interior stations it is worse
+by +0.6 to +0.9 at 4–10 h and by +1.1 to +1.5 at 20–24 h. The interior speed
+bias is −0.6 to −0.9 m/s in the evening (persistence: +0.3) and −3.4 m/s the
+next afternoon (persistence: −2.5). So the interior near-surface wind weakens
+and does not recover by day. Vertical mixing is exactly zero above
+Ri = 0.25, and nothing heats the ground. So by day nothing brings momentum
+down to the lowest layer, while drag keeps taking it out. This is the wind
+side of P-59.
+
+**P-59 step 1: a prescribed diurnal surface heat flux (prompt 161).**
+`src/dynamics/diurnal.py`. H = f·S0·τ·max(sin e, 0) + H_night over land,
+0 over water, with:
+- e the solar elevation (declination from Cooper 1969; the equation of time
+  ignored);
+- S0 = 1361 W/m² (Kopp and Lean 2011);
+- τ = 0.75 clear sky, f = 0.2, H_night = −30 W/m².
+
+It heats the lowest layer, and PAV then mixes heat and momentum upward,
+which is a crude convective boundary layer. It uses only the date, the time
+and the position, so the observation-only rule holds. The model is
+unchanged unless `--surface-heating` is given. Tests (`test_diurnal.py`,
+5/5):
+- the Albany noon elevation is 46.64° at 16:55Z, as expected;
+- the lowest-layer energy closes to 2e-16;
+- the late-September daily mean is +16 W/m², with a peak of 117;
+- in the model, land columns gain the prescribed heat to 2e-4 after mixing,
+  and water changes by 1e-5 K;
+- torch agrees with NumPy to 2e-13.
+
+Limits: no clouds; land is "terrain above 0 m", so the Great Lakes are
+heated; the relaxation zone damps the cycle near the edges.
+
+**Test AE (predictions first).** PAV, new defaults, torch × 8, 24 h, with
+and without `--surface-heating`, run from a second development copy
+(`scratch/dev2`):
+
+- **AE1** 18Z 2026-09-22 (baseline AC1), **AE3** 06Z 2026-09-23 (baseline
+  AC3), and **AEj** the jet case, 12Z 2026-09-25 (baseline AEj0, PAV without
+  heating). Persistence for each.
+1. **Stability:** all complete 24 h.
+2. **Temperature:** RMSE averaged over leads 1–24 lower than the baseline by
+   at least 0.5 K in each case, and the swing of the bias (largest minus
+   smallest lead-mean bias) smaller by at least 30 %. In the jet case the
+   afternoon cold bias at leads 6–8 (Q case: −8.4 to −8.7 °C) improves by at
+   least 3 K.
+3. **Wind:** at the interior stations the speed bias by day (leads where
+   local solar time is 10–17 h) is less negative by at least 0.3 m/s.
+4. At least 6 steps/s.
+5. Temperature RMSE better than persistence at 16 or more of the 24 leads,
+   in each case.
+
+Any improvement short of a threshold is called partial; a worsening refutes
+it.
+
+**Test AE result (2026-10-01): run with the faulty land mask (P-65, about
+half the ocean heated as land), so it is a provisional reading, not the
+test.** All three runs completed in 7.4–8.7 min.
+
+| | 18Z 2026-09-22 | 06Z 2026-09-23 | jet, 12Z 2026-09-25 | prediction |
+|---|---|---|---|---|
+| T RMSE, mean over leads, base → heat | 4.18 → 4.01 (−0.17) | 4.22 → 3.55 (−0.67) | 4.84 → 4.05 (−0.79) | ≥ 0.5 lower: 2 of 3 |
+| bias swing | 8.19 → 6.11 (−25 %) | 9.02 → 7.15 (−21 %) | 10.17 → 7.45 (−27 %) | ≥ 30 %: partial in all three |
+| jet leads 6–8 cold bias | | | −8.3/−8.7/−8.7 → −6.1/−6.1/−5.8 | ≥ 3 K better: partial (1.9–2.3) |
+| heat beats persistence | 15 of 24 leads | 14 of 24 | 24 of 24 | ≥ 16: jet only |
+| interior daytime speed bias | −2.06 → −1.95 | −1.34 → −1.47 | +3.76 → +3.77 | ≥ +0.3: **refuted** |
+
+- **Temperature:** the sun clearly helps. The 06Z case's next-afternoon cold
+  bias goes from −6.8 to −4.4 K, and the jet case's afternoon error falls by
+  more than 2 K. Where it hurts: the 18Z case is too warm at leads 4–9
+  (late afternoon and evening, +0.3 to +0.7 K RMSE), and the 06Z case is too
+  warm the next evening and night (leads 19–24, +1.2 to +2.5 K bias). The
+  heat put into the mixed layer by day is not removed at night: the night
+  flux cools only the lowest layer.
+- **Wind: no change at all,** which refutes item 3. The verification takes
+  the wind of the lowest model level, about 300 m above the ground, and
+  compares it with 10 m observations. Momentum mixed down into a mixed layer
+  changes the 300 m wind little. In the jet case the model is +3.8 m/s too
+  fast by day, while persistence is +0.5. That is consistent with a 300 m
+  wind scored against 10 m observations. The wind question needs an
+  observation operator first; tuning the heating will not answer it.
+- Parameters were **not** tuned on these three cases. AE2, with the correct
+  mask, is the measurement.
+
+**Two defects found while AE and AD ran (P-64, P-65).**
+- **P-65:** the AE log reported "land 85%". The land mask was
+  `terrain > 0` on the slope-limited run terrain, which spreads land
+  heights over the sea (15.5 % exactly 0 m, against 31.9 % in the raw ETOPO
+  grid). So AE heated and cooled about half the ocean. **The first AE results
+  are contaminated and are reported as such;** AE2 repeats the test with the
+  mask from the raw grid.
+- **P-64:** every chained campaign cycle fell back from the previous
+  forecast to the previous analysis or the sounding mean. Snapshots were
+  stamped one step past the hour (6 h + 7.8 s), and the ingest asks for 6 h
+  to within 3.6 s. So the documented cycling has never happened. Fixed in
+  the working copy: whole steps per output interval, so snapshots land on
+  the hour (the step becomes 17.06 s instead of 17.13), and a 72 s tolerance
+  in the ingest.
+
+**AE2 (predictions as for AE, items 1–5),** from `scratch/dev3` (444fe9f plus
+every change of this session), with the raw-terrain land mask.
+
+**AF (predictions first): does the forecast first guess help the analysis?**
+Each chained campaign cycle (18 of them) is rebuilt from its archived
+payloads (`--from-raw`) in a separate data root, now with the previous
+run's 6 h forecast usable. The withheld-station score, surface temperature
+at about 70 ASOS stations never assimilated, is compared with the
+campaign's own analysis, which used the previous analysis or the sounding
+mean.
+- The forecast first guess is **better** if the mean withheld RMSE is lower
+  by at least 0.1 K and lower in at least 12 of 18 cycles. It is **worse** if
+  the mean is higher by at least 0.1 K. Anything else is no detectable
+  difference.
+- The expectation is **no detectable difference**: surface observations are
+  assimilated on top of the first guess, and the withheld score is a
+  surface score. At lead 6 the model and persistence scored within 0.3 K of
+  each other in AC.
+- This is one step of cycling. The previous forecasts come from non-cycled
+  analyses.
+
 
 
 ---
+
+**Test AD result, stability part (2026-10-01, 13:34 EDT): the dry model is
+stable on 20 of 20 consecutive real cycles.**
+- 1 held: 20 of 20 forecasts completed 24 h, with no divergence and no
+  deadline stop.
+- 2 held: 7.3–9.3 min of wall clock each, two at a time.
+- 3 held: 0 unstable interfaces in all 480 hourly states.
+- 4 held: all 20 ingests produced an analysis.
+
+With the three cases of tests W, X and AC, that is 23 real 24 h forecasts
+without a failure since the new defaults (d23e5fa) and PAV. The skill part
+(item 5) waits for the verification windows to close.
+
+One cycle, 12Z on 28 September, did use its previous forecast. Its log says
+"previous_forecast …:+6h", because that run's 6 h snapshot happened to fall
+within the 3.6 s window. That is P-64's mechanism seen directly.
+
+**AE20 and a step control (predictions first).** Three cases are too few to
+judge a physics change, so the heating is also run on all 20 campaign
+cycles (`scratch/dev3`, correct land mask). Each is scored against the same
+cycle without heating (the campaign forecast) and against persistence, on
+the same observations (copied, `--report-only`). The predictions are those
+of AE, items 1–5, applied to the RMSE pooled over the 20 cycles at each
+lead, plus:
+- in at least 15 of the 20 cycles, the heated run's T RMSE averaged over
+  leads is lower than the unheated run's.
+
+**Step control:** the 18Z 2026-09-22 case without heating from `dev3`, whose
+step is 17.06 s instead of 17.13 (P-64), against AC1. RMSE within ±0.05 at
+every lead.
+
+**Verification was the bottleneck (P-66).** Each `verify.py` run took
+10–14 min, almost all of it in an all-pairs Python buddy search in QC. The
+replacement is a sorted-by-time NumPy search. On a real 24 h ASOS window
+(50 170 observations) it takes 7.6 s against 849.1 s, with identical
+verdicts (0 differ, 645 rejections each). At 14:36 EDT the fast version was
+copied into `scratch/dev3` while the verification pool was running.
+Verifications that start after that use it. Because the verdicts are
+identical, the archives do not depend on which version matched them.
+
+**AF result (prompt 161): no detectable difference, as expected.** With the
+previous forecast as first guess, the 18 chained analyses have a mean
+withheld-station RMSE of 1.578 K, against 1.599 K for the campaign's
+(previous analysis or sounding mean): −0.021 K. The rebuild is lower in 10
+of 18 cycles and higher in 7; one is identical, because it already used its
+forecast. That is short of both bands (0.1 K and 12 of 18). By cycle the
+difference runs from −0.253 K (27 Sep 06Z) to +0.250 K (28 Sep 00Z). So fixing P-64
+neither helps nor hurts the surface analysis measurably. It restores the
+documented design, and its effect aloft is not measured by this score.
+
+**A stability failure with the heating (P-67).** In AE20, the heated run
+of 00Z 2026-09-28 diverged at 22.46 h. The same cycle without heating
+completed in AD. The growth is in the lowest levels over northern New York
+and New England, and the unheated run has the same noisy patch, but
+bounded. So the heating is not adopted, and it stays off by default.
+
+**Test AG (predictions first; class-splitting, the 28 Sep 00Z cycle, 24 h,
+heating on unless stated; each change made alone):**
+- **AG1** `--no-conv-momentum` (the adjustment mixes theta only). If (a), the
+  instant momentum mixing, drives it: completes 24 h with max|u| ≤ 20 m/s.
+- **AG2** `--sh-night 0` (no night cooling). If (b), the night cooling over
+  terrain, seeds it: completes 24 h.
+- **AG3** `--sh-fraction 0` (night cooling only, no daytime heating). If (b)
+  is enough by itself: max|u| above 25 m/s or divergence. If it completes
+  below 20 m/s, the night cooling alone is harmless.
+- If AG1 and AG2 both still fail, it is neither alone, and the next step is
+  a closer look at the state over the patch, not a fourth guess.
+
+**Test AG result (2026-10-01, 15:25 EDT): the night cooling and the
+momentum mixing together, neither alone.**
+
+| run (28 Sep 00Z, 24 h) | night cooling | day heating | momentum mixed | result |
+|---|---|---|---|---|
+| AE20 | yes | yes | yes | diverged 22.46 h |
+| AG1 | yes | yes | **no** | completed, max\|u\| ≤ 15.6 m/s |
+| AG2 | **no** | yes | yes | completed, max\|u\| ≤ 15.4 m/s |
+| AG3 | yes | **no** | yes | **diverged 17.48 h** |
+
+- AG1 holds (a) as necessary, and AG2 holds (b) as necessary. AG3 shows that
+  the night cooling with momentum mixing fails without any daytime heating,
+  and sooner, because the cooling then runs all day.
+- So the failure is an interaction. Steady cooling of the lowest layer over
+  land builds strong low-level cold pools. Where the adjustment fires in or
+  around them, it mixes u and v instantly through the block. Without the
+  cooling the mixing is harmless (AG2, and the 20 unheated campaign runs).
+  Without the mixing the cooling is harmless (AG1).
+- Momentum mixing also had no measurable effect on the verified wind in AE.
+  The candidate configuration is therefore heating with momentum mixing off.
+  That is a choice of configuration, not yet an explanation of the growth;
+  the cold-pool dynamics remain unexplained.
+
+**Test AH (predictions first): the candidate configuration on all 20
+campaign cycles.** `--surface-heating --no-conv-momentum`, PAV, torch × 8,
+verified on the campaign's observations.
+1. All 20 complete 24 h.
+2. Against the unheated runs (AD), with T RMSE pooled over the cycles at each
+   lead: mean over leads lower by at least 0.3 K; better in at least 15 of 20
+   cycles; bias swing smaller by at least 20 %.
+3. Against persistence: T RMSE better at 16 or more of 24 leads.
+4. The wind, against the unheated runs: within ±0.2 m/s at every lead.
+   Momentum is not mixed, and the verified level is about 300 m.
+
+**Test AD result, skill part (20 cycles, pooled at each lead).**
+
+| | T RMSE, model − persistence | u | v |
+|---|---|---|---|
+| leads 1–24 | +0.04 to +0.54 K, mean **+0.21**; better at 0 of 24 leads | mean +0.62 m/s; leads 6–24 +0.68 | mean +0.60; leads 6–24 +0.60 |
+| by cycle (mean over leads) | better in 3 of 20 | better in 2 of 20 | better in 5 of 20 |
+
+- Item 5 for the wind holds as predicted: the model is worse than
+  persistence by more than 0.2 m/s at leads 6–24. For temperature the mean
+  (+0.21 K) is inside the ±0.5 K band declared inconclusive. But the model is
+  never better at any lead: **the dry model, without a sun, does not beat
+  doing nothing at the surface.**
+- **The wind numbers are dominated by the observation operator (P-68).**
+  Persistence at lead 1 is the analysis, which assimilated these
+  observations. Yet its wind speed at the stations is 1.7–2.3 times the
+  observed 10 m speed in nearly every cycle: 11.1 against 4.8 m/s at
+  27 Sep 12Z, and 2.0 against 0.9 at 30 Sep 06Z. That gives a pooled lead-1
+  bias of −2 m/s in u and v (the flow was mostly northeasterly). The
+  verification takes the lowest model level, about 300 m above the ground,
+  and scores it against 10 m anemometers. Until the operator brings the
+  model wind down to 10 m, a wind comparison measures the operator first.
+
+**AE20 result (heating on all 20 cycles; correct land mask; momentum mixed;
+19 scored, one diverged, P-67):**
+- **T against no heating:** better at 21 of 24 leads, by −0.247 K on
+  average (leads 6–24: −0.263), and in 16 of 19 cycles. The largest gains are
+  −0.40 to −0.45 K at leads 6–13.
+- **T against persistence:** better at 17 of 24 leads, by −0.027 K on
+  average. It wins by up to 0.33 K at leads 4–15 and loses by up to 0.60 K at
+  leads 19–24.
+- **Wind:** u is +0.15 m/s worse, v is −0.08 better.
+
+**AE2 result (three cases, correct mask, momentum mixed).**
+- T RMSE averaged over leads: −0.21 K (18Z 09-22), −0.63 K (06Z 09-23) and
+  −0.81 K (the jet case).
+- Bias swing: −23 %, −22 % and −24 %.
+- Leads better than persistence: 16, 13 and 24 of 24.
+- The jet case's cold bias at leads 6–8 improves by 2.0–2.3 K.
+- Interior daytime speed bias: −2.06 → −1.87, −1.34 → −1.48, +3.76 → +3.70.
+
+Against the predictions: item 2 holds in two of three cases for the RMSE
+and is partial for the swing (all short of 30 %) and for the jet cold bias
+(short of 3 K). Item 3, the wind, is refuted. Item 5 holds in two of three.
+The correct land mask changed the result very little.
+
+**Step control:** `dev3` (17.06 s step) against AC1 (17.13 s): identical to
+the 0.01 printed at every lead. P-64's step change does not move the scores.
+
+**Test AH result (2026-10-01, 16:58 EDT): heating with momentum mixing off,
+20 cycles.**
+
+| prediction | result | |
+|---|---|---|
+| 1. all 20 complete 24 h | 20 of 20, 7.4–9.3 min, including 28 Sep 00Z, which diverged with momentum mixed | held |
+| 2. T RMSE against no heating, mean over leads, ≥ 0.3 K lower | −0.243 K (leads 6–24 −0.259); better at 21 of 24 leads | partial |
+| 2. better in ≥ 15 of 20 cycles | 17 of 20 | held |
+| 2. pooled bias swing ≥ 20 % smaller | 0.86 → 0.40 K (−53 %); pooling all four start times blurs the diurnal phase, so this is the weakest of the checks | held |
+| 3. T better than persistence at ≥ 16 of 24 leads | 17 of 24 (mean −0.032 K): better by up to 0.33 K at leads 4–16, worse by up to 0.6 K at 19–24 | held |
+| 4. wind within ±0.2 m/s of no heating at every lead | v: −0.01 to −0.15, better at all 24 leads; u: −0.02 to +0.25, outside the band at leads 21–23 | refuted, narrowly |
+
+- With momentum mixed (AE20, 19 cycles), the scores are the same to about
+  0.01 K: the momentum mixing was not doing anything measurable for skill,
+  and it was what made 28 Sep 00Z diverge.
+- `docs/diurnal_heating_skill.png` shows pooled T RMSE and bias by lead for
+  persistence, the dry model, and the dry model with heating (19 cycles
+  common to all runs).
+- **The bias by lead tells the remaining story.** The unheated model drifts
+  cold (to −0.5 K pooled). The heated model drifts warm (+0.1 to +0.5 K), with
+  peaks at leads 5–6, 11–12 and 17–18. Those are the leads where one of the
+  four start times reaches mid-afternoon. The heating is now a little too
+  strong by day and too weak at removing heat by night (AE). The
+  late-lead loss to persistence (leads 19–24) is where both lack what the
+  real atmosphere does overnight.
+- **Status:** the heating improves temperature, but not by the 0.3 K
+  threshold. It is stable only with momentum mixing off. It stays off by
+  default, and `--surface-heating --no-conv-momentum` is the candidate.
+  Adoption is the user's call.
+
+**P-68 step 1: a 10 m wind operator.** `verify.py --wind-operator log10m`
+scales the lowest-level wind by ln(10/z0)/ln(z1/z0), where z1 is the
+level's height above the model ground and z0 = 0.1 m. That is the model's
+own neutral drag profile. The default is unchanged (`lowest`). The original
+value is kept in each match (`forecast_lowest_level`, `wind_factor`). Test
+(`test_sigma_operator.py`, 8/8): z1 is 237 m above flat ground (factor
+0.593) and 226 m above 800 m terrain (0.596). Above about 50 m a neutral log
+law over-reduces, so this is a first operator, not a surface-layer scheme.
+
+**Test AI (predictions first): AD, its persistence and AH re-scored with
+the 10 m operator** (`--report-only` on the archived observations, 20
+cycles each).
+1. Persistence at lead 1, pooled: the ratio of mean forecast to observed
+   wind speed falls from its current value (to be printed alongside) to
+   0.9–1.4.
+2. Persistence at lead 1: u and v RMSE each lower by at least 0.5 m/s.
+3. Temperature scores identical to the old archives, because the operator
+   touches only wind.
+4. No prediction on whether the model still loses to persistence in wind.
+   That is the question the operator lets us ask.
+
+**Test AI result (2026-10-01, 17:15 EDT): the 10 m operator removes most
+of the wind error that was not the forecast's.**
+
+| prediction | result | |
+|---|---|---|
+| 1. persistence lead-1 speed ratio (mean forecast / observed) falls to 0.9–1.4 | 1.86 → 1.10 (lead 12: 2.04 → 1.21; lead 24: 2.22 → 1.32) | held |
+| 2. persistence lead-1 u and v RMSE each lower by ≥ 0.5 m/s | u 3.49 → 2.28 (−1.21); v 3.11 → 1.94 (−1.16); lower at all 24 leads in all 20 cycles | held |
+| 3. temperature identical to the old archives | +0.000 at every lead in every cycle | held |
+
+**What the operator then shows (item 4, no prediction).**
+- **The dry model still loses to persistence in wind, by much less:** u
+  +0.336 m/s (leads 6–24 +0.387), v +0.145 (+0.157). It is better in 2 and
+  5 of 20 cycles.
+- **Heating hardly changes the wind:** u +0.054, v −0.022 against the
+  unheated model.
+- **The model's near-surface wind strengthens with lead time.** Its speed
+  ratio is 1.17 at lead 1, 1.39 at 12 h and 1.51 at 24 h, against 1.10,
+  1.21 and 1.32 for persistence. Persistence's ratio also grows, so part of
+  it is in the observations or the analysis. The extra growth in the model,
+  +0.07 at lead 1 and +0.19 at 24 h, is a model error. This contradicts
+  the 18Z 09-22 interior analysis, where the model wind weakened, so it
+  varies with the case and needs its own look.
+- **Recommendation:** make `--wind-operator log10m` the verification
+  default. That is a change to the scorer, and it is the user's decision.
+  With the old operator, wind scores measure the 300 m-to-10 m speed ratio
+  more than the forecast.
 
 ## 2026-09-25 — Forecast maps and a Pivotal-style viewer
 

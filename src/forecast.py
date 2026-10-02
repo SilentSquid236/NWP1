@@ -299,9 +299,21 @@ def run_forecast(model, driver, relax, duration, dt=None, output_every=None,
     info = {} if info is None else info
     info["stopped"] = "completed"
     dt = dt or model.max_dt()
-    n_steps = int(np.ceil(duration / dt))
-    dt = duration / n_steps
     interval = output_every or duration
+
+    # OUTPUT TIMES ON THE HOUR (P-64). When the output interval divides the
+    # run, take a whole number of (slightly shorter) steps per interval, so
+    # every snapshot falls exactly on its target. Before this the 6 h
+    # snapshot sat 7.8 s past 6 h (one step's overshoot), the next cycle's
+    # ingest asks for 6 h to within 3.6 s, and so no cycle ever used the
+    # previous forecast as its first guess.
+    n_out = duration / interval
+    if round(n_out) >= 1 and abs(n_out - round(n_out)) < 1e-9:
+        per_out = int(np.ceil(interval / dt - 1e-9))
+        n_steps = per_out * int(round(n_out))
+    else:
+        n_steps = int(np.ceil(duration / dt))
+    dt = duration / n_steps
 
     # Emit on TARGET TIMES, not on a step count. Deriving a stride as
     # int(interval / dt) truncates, so snapshots drift steadily earlier than
@@ -367,12 +379,18 @@ def run_forecast(model, driver, relax, duration, dt=None, output_every=None,
         # n_steps floats and can end a few ns short of `duration`, so a 1e-9 s
         # tolerance never fired there: every run lost its last snapshot (24 h
         # runs ended at 23.75 h; found 2026-09-26 in the test X verification).
-        if next_i < len(targets) and (model.time >= targets[next_i] - 1e-9
+        #
+        # Half a step of tolerance: with the step count above, a target is a
+        # whole number of steps away and model.time reaches it to round-off
+        # (P-64). The snapshot is then stamped with the target itself.
+        if next_i < len(targets) and (model.time >= targets[next_i] - 0.5 * dt
                                       or k == n_steps - 1):
+            target = targets[next_i]
             next_i += 1
             snap = [to_numpy(a) if torch_run else a.copy()
                     for a in (model.u, model.v, model.theta, model.pi)]
-            snapshots.append((model.time, *snap))
+            stamp = target if abs(model.time - target) < 1e-6 * dt else model.time
+            snapshots.append((stamp, *snap))
             if progress:
                 print(" " * 96, end="\r")      # clear the progress line
                 su, sv, sth, spi = snap
@@ -440,6 +458,26 @@ def main():
                    help="Skip initial divergence removal. The forecast will "
                         "almost certainly blow up; useful only for showing "
                         "why the balancing step exists.")
+    p.add_argument("--conv-scheme", choices=("sweep", "pav"), default="pav",
+                   help="Convective adjustment: pav (pool-adjacent-violators, "
+                        "exact in one pass; the default since test AC, P-63) "
+                        "or sweep (segment mixing, cap 20; the old model)")
+    p.add_argument("--surface-heating", action="store_true",
+                   help="Prescribed diurnal surface heat flux from solar "
+                        "elevation over land (P-59; src/dynamics/diurnal.py)")
+    p.add_argument("--sh-fraction", type=float, default=0.2,
+                   help="Share of clear-sky sunshine into sensible heat")
+    p.add_argument("--sh-tau", type=float, default=0.75,
+                   help="Clear-sky transmission")
+    p.add_argument("--sh-night", type=float, default=-30.0,
+                   help="Steady ground cooling flux, W/m2 (negative)")
+    p.add_argument("--persistence", action="store_true",
+                   help="Write the prepared initial state at every output "
+                        "time instead of integrating: the do-nothing "
+                        "reference forecast for verification (P-59)")
+    p.add_argument("--no-conv-momentum", action="store_true",
+                   help="The convective adjustment mixes theta only, not u and v "
+                        "(diagnosis, P-67)")
     p.add_argument("--raw-boundaries", action="store_true",
                    help="Do not convectively adjust the boundary frames "
                         "(the behaviour before P-63; comparison only)")
@@ -550,6 +588,35 @@ def main():
     print(f"  mixing         : "
           + ("off" if args.no_mixing else f"on below Ri {model.ri_crit:g}"))
     print(f"  sponge         : {args.sponge_levels} levels below the lid")
+    if args.surface_heating:
+        from diurnal import DiurnalHeating
+        if not all(k in meta0 for k in ("lat", "lon", "run_time")):
+            raise SystemExit("--surface-heating needs lat, lon and run_time in the "
+                             f"driving frame; {files[0].name} has {sorted(meta0)}")
+        start = np.datetime64(str(np.asarray(meta0["run_time"])), "s").astype(datetime)
+        # LAND FROM THE UNSMOOTHED TERRAIN (P-65). The run's terrain.npz is
+        # slope-limited, and the smoothing spreads land heights out over the
+        # sea: 15.5 % of it is exactly 0 m against 31.9 % of the raw ETOPO grid
+        # (ocean clipped to 0). "terrain > 0" on it called half the ocean land.
+        raw = Path(config.DATA_ROOT) / "static" / f"terrain_etopo_{terrain.shape[0]}x{terrain.shape[1]}.npz"
+        if raw.exists():
+            land = np.load(raw)["terrain"] > 0.0
+            land_src = raw.name
+        else:
+            land = terrain > 0.0
+            land_src = "the smoothed run terrain (no raw ETOPO file; coastal sea counted as land)"
+            print(f"  WARNING: {raw} not found; land mask from {land_src}")
+        model.surface_heating = DiurnalHeating(
+            np.asarray(meta0["lat"]), np.asarray(meta0["lon"]), land, start,
+            f_sensible=args.sh_fraction, tau=args.sh_tau, h_night=args.sh_night)
+        print(f"  surface heat   : {model.surface_heating}")
+    model.conv_scheme = args.conv_scheme
+    model.conv_mix_momentum = not args.no_conv_momentum
+    if args.no_conv_momentum:
+        print("  convection     : momentum NOT mixed (--no-conv-momentum)")
+    print(f"  convection     : {args.conv_scheme}"
+          + (" (cap 20 sweeps)" if args.conv_scheme == "sweep"
+             else " (pool-adjacent-violators, one pass)"))
 
     # PREPARE THE INITIAL STATE. Order measured, not assumed.
     #
@@ -603,6 +670,24 @@ def main():
     print(f"  timestep       : {model.max_dt():.1f} s "
           f"(external wave ~290 m/s sets this)\n")
 
+    if args.persistence:
+        # THE DO-NOTHING REFERENCE (P-59). The prepared initial state --
+        # same conversion, filter and balance as the model starts from -- is
+        # written at every output time, so verification scores it exactly
+        # the way it scores the model. Skill means beating this.
+        interval = args.output_every * 3600
+        duration = args.hours * 3600
+        times = list(np.arange(interval, duration + 1e-9, interval))
+        if not times or times[-1] < duration - 1e-9:
+            times.append(duration)
+        snaps = [(float(t), to_numpy(model.u).copy(), to_numpy(model.v).copy(),
+                  to_numpy(model.theta).copy(), to_numpy(model.pi).copy())
+                 for t in times]
+        info = {"stopped": "persistence", "wall_s": 0.0}
+        print(f"  persistence    : initial state written at {len(snaps)} times, "
+              f"no integration\n")
+        return _write_forecast(args, run_dir, snaps, info, lev, terrain, meta0, source)
+
     if args.backend == "torch":
         n = model.to_backend("torch", threads=args.threads)
         print(f"  backend        : torch, {n} threads (float64)\n")
@@ -623,7 +708,11 @@ def main():
         print(f"\nNo forecast hour completed ({info.get('stopped')}); "
               f"nothing written.")
         return 1
+    return _write_forecast(args, run_dir, snaps, info, lev, terrain, meta0, source)
 
+
+def _write_forecast(args, run_dir, snaps, info, lev, terrain, meta0, source):
+    """Write the snapshots in the format verify.py and make_maps.py read."""
     out = Path(args.out or (run_dir / "forecast.npz"))
     np.savez_compressed(
         out,
@@ -649,7 +738,8 @@ def main():
     stopped = info.get("stopped", "")
     # Output is written in every case; the code says how the run ended, so the
     # cycle script's log shows a cut-short or diverged run as such.
-    return 0 if stopped == "completed" else (2 if stopped.startswith("deadline") else 3)
+    return 0 if stopped in ("completed", "persistence") else \
+        (2 if stopped.startswith("deadline") else 3)
 
 
 if __name__ == "__main__":

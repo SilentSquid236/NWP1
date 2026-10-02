@@ -188,7 +188,11 @@ def first_guess_from_forecast(path, lead_hours, levels_pa, rh_default=None):
     """
     z = np.load(path, allow_pickle=False)
     t = np.asarray(z["times_s"], float) / 3600.0
-    hit = np.where(np.abs(t - lead_hours) < 1e-3)[0]
+    # 0.02 h (72 s), more than one model step. A 1e-3 h (3.6 s) window was
+    # narrower than the overshoot of a snapshot past its hour (7.8 s at a
+    # 17.13 s step), so no cycle ever got its first guess (P-64). Forecasts now
+    # land on the hour; this keeps the older files usable.
+    hit = np.where(np.abs(t - lead_hours) < 0.02)[0]
     if hit.size == 0:
         return None
     i = int(hit[0])

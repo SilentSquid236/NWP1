@@ -247,6 +247,54 @@ def test_archive_roundtrip_and_recovery():
                f"filter by station -> {len(s1)}")
 
 
+def test_fast_buddy_search_matches_reference():
+    """
+    The vectorised buddy search must give the same neighbours, in the same
+    order, as the all-pairs reference, and so the same QC verdicts. Realistic
+    mix: hourly surface reports at ~300 stations over 3 h, sounding levels, two
+    variables, a few liars and some pairs exactly 30 min apart.
+    """
+    import time as _time
+    from observations import buddy_neighbours, buddy_neighbours_reference
+    import observations as obsmod
+    rng = np.random.default_rng(7)
+    t0 = datetime(2026, 9, 22, 18)
+    obs = []
+    for st in range(300):
+        la, lo = rng.uniform(37, 47.5), rng.uniform(-82, -66)
+        for h in range(3):
+            for m in (0, 30):
+                when = t0 + timedelta(hours=h, minutes=m)
+                obs.append(Observation(when, la, lo, "TMP", 290 + rng.normal(0, 2) + (15 if rng.random() < 0.01 else 0),
+                                       "metar", station=f"S{st:03d}", error_std=1.5))
+                obs.append(Observation(when, la, lo, "UGRD", rng.normal(3, 2), "metar", station=f"S{st:03d}", error_std=2.0))
+    for st in range(12):
+        la, lo = rng.uniform(37, 47.5), rng.uniform(-82, -66)
+        for p_hpa in (1000, 975, 850, 849, 500, 250):
+            obs.append(Observation(t0, la, lo, "TMP", 250 + 0.04 * p_hpa + rng.normal(0, 1), "raob",
+                                   station=f"R{st:02d}", pressure=p_hpa * 100.0, error_std=1.0))
+    a = _time.time(); ref = buddy_neighbours_reference(obs, 150.0); t_ref = _time.time() - a
+    a = _time.time(); fast = buddy_neighbours(obs, 150.0); t_fast = _time.time() - a
+    same = all([id(x) for x in r] == [id(x) for x in f] for r, f in zip(ref, fast))
+    # Same QC verdicts through run_qc with each search.
+    def verdicts():
+        for o in obs: o.qc_flag, o.qc_reason = "unchecked", ""
+        k, rj, sm = run_qc(obs)
+        return [(o.qc_flag, o.qc_reason) for o in obs], sm
+    v_fast, sm_fast = verdicts()
+    saved = obsmod.buddy_neighbours
+    obsmod.buddy_neighbours = buddy_neighbours_reference
+    try:
+        v_ref, sm_ref = verdicts()
+    finally:
+        obsmod.buddy_neighbours = saved
+    n_nb = sum(len(r) for r in ref)
+    ok = same and v_fast == v_ref and sm_fast == sm_ref and sm_fast["buddy"] > 0
+    report("fast buddy search: same neighbours and verdicts as the all-pairs reference", ok,
+           f"{len(obs)} obs, {n_nb} neighbour links, {sm_fast['buddy']} buddy rejections; "
+           f"reference {t_ref:.2f} s, fast {t_fast:.2f} s")
+
+
 if __name__ == "__main__":
     print("\nVerification harness\n" + "=" * 62)
     for fn in (test_bilinear_exact_for_linear_field,
@@ -257,7 +305,8 @@ if __name__ == "__main__":
                test_scores_match_hand_calculation,
                test_matching_skips_and_counts,
                test_elevation_correction_sign,
-               test_archive_roundtrip_and_recovery):
+               test_archive_roundtrip_and_recovery,
+               test_fast_buddy_search_matches_reference):
         try:
             fn()
         except Exception as e:
