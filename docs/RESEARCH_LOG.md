@@ -4036,6 +4036,341 @@ of the wind error that was not the forecast's.**
   With the old operator, wind scores measure the 300 m-to-10 m speed ratio
   more than the forecast.
 
+## 2026-10-02 — The user's decisions, the night wind, and a ground temperature
+
+**Summary.**
+- **Decisions:** the goal is now a convection-allowing model
+  (`docs/CAM_DESIGN.md`, a draft for review). Verification uses `log10m` by
+  default. The P-64 fix stays. Dry fixes come first.
+- **P-69 (night wind):** the model's 10 m wind excess was a night-time
+  problem: a ground with no temperature and a neutral diagnosis. A
+  force-restore ground temperature plus a similarity operator fix most of it
+  (test AK).
+- **P-67:** traced by a closed budget to the dispersion of the second-order
+  centred advection at a northern-Vermont low-level jet. Third-order
+  upwind-biased advection removes it with no change in skill (test AL).
+- **The candidate configuration (test AM):** upwind3, the land surface and a
+  land/sea roughness. On the 20 campaign cycles it beats persistence in 2 m
+  T (−0.29 K), u (−0.045 m/s) and v (−0.069 m/s), pooled, and AD by 0.50 K,
+  0.38 and 0.22 m/s. Late-lead temperature is still worse than persistence
+  (no clouds). Nothing is switched on by default; the user decides.
+
+**Context (prompts 162–163).** The user pulled c7380aa, said "keep going",
+and asked for every approval needed before leaving for class. Six questions
+were put to them, and they decided:
+
+| question | decision |
+|---|---|
+| make `--surface-heating --no-conv-momentum` the default? | **no**: "we want a convective allowing model" |
+| the follow-up: plan toward a 3 km non-hydrostatic CAM? | **yes**; a design and roadmap first, and no large rewrite until they have reviewed it |
+| `--wind-operator log10m` as the verification default? | **yes** (done: `verify.py`) |
+| keep the P-64 cycling fix? | **yes** |
+| next: dry fixes, moisture, or both? | **dry fixes first** |
+| run server jobs autonomously; set `NWP_BACKEND`/`NWP_THREADS` in `~/.bashrc`? | **yes** to both (done) |
+
+On the server, all six test suites passed at c7380aa (convection 12/12 with torch).
+
+**The CAM roadmap** is in `docs/CAM_DESIGN.md`, a draft for the user's
+review. It covers what a convection-allowing model needs, what NWP1 keeps,
+replaces and drops, a cost table against the 1.5 h budget, and stages S0–S7
+with a gate test at each.
+- A 3 km model over the whole domain is estimated at about 10–13 h per 24 h
+  on today's settings, which does not fit.
+- A 3 km nest of 450–600 km inside the 12 km model, or 4 km over the whole
+  domain with float32 and more threads, might fit.
+- These numbers are scaled from the measured 8.3 min run with an assumed cost
+  factor, so stage S3 measures them before the grid is chosen.
+
+**Test AJ (diagnostic; predictions first, `scratch/aj/aj_predictions.txt`): where does the near-surface wind grow?**
+The model's wind at leads 6/12/18/24 h was compared with the analysis valid
+at the same time: the converted analysis in the later cycle's
+`forecast_persist.npz`. The AD campaign gave 70 pairs.
+
+| prediction | result | |
+|---|---|---|
+| 1. domain lowest-level model/analysis ratio ≥ 1.05 at 24 h | 1.15 (6 h), 1.15, 1.22, 1.33 (24 h) | held |
+| 2. drag-roughness hypothesis: interior land > 1.05 at 24 h, interior sea ≤ 1.00 | land 1.35; **sea 1.55**, the largest anywhere | **refuted** |
+| 3. the excess is in the lowest levels (lowest > 2 × level 10) | lowest +1.41 (6 h) to +2.31 m/s (24 h); level 10 −0.11 to +0.31; mid-troposphere −0.7 to −1.3 | held |
+
+One z0 everywhere cannot explain a growth that is largest over the sea, where
+z0 = 0.1 m is about 500 times too rough. The edge zone grows least (1.03 to
+1.19): it is relaxed toward the frozen initial state.
+
+**The time-of-day split (no prediction; `tools/phase_scores.py` on the AD,
+persistence and AH archives).** This changes what the problem is.
+
+| 10 m wind, speed ratio forecast/observed | day (10–18 EDT) | night (22–06 EDT) |
+|---|---|---|
+| model (AD), leads 1–6 / 7–12 / 13–18 / 19–24 | 1.13 / 1.10 / 1.02 / 1.17 | 1.37 / 1.64 / 1.81 / 1.74 |
+| persistence | 1.04 / 0.90 / 0.83 / 1.05 | 1.12 / 1.44 / 1.69 / 1.47 |
+
+| 2 m T bias (K), all leads | day | night |
+|---|---|---|
+| model (AD) | −2.30 | +1.54 |
+| persistence | −2.17 | +1.69 |
+| model + prescribed heating (AH) | −1.35 | +1.49 |
+
+- The model's mean 10 m speed is nearly the same day and night (3.9 m/s).
+  The observed speed falls from 3.6 by day to 2.2–2.7 at night.
+- By day the ratio is about 1.1. The "growth with lead time" found in test AI
+  is mostly the share of night-time verification hours changing with lead,
+  plus a night ratio that rises as the night goes on.
+- The same holds for temperature. The prescribed heating fixed part of the
+  day and none of the night.
+- Both the wind and the temperature errors point at the same missing physics:
+  the ground has no temperature. It does not cool at night, the surface layer
+  never becomes stable, the drag stays neutral, and both 10 m operators assume
+  a neutral profile.
+- **Registered as P-69.**
+
+**Test AJ2 (class-splitting; predictions first, `verification_tests/aj2/aj2_predictions.txt`).**
+Four variants were run on 8 cycles (27 Sep 00Z to 28 Sep 18Z): control,
+`--no-mixing`, `--no-conv-momentum`, and `--z0 1.0` (neutral drag × 2.0).
+The aim is to see which removes the lowest-level excess over the analysis.
+`forecast.py` gained `--z0` and `--no-drag` for this.
+
+**Test AJ2 result (2026-10-02, 11:37 EDT).** 32 runs, in 9.6 min or less
+each. The excess is the model's lowest-level wind minus the analysis valid
+at the same time, in the interior, over the 8 cycles.
+
+| variant | completed | lowest-level excess 6 h / 24 h (m/s) | u, v RMSE vs control (pooled, log10m) |
+|---|---|---|---|
+| control | 8/8 | +2.35 / +4.54 | — |
+| `--no-mixing` | **3/8** (diverged at 6.5–22.1 h) | +2.40 / +4.03 (3 runs) | u −0.13, v +0.12 (3 cycles) |
+| `--no-conv-momentum` | 8/8 | +2.33 / +4.52 | −0.01, −0.01 |
+| `--z0 1.0` (neutral drag × 2.0) | **7/8** (28 Sep 06Z diverged at 18.99 h) | **+0.79 / +3.05** | **u −0.56, v −0.26** (24 of 24 leads, 7 of 7 cycles); T −0.08 K |
+
+| prediction | result | |
+|---|---|---|
+| 1. control reproduces AD | identical to ±0.000 at every lead | held |
+| 2. no mixing cuts the 6 h excess to ≤ 50 % | +2.40 against +2.35 | **refuted**; Richardson mixing is not the source |
+| 3. no convective momentum within ±25 % | +2.33 against +2.35 | held |
+| 4. z0 = 1.0 lowers the 24 h excess by 25–60 % | −33 % (−66 % at 6 h) | held |
+| 5. z0 = 1.0 lowers pooled u and v RMSE | u −0.56, v −0.26 m/s | held |
+
+**Stop rule, applied as written.** At 24 h no variant removes ≥ 50 % of the
+excess. At 6 h the stronger drag removes 66 %. The 24 h picture is not a
+surface one: on these 8 cycles the lower troposphere (levels 13–18) is
++2.5 m/s faster than the analysis by 24 h. So the late growth is in the
+resolved dynamics or the frozen boundaries, and the next step there is a
+momentum budget, not more parameters.
+- These 8 windy cycles grow faster than the 20-cycle average: domain ratio
+  1.86 at 24 h, against 1.33.
+
+**What the drag result says.** The wind bias in u and v is negative at every
+lead (u −1.6 to −2.8 m/s), while the speed is too high. The model wind is
+too fast and turned, which is what too little surface friction does: too
+little flow across the isobars toward low pressure. Doubling the drag
+removes about a third of the u bias.
+- That is the largest wind improvement of any change so far.
+- No roughness is adopted from it. One value on 8 cycles, with one more
+  divergence, is not a basis for a default. A land-use roughness (forest
+  about 1 m, open sea about 0.0002 m, as tabulated in `surface.py`) is the
+  physical version, and it is a candidate after test AK.
+
+**The 28 Sep divergences share a place (`tools/locate28.py`).** The z0 = 1.0 run
+of 28 Sep 06Z and the P-67 heated run of 28 Sep 00Z start the same way. The
+fastest wind is at the second or third level from the ground, at
+45.2–45.4 N, 72.2–72.8 W: northern Vermont, 19–21 cells from the northern
+edge, over 170–310 m terrain between the Green Mountains and the border.
+- The z0 = 1.0 run grew from 17 m/s to 41 m/s between 15 and 18 h, at
+  21Z–00Z 28/29 Sep.
+- The P-67 run grew from 22 to 31 m/s at 17 h (17Z) and from 33 to 51 m/s
+  at 21–22 h.
+- The control has its fastest low-level wind in the same box from 13 to 19 h
+  (16–21 m/s) and survives.
+- So P-67 is not specific to the heating. It is a weak spot in this place on
+  this day, and three different changes push it over. Recorded under P-67.
+
+**The P-67 tendency budget (`tools/budget28.py`, from the saved hourly states; the budget closes to 0.00).**
+At each hour the fastest wind in the hot-spot box was taken, and every term
+of the momentum tendency there was projected on the wind direction. The
+point is a strict local speed maximum in its 3 × 3 × 3 neighbourhood at
+every hour.
+
+| run, hour | speed | horizontal advection | vertical advection | pressure gradient | mixing | hyperdiffusion |
+|---|---|---|---|---|---|---|
+| z0 = 1.0, 13 h | 15.1 | +7.5 | +5.0 | −4.9 | −0.5 | −2.0 |
+| z0 = 1.0, 16 h | 24.0 | **+24.3** | −0.5 | −3.3 | 0.0 | −3.6 |
+| z0 = 1.0, 18 h | 41.5 | **+66.0** | +44.7 | −23.5 | −51.7 | −7.1 |
+| control, 17 h | 21.3 | +24.1 | +2.5 | −9.8 | −12.8 | −2.6 |
+| control, 24 h | 19.2 | +27.3 | −1.0 | −5.8 | −0.3 | −2.0 |
+
+(m/s per hour along the wind.)
+- At a local maximum of speed, horizontal advection cannot raise the speed
+  in the continuous equations: the along-wind part of (V·∇)V is V·∇|V|,
+  which is zero there.
+- The model's term is +7 to +66 m/s per hour. That is the dispersion error
+  of the second-order centred advection (`_horiz_adv`), which is
+  non-dissipative and leaves 2-dx structure to the hyperdiffusion. The
+  hyperdiffusion removes 2–7 m/s per hour.
+- The pressure gradient and the mixing oppose the growth. In the control
+  they win; with stronger drag (more shear under the maximum) or with heating,
+  they do not.
+- This turns P-67 from "heating plus momentum mixing" into a numerical
+  property of the core's advection, made visible by a strong low-level jet
+  over northern Vermont.
+
+**Test AL (predictions first, `verification_tests/al/al_predictions.txt`).**
+This tests `--advection upwind3`: third-order upwind-biased horizontal
+advection (Wicker and Skamarock 2002), written as the fourth-order centred
+difference plus a |u|-scaled fourth-derivative damping. It is dissipative
+only at the shortest scales, and it is the family the S1 non-hydrostatic
+core would use.
+- `test_advection.py` 4/4:
+  - order 2.00 against 2.99;
+  - one revolution of a 3-cell bump leaves a minimum of −0.286 for centred2
+    and −0.024 for upwind3;
+  - the 2-dx wave is invisible to centred2 and damped by upwind3.
+- The test runs the 20 campaign cycles plus the two P-67 failures with the
+  new scheme. It starts after AK.
+
+**Test AL result (2026-10-02, 14:50 EDT).**
+
+| prediction | result | |
+|---|---|---|
+| 1. 20 of 20 complete | 20 of 20 | held |
+| 2. both P-67 failures complete, with the hot-spot wind under 30 m/s every hour | both complete 24 h. The fastest wind anywhere in the domain is 15.6 m/s (z0 = 1.0, 06Z) and 14.9 m/s (heated, 00Z), against 41.5 and 51.1 before the divergence with centred2 | held |
+| 3. skill within ±0.05 K and no worse than +0.10 m/s | T +0.002 K, u +0.005, v −0.000 m/s | held |
+| 4. run time ≤ 25 % longer | mean 9.8 min against about 8.3 (+18 %; max 11.3 against 9.3). AL ran 3 streams to AD's 2, so part of this is contention | held |
+| 5. 24 h lowest-level excess over the analysis down ≥ 10 % | +2.32 against +2.31 m/s | **refuted** |
+
+- **P-67 is fixed by the advection scheme.** The two configurations that
+  diverged now run 24 h with no hot spot, and scores do not change. The
+  20-cycle low-level wind excess is not an advection effect (prediction 5),
+  which agrees with AJ2: that excess is surface physics and diagnosis (P-69).
+- **Recommendation:** make `--advection upwind3` the default. It is a change
+  to the core's numerics, so it is put to the user rather than switched
+  silently. It is also the CAM roadmap's horizontal scheme.
+
+**Test AM (predictions first, `verification_tests/am/am_predictions.txt`).**
+The combined candidate on the 20 cycles: upwind3, the land surface, and a
+land/sea roughness map (z0 = 1.0 m over land and 0.0002 m over water, the
+forest and open-sea values in `surface.py`'s table, not fitted). With the
+hot spot gone, AJ2's drag result can be tried without its divergence.
+`--z0-land`/`--z0-sea` were added (`test_land_surface.py` 9/9: a map gives
+each region its scalar drag).
+
+**Test AM result (2026-10-02, 16:30 EDT).** All 20 runs completed, in
+9.7–11.2 min each.
+
+| prediction | result | |
+|---|---|---|
+| 1. 20 of 20 complete | 20 of 20 | held |
+| 2. against AK (similarity): u RMSE down ≥ 0.20, v down ≥ 0.10 m/s | u **−0.274** (24 of 24 leads, 20 of 20 cycles); v **−0.051** (23 of 24 leads) | u held; v **refuted** (the right sign, half the size) |
+| 3. T within ±0.10 K of AK | −0.023 K | held |
+| 4. against persistence: u no worse than +0.05; v better | u −0.045 (15 of 24 leads); v −0.069 (22 of 24) | held |
+| 5. speed ratio day ≤ 1.15, night 0.80–1.00 | 1.06 / 0.89 | held |
+
+| 20 cycles, pooled RMSE, mean over leads | 2 m T (K) | u (m/s) | v (m/s) |
+|---|---|---|---|
+| AM against AD (dry, no sun) | −0.499 (19 of 24 leads) | −0.381 (24 of 24, 20 of 20 cycles) | −0.215 (23 of 24, 19 of 20) |
+| AM against persistence | **−0.288** (18 of 24) | **−0.045** (15 of 24) | **−0.069** (22 of 24) |
+
+- **The first configuration that beats persistence in all three surface
+  variables, pooled over the 20 campaign cycles.** The margins in wind are
+  small. Temperature loses at the last leads: at 23–24 h it is about 0.8–1 K
+  worse than persistence, because the diurnal swing is too large with no
+  clouds (day bias +1.32 K, night −2.13 K at leads 19–24).
+- The combination is upwind3 + land surface + land/sea roughness. Every
+  constant in it comes from a table or the literature. None was fitted to
+  these cycles.
+- Figure: `docs/am_skill_by_lead.png` (pooled RMSE by lead for persistence,
+  AD, AK and AM; `tools/lead_scores.py`).
+- These are 20 cycles in one week of late September. The candidate needs
+  more weeks before anyone calls it an improvement in general. It has not
+  been run on a stormy or a cloudy week on purpose.
+
+
+**P-59 step 2: a ground temperature with its own energy budget (`src/dynamics/land_surface.py`).**
+This is the force-restore scheme of Deardorff (1978): clear-sky sunshine,
+longwave in and out, sensible heat by a bulk formula, latent heat as a fixed
+share (EF = 0.5) of daytime net radiation (the model is dry), and a deep-soil
+restoring term. The water temperature is held fixed. The drag now sees the
+ground through the Louis (1979) momentum function, which weakens at night
+without switching off.
+- Every constant is a literature or climatological value, listed in the
+  module. Nothing was fitted to these cases.
+- One choice came from a measurement. Louis's heat function on the stable
+  side collapsed the night flux to −1.1 W/m² in the column test, a runaway
+  decoupling. So the heat flux uses the momentum function's long tail there
+  (−13.8 W/m² in the same test). It is recorded as a choice, not a reference.
+- `test_land_surface.py` 8/8:
+  - the constants;
+  - the Louis forms;
+  - a night column (ground 4.7 K below the air);
+  - a day column (peak H 195 W/m², Rn 462);
+  - water held fixed;
+  - drag stronger over a warm ground and weaker but not zero over a cold one;
+  - coupled to the model, a night cools the lowest layer.
+- `--land-surface` writes the ground temperature (`tg`) with each snapshot.
+  A persistence run with `--land-surface` holds the ground temperature too.
+- It is off by default. It replaces the prescribed heating rather than adding
+  to it.
+
+**The surface-layer operator (`src/verification/surface_similarity.py`, `verify.py --surface-operator similarity`).**
+This is Monin–Obukhov similarity between the ground and the lowest level:
+Paulson (1970) unstable, Beljaars and Holtslag (1991) stable. It gives the
+10 m wind and the 2 m temperature. It is how most NWP models diagnose them,
+here from a lowest level at about 230 m rather than 10–30 m, which is an
+extrapolation and is stated as such.
+- With a neutral ground it reproduces the `log10m` factor exactly.
+- At night it takes 0.2–0.33 of the lowest-level wind instead of 0.59.
+- `test_surface_similarity.py` 6/6.
+
+On the server, a 3 h smoke run (27 Sep 12Z, torch × 2) completed. The ground
+ran 2.5 K above the lowest-level air temperature at 13Z and 3.9 K at 15Z.
+That includes about 1.5 K of lapse over 230 m.
+
+**Test AK (predictions first, `verification_tests/ak/ak_predictions.txt`).**
+The land surface on all 20 campaign cycles, scored both ways (standard, and
+similarity), with a persistence that holds its ground temperature.
+
+**Test AK result (2026-10-02, 13:25 EDT).** All 20 runs completed, in
+7.8–10.2 min each.
+
+| 20 cycles, pooled | 2 m T bias day / night (K) | 2 m T RMSE (K) | 10 m wind ratio day / night | wind vector RMSE (m/s) |
+|---|---|---|---|---|
+| persistence (standard) | −2.17 / +1.69 | 3.56 | 0.95 / 1.41 | 3.32 |
+| AD, no sun (standard) | −2.30 / +1.54 | 3.76 | 1.10 / 1.63 | 3.67 |
+| AK, land surface, standard operators | −0.98 / +1.77 | 3.49 | 1.07 / 1.82 | 3.96 |
+| **AK, land surface, similarity operators** | **+0.51 / −1.33** | **3.25** | **1.22 / 0.92** | **3.48** |
+| persistence holding its ground temperature (similarity) | −1.98 / +1.87 | 3.59 | 0.61 / 0.89 | 3.00 |
+
+| prediction | result | |
+|---|---|---|
+| 1. 20 of 20 complete | 20 of 20 | held |
+| 2. standard: day bias up ≥ 0.8 K; night changes < 0.5 K; RMSE down ≥ 0.15 K | +1.32 K; +0.23 K; −0.256 K (23 of 24 leads, 17 of 20 cycles) | held |
+| 3. standard wind: night ratio above 1.63 | 1.82 | held (the drag weakens at night, as designed) |
+| 4. similarity T: night bias within ±0.75 K; day within ±1.0 K; RMSE ≤ 3.40 K | night **−1.33**; day +0.51; RMSE 3.25 | night **refuted**; the others held |
+| 5. similarity wind: night ratio ≤ 1.30; day 0.90–1.25; vector RMSE ≤ 3.50 | 0.92; 1.22; 3.48 | held |
+| 6. similarity T RMSE below persistence's 3.56 K | 3.25 (better than persistence at 18 of 24 leads; mean −0.265 K) | held |
+
+**What it means.**
+- **The night wind excess (P-69) was mostly the diagnosis.** With a ground
+  temperature and similarity, the night ratio goes from 1.63 to 0.92 and the
+  day ratio stays at 1.22.
+  - Against AD the wind RMSE falls in u by 0.107 m/s (18 of 24 leads) and in
+    v by 0.163 m/s (22 of 24 leads, 17 of 20 cycles). That is the first
+    model change that lowers the wind error.
+  - Against persistence, u is still worse (+0.23 m/s) and v is level (−0.02).
+- **Temperature beats persistence for the first time over a campaign**
+  (3.25 against 3.56 K pooled), but not at every lead.
+  - At leads 19–24 the diurnal swing is too large: night bias −2.61 K, day
+    bias +1.59 K. AK is worse than AD at leads 23–24 (+0.58, +0.34 K) and
+    worse than persistence there by about 1 K.
+  - The stop rule applies to the night bias (colder than −1.0 K). The first
+    suspect is the clear-sky assumption: every night in the model is clear,
+    so it radiates too much on cloudy nights. No constant is retuned on this
+    test.
+- **Persistence scored by similarity is not a fair reference.** Its ground
+  temperature is held fixed (day 0.61, night 0.89), so its daytime 10 m wind
+  is reduced as if the cycle-time stability lasted all day. The standard
+  persistence (`adp_w`) stays the reference.
+- `--land-surface` stays off by default until the user decides, as with the
+  heating. The `similarity` operator only works with it.
+
+
 ## 2026-09-25 — Forecast maps and a Pivotal-style viewer
 
 **Context.** Prompt 120: the forecasts need maps "like how a site like

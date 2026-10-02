@@ -77,6 +77,14 @@ class PrimitiveSigma:
         # Prescribed diurnal surface heat flux (diurnal.DiurnalHeating), or
         # None for the old model with no sun (P-59).
         self.surface_heating = None
+        # Force-restore ground temperature with its own energy budget
+        # (land_surface.ForceRestoreSurface), or None (P-59 step 2, test AK).
+        # When set, it supplies theta_surface to the drag every step and the
+        # drag uses the Louis (1979) long-tail stability function.
+        self.land_surface = None
+        # Horizontal advection scheme: "centred2" (default) or "upwind3"
+        # (third-order upwind-biased; P-67 test AL).
+        self.advection = "centred2"
         self.stochastic = stochastic
 
         # Reference-state pressure-gradient force. The plain form is stable on
@@ -153,7 +161,8 @@ class PrimitiveSigma:
         # holding it back and the mixing scheme fights a source it cannot
         # switch off.
         self.drag = bool(drag)
-        self.z0 = float(z0)
+        # A scalar, or an (ny, nx) map (land/sea roughness; test AM).
+        self.z0 = float(z0) if np.ndim(z0) == 0 else np.asarray(z0, dtype=float)
         self.theta_surface = theta_surface     # None => neutral surface layer
         self._drag_info = None
 
@@ -220,10 +229,44 @@ class PrimitiveSigma:
     # --- operators ---------------------------------------------------------
 
     def _horiz_adv(self, a, u_at_a, v_at_a):
+        """
+        Horizontal advection u da/dx + v da/dy, advective form.
+
+        "centred2" (the default since the 3D core): second-order centred.
+        It is non-dissipative, so 2-dx structure is neither moved nor damped
+        except by the hyperdiffusion, and its dispersion error can raise a
+        local maximum. The P-67 budget (2026-10-02) measured that at the
+        28 Sep hot spot: at a strict local speed maximum this term was
+        +7 to +66 m/s per hour along the wind. The continuous term is zero
+        there.
+
+        "upwind3": third-order upwind-biased (Wicker and Skamarock 2002),
+        written as the fourth-order centred difference plus a
+        fourth-derivative damping scaled by |u|:
+
+            u da/dx = u D4(a) + |u| (a[i+2] - 4a[i+1] + 6a[i] - 4a[i-1] + a[i-2]) / (12 dx)
+
+        It is dissipative only at the shortest scales, and it is the
+        horizontal-advection family the S1 non-hydrostatic core would use
+        (docs/CAM_DESIGN.md).
+        """
         gr = self.grid
-        dadx = 0.5 * (gr.dx_forward(a) + gr.dx_backward(a))
-        dady = 0.5 * (gr.dy_forward(a) + gr.dy_backward(a))
-        return u_at_a * dadx + v_at_a * dady
+        if self.advection == "centred2":
+            dadx = 0.5 * (gr.dx_forward(a) + gr.dx_backward(a))
+            dady = 0.5 * (gr.dy_forward(a) + gr.dy_backward(a))
+            return u_at_a * dadx + v_at_a * dady
+        if self.advection != "upwind3":
+            raise ValueError(f"unknown advection {self.advection!r}")
+        xp = xp_of(a)
+        out = None
+        for axis, vel, d in ((1, u_at_a, gr.dx), (0, v_at_a, gr.dy)):
+            p1, m1 = gr.shift(a, 1, axis), gr.shift(a, -1, axis)
+            p2, m2 = gr.shift(a, 2, axis), gr.shift(a, -2, axis)
+            d4 = (-p2 + 8.0 * p1 - 8.0 * m1 + m2) / (12.0 * d)
+            diss = (p2 - 4.0 * p1 + 6.0 * a - 4.0 * m1 + m2) / (12.0 * d)
+            term = vel * d4 + xp.abs(vel) * diss
+            out = term if out is None else out + term
+        return out
 
     def _laplacian(self, a):
         gr = self.grid
@@ -296,8 +339,9 @@ class PrimitiveSigma:
             dv = dv + ddv
 
         if self.drag:
-            ddu, ddv, info = surface_drag(u, v, theta, pi, lev, z0=self.z0,
-                                          theta_s=self.theta_surface)
+            ddu, ddv, info = surface_drag(
+                u, v, theta, pi, lev, z0=self.z0, theta_s=self.theta_surface,
+                stability="louis" if self.land_surface is not None else "cutoff")
             du = du + ddu
             dv = dv + ddv
             self._drag_info = info
@@ -403,6 +447,8 @@ class PrimitiveSigma:
                 import torch
                 rate = torch.from_numpy(rate)
             self.theta[-1] = self.theta[-1] + dt * rate
+        if self.land_surface is not None:
+            self._step_land_surface(dt)
         if self.convection:
             if self.conv_scheme == "pav":
                 adjust = dry_convective_adjustment_pav
@@ -426,6 +472,28 @@ class PrimitiveSigma:
 
         self.time += dt
         self.step_count += 1
+
+    def _step_land_surface(self, dt):
+        """Advance the ground temperature; heat or cool the lowest layer."""
+        from surface import lowest_level_height
+        lev = self.lev
+        th = to_numpy(self.theta)
+        pi = to_numpy(self.pi)
+        sig = np.asarray(to_numpy(lev.sigma), dtype=float)
+        dsig = np.asarray(to_numpy(lev.dsigma), dtype=float)
+        p1 = lev.p_top + sig[-1] * pi
+        dp1 = dsig[-1] * pi
+        ps = lev.p_top + pi
+        z1 = to_numpy(lowest_level_height(self.theta, self.pi, lev))
+        rate, theta_g = self.land_surface.step(
+            self.time + 0.5 * dt, dt, to_numpy(self.u)[-1], to_numpy(self.v)[-1],
+            th[-1], ps, p1, dp1, z1)
+        if xp_of(self.theta).name != "numpy":
+            import torch
+            rate = torch.from_numpy(rate)
+            theta_g = torch.from_numpy(np.ascontiguousarray(theta_g))
+        self.theta[-1] = self.theta[-1] + dt * rate
+        self.theta_surface = theta_g
 
     def run(self, duration, dt=None, callback=None, every=0, adaptive=True,
             recheck_steps=50):
@@ -490,6 +558,8 @@ class PrimitiveSigma:
                 setattr(self, k, torch.as_tensor(np.asarray(a, dtype=float)).clone())
         if self.theta_surface is not None and not np.isscalar(self.theta_surface):
             self.theta_surface = torch.as_tensor(np.asarray(self.theta_surface, dtype=float))
+        if not np.isscalar(self.z0):
+            self.z0 = torch.as_tensor(np.asarray(self.z0, dtype=float))
         return n if n is not None else torch.get_num_threads()
 
     @staticmethod

@@ -278,6 +278,20 @@ U_CEILING = 150.0     # m/s -- the range limit on observed wind; beyond it
                       # the state is not weather and the run is over (P-52)
 
 
+def _land_mask(terrain):
+    """Land = raw ETOPO terrain above 0 m; falls back to the run terrain."""
+    # LAND FROM THE UNSMOOTHED TERRAIN (P-65). The run's terrain.npz is
+    # slope-limited, and the smoothing spreads land heights out over the
+    # sea: 15.5 % of it is exactly 0 m against 31.9 % of the raw ETOPO grid
+    # (ocean clipped to 0). "terrain > 0" on it called half the ocean land.
+    raw = Path(config.DATA_ROOT) / "static" / f"terrain_etopo_{terrain.shape[0]}x{terrain.shape[1]}.npz"
+    if raw.exists():
+        return np.load(raw)["terrain"] > 0.0, raw.name
+    land_src = "the smoothed run terrain (no raw ETOPO file; coastal sea counted as land)"
+    print(f"  WARNING: {raw} not found; land mask from {land_src}")
+    return terrain > 0.0, land_src
+
+
 def run_forecast(model, driver, relax, duration, dt=None, output_every=None,
                  progress=True, deadline_s=None, info=None):
     """
@@ -391,6 +405,8 @@ def run_forecast(model, driver, relax, duration, dt=None, output_every=None,
                     for a in (model.u, model.v, model.theta, model.pi)]
             stamp = target if abs(model.time - target) < 1e-6 * dt else model.time
             snapshots.append((stamp, *snap))
+            if getattr(model, "land_surface", None) is not None:
+                info.setdefault("tg", []).append(np.array(model.land_surface.Tg, copy=True))
             if progress:
                 print(" " * 96, end="\r")      # clear the progress line
                 su, sv, sth, spi = snap
@@ -448,6 +464,24 @@ def main():
                         "(default: turbulence.RI_CRIT, 0.25; P-60 test S)")
     p.add_argument("--no-mixing", action="store_true",
                    help="Turn off turbulent vertical mixing (diagnosis only)")
+    p.add_argument("--advection", choices=("centred2", "upwind3"), default="centred2",
+                   help="Horizontal advection: second-order centred (default) or "
+                        "third-order upwind-biased (Wicker and Skamarock 2002; "
+                        "P-67 test AL)")
+    p.add_argument("--land-surface", action="store_true",
+                   help="Force-restore ground temperature with a surface energy "
+                        "budget (land_surface.py; P-59 step 2, test AK). Off by "
+                        "default; cannot be combined with --surface-heating")
+    p.add_argument("--z0", type=float, default=0.1,
+                   help="Roughness length for the surface drag, m (default 0.1, "
+                        "one value everywhere; test AJ)")
+    p.add_argument("--z0-land", type=float, default=None,
+                   help="Roughness over land, m (with --z0-sea: a land/sea map from "
+                        "the raw ETOPO land mask; test AM)")
+    p.add_argument("--z0-sea", type=float, default=None,
+                   help="Roughness over water, m (test AM)")
+    p.add_argument("--no-drag", action="store_true",
+                   help="Turn off surface drag (diagnosis only; test AJ)")
     p.add_argument("--sponge-levels", type=int, default=5,
                    help="Levels below the lid in the wind sponge (P-60 test R); "
                         "the default of 5 is the measured choice")
@@ -578,15 +612,30 @@ def main():
     if args.hyper_factor != 1.0:
         from subgrid import recommended_hyper_coeff
         hyper = args.hyper_factor * recommended_hyper_coeff(grid)
+    z0 = args.z0
+    z0_note = f"z0 = {args.z0:g} m"
+    if args.z0_land is not None or args.z0_sea is not None:
+        zl = args.z0 if args.z0_land is None else args.z0_land
+        zs = args.z0 if args.z0_sea is None else args.z0_sea
+        if not (zl > 0 and zs > 0):
+            raise SystemExit("--z0-land and --z0-sea must be positive")
+        land_z0, src_z0 = _land_mask(terrain)
+        z0 = np.where(land_z0, zl, zs)
+        z0_note = f"z0 = {zl:g} m over land, {zs:g} m over water ({src_z0})"
     model = PrimitiveSigma(grid, lev, terrain=terrain, stochastic=stoch,
                            sponge_levels=args.sponge_levels, hyper=hyper,
-                           ri_crit=args.ri_crit, mixing=not args.no_mixing)
+                           ri_crit=args.ri_crit, mixing=not args.no_mixing,
+                           drag=not args.no_drag, z0=z0)
     if args.hyper_factor != 1.0:
         print(f"  hyperdiffusion : x{args.hyper_factor:g} ({model.hyper:.3g})")
+    if not args.z0 > 0:
+        raise SystemExit(f"--z0 {args.z0} must be positive")
     if args.div_damp < 0:
         raise SystemExit(f"--div-damp {args.div_damp} is negative")
     print(f"  mixing         : "
           + ("off" if args.no_mixing else f"on below Ri {model.ri_crit:g}"))
+    print(f"  drag           : "
+          + ("off" if args.no_drag else f"on, {z0_note}"))
     print(f"  sponge         : {args.sponge_levels} levels below the lid")
     if args.surface_heating:
         from diurnal import DiurnalHeating
@@ -594,23 +643,15 @@ def main():
             raise SystemExit("--surface-heating needs lat, lon and run_time in the "
                              f"driving frame; {files[0].name} has {sorted(meta0)}")
         start = np.datetime64(str(np.asarray(meta0["run_time"])), "s").astype(datetime)
-        # LAND FROM THE UNSMOOTHED TERRAIN (P-65). The run's terrain.npz is
-        # slope-limited, and the smoothing spreads land heights out over the
-        # sea: 15.5 % of it is exactly 0 m against 31.9 % of the raw ETOPO grid
-        # (ocean clipped to 0). "terrain > 0" on it called half the ocean land.
-        raw = Path(config.DATA_ROOT) / "static" / f"terrain_etopo_{terrain.shape[0]}x{terrain.shape[1]}.npz"
-        if raw.exists():
-            land = np.load(raw)["terrain"] > 0.0
-            land_src = raw.name
-        else:
-            land = terrain > 0.0
-            land_src = "the smoothed run terrain (no raw ETOPO file; coastal sea counted as land)"
-            print(f"  WARNING: {raw} not found; land mask from {land_src}")
+        land, land_src = _land_mask(terrain)
         model.surface_heating = DiurnalHeating(
             np.asarray(meta0["lat"]), np.asarray(meta0["lon"]), land, start,
             f_sensible=args.sh_fraction, tau=args.sh_tau, h_night=args.sh_night)
         print(f"  surface heat   : {model.surface_heating}")
     model.conv_scheme = args.conv_scheme
+    model.advection = args.advection
+    if args.advection != "centred2":
+        print(f"  advection      : {args.advection} (horizontal)")
     model.conv_mix_momentum = not args.no_conv_momentum
     if args.no_conv_momentum:
         print("  convection     : momentum NOT mixed (--no-conv-momentum)")
@@ -642,6 +683,26 @@ def main():
     # would let the first relaxation step quietly rewrite the driving data.
     model.pi = pi0.copy()
     model.u, model.v, model.theta = u0.copy(), v0.copy(), th0.copy()
+
+    if args.land_surface:
+        if args.surface_heating:
+            raise SystemExit("--land-surface replaces --surface-heating; use one")
+        if not all(k in meta0 for k in ("lat", "lon", "run_time")):
+            raise SystemExit("--land-surface needs lat, lon and run_time in the "
+                             f"driving frame; {files[0].name} has {sorted(meta0)}")
+        from land_surface import ForceRestoreSurface
+        from surface import lowest_level_height
+        from sigma import P0, KAPPA
+        start = np.datetime64(str(np.asarray(meta0["run_time"])), "s").astype(datetime)
+        land, land_src = _land_mask(terrain)
+        p1 = lev.p_top + float(np.asarray(lev.sigma)[-1]) * pi0
+        z1 = lowest_level_height(th0, pi0, lev)
+        model.land_surface = ForceRestoreSurface(
+            np.asarray(meta0["lat"]), np.asarray(meta0["lon"]), land, start,
+            th0[-1] * (p1 / P0) ** KAPPA, z1, z0=z0)
+        model.theta_surface = model.land_surface.Tg / ((lev.p_top + pi0) / P0) ** KAPPA
+        print(f"  land surface   : {model.land_surface} (land from {land_src}); "
+              f"drag stability Louis (1979)")
 
     ps = model.surface_pressure
     print(f"  initial state  : max|u| {np.abs(model.u).max():.1f} m/s, "
@@ -684,6 +745,10 @@ def main():
                   to_numpy(model.theta).copy(), to_numpy(model.pi).copy())
                  for t in times]
         info = {"stopped": "persistence", "wall_s": 0.0}
+        if model.land_surface is not None:
+            # Held like everything else: the ground temperature at the cycle
+            # time, so the similarity operator can score persistence too.
+            info["tg"] = [np.array(model.land_surface.Tg, copy=True) for _ in times]
         print(f"  persistence    : initial state written at {len(snaps)} times, "
               f"no integration\n")
         return _write_forecast(args, run_dir, snaps, info, lev, terrain, meta0, source)
@@ -730,6 +795,7 @@ def _write_forecast(args, run_dir, snaps, info, lev, terrain, meta0, source):
         hours_requested=args.hours,
         stopped=np.array(info.get("stopped", "")),
         wall_s=info.get("wall_s", np.nan),
+        **({"tg": np.stack(info["tg"])} if info.get("tg") else {}),
     )
     print(f"\nWrote {len(snaps)} snapshots -> {out}  ({info.get('stopped')}, "
           f"{info.get('wall_s', float('nan'))/60:.1f} min)")

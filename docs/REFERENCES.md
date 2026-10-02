@@ -45,6 +45,10 @@ Ayer, M., H. D. Brunk, G. M. Ewing, W. T. Reid, and E. Silverman, 1955: An empir
 
 Barnes, S. L., 1964: A technique for maximizing details in numerical weather map analysis. *J. Appl. Meteor.*, **3**, 396–409, https://doi.org/10.1175/1520-0450(1964)003<0396:ATFMDI>2.0.CO;2.
 
+Beljaars, A. C. M., and A. A. M. Holtslag, 1991: Flux parameterization over land surfaces for atmospheric models. *J. Appl. Meteor.*, **30**, 327–341, https://doi.org/10.1175/1520-0450(1991)030<0327:FPOLSF>2.0.CO;2.
+
+Benjamin, S. G., and Coauthors, 2016: A North American hourly assimilation and model forecast cycle: The Rapid Refresh. *Mon. Wea. Rev.*, **144**, 1669–1694, https://doi.org/10.1175/MWR-D-15-0242.1.
+
 Blaylock, B. K., 2026: Herbie: Retrieve numerical weather prediction model data. Zenodo, accessed 26 September 2026, https://doi.org/10.5281/zenodo.4567540.
 
 Blumberg, W. G., K. T. Halbert, T. A. Supinie, P. T. Marsh, R. L. Thompson, and J. A. Hart, 2017: SHARPpy: An open-source sounding analysis toolkit for the atmospheric sciences. *Bull. Amer. Meteor. Soc.*, **98**, 1625–1636, https://doi.org/10.1175/BAMS-D-15-00309.1.
@@ -53,6 +57,10 @@ Bolton, D., 1980: The computation of equivalent potential temperature. *Mon. Wea
 
 Bougeault, P., 1983: A non-reflective upper boundary condition for limited-height hydrostatic models. *Mon. Wea. Rev.*, **111**, 420–429, https://doi.org/10.1175/1520-0493(1983)111<0420:ANRUBC>2.0.CO;2.
 
+Brutsaert, W., 1975: On a derivable formula for long-wave radiation from clear skies. *Water Resour. Res.*, **11**, 742–744, https://doi.org/10.1029/WR011i005p00742.
+
+Bryan, G. H., and J. M. Fritsch, 2002: A benchmark simulation for moist nonhydrostatic numerical models. *Mon. Wea. Rev.*, **130**, 2917–2928, https://doi.org/10.1175/1520-0493(2002)130<2917:ABSFMN>2.0.CO;2.
+
 Buizza, R., M. Miller, and T. N. Palmer, 1999: Stochastic representation of model uncertainties in the ECMWF ensemble prediction system. *Quart. J. Roy. Meteor. Soc.*, **125**, 2887–2908, https://doi.org/10.1002/qj.49712556006.
 
 Cooper, P. I., 1969: The absorption of radiation in solar stills. *Sol. Energy*, **12**, 333–346, https://doi.org/10.1016/0038-092X(69)90047-4.
@@ -60,6 +68,8 @@ Cooper, P. I., 1969: The absorption of radiation in solar stills. *Sol. Energy*,
 Cressman, G. P., 1959: An operational objective analysis system. *Mon. Wea. Rev.*, **87**, 367–374, https://doi.org/10.1175/1520-0493(1959)087<0367:AOOAS>2.0.CO;2.
 
 Davies, H. C., 1976: A lateral boundary formulation for multi-level prediction models. *Quart. J. Roy. Meteor. Soc.*, **102**, 405–418, https://doi.org/10.1002/qj.49710243210.
+
+Deardorff, J. W., 1978: Efficient prediction of ground surface temperature and moisture, with inclusion of a layer of vegetation. *J. Geophys. Res.*, **83**, 1889–1903, https://doi.org/10.1029/JC083iC04p01889.
 
 Dowell, D. C., and Coauthors, 2022: The High-Resolution Rapid Refresh (HRRR): An hourly updating convection-allowing forecast model. Part I: Motivation and system description. *Wea. Forecasting*, **37**, 1371–1395, https://doi.org/10.1175/WAF-D-21-0151.1.
 
@@ -77,11 +87,21 @@ Iowa Environmental Mesonet, 2026a: ASOS-AWOS-METAR data download service. Iowa S
 
 Iowa Environmental Mesonet, 2026b: Upper-air sounding (RAOB) download service and RAOB station table. Iowa State University, accessed 26 September 2026, https://mesonet.agron.iastate.edu/cgi-bin/request/raob.py.
 
+Kessler, E., 1969: *On the Distribution and Continuity of Water Substance in Atmospheric Circulations*. Meteor. Monogr., No. 32, Amer. Meteor. Soc., 84 pp., https://doi.org/10.1007/978-1-935704-36-2_1.
+
 Klemp, J. B., and D. R. Durran, 1983: An upper boundary condition permitting internal gravity wave radiation in numerical mesoscale models. *Mon. Wea. Rev.*, **111**, 430–444, https://doi.org/10.1175/1520-0493(1983)111<0430:AUBCPI>2.0.CO;2.
+
+Klemp, J. B., and R. B. Wilhelmson, 1978: The simulation of three-dimensional convective storm dynamics. *J. Atmos. Sci.*, **35**, 1070–1096, https://doi.org/10.1175/1520-0469(1978)035<1070:TSOTDC>2.0.CO;2.
+
+Klemp, J. B., W. C. Skamarock, and J. Dudhia, 2007: Conservative split-explicit time integration methods for the compressible nonhydrostatic equations. *Mon. Wea. Rev.*, **135**, 2897–2913, https://doi.org/10.1175/MWR3440.1.
 
 Koch, S. E., M. desJardins, and P. J. Kocin, 1983: An interactive Barnes objective map analysis scheme for use with satellite and conventional data. *J. Climate Appl. Meteor.*, **22**, 1487–1503, https://doi.org/10.1175/1520-0450(1983)022<1487:AIBOMA>2.0.CO;2.
 
 Kopp, G., and J. L. Lean, 2011: A new, lower value of total solar irradiance: Evidence and climate significance. *Geophys. Res. Lett.*, **38**, L01706, https://doi.org/10.1029/2010GL045777.
+
+Laprise, R., 1992: The Euler equations of motion with hydrostatic pressure as an independent variable. *Mon. Wea. Rev.*, **120**, 197–207, https://doi.org/10.1175/1520-0493(1992)120<0197:TEEOMW>2.0.CO;2.
+
+Lin, Y.-L., R. D. Farley, and H. D. Orville, 1983: Bulk parameterization of the snow field in a cloud model. *J. Climate Appl. Meteor.*, **22**, 1065–1092, https://doi.org/10.1175/1520-0450(1983)022<1065:BPOTSF>2.0.CO;2.
 
 Louis, J.-F., 1979: A parametric model of vertical eddy fluxes in the atmosphere. *Bound.-Layer Meteor.*, **17**, 187–202, https://doi.org/10.1007/BF00117978.
 
@@ -91,15 +111,17 @@ Miles, J. W., 1961: On the stability of heterogeneous shear flows. *J. Fluid Mec
 
 Natural Earth, 2026: Natural Earth 1:50m cultural and physical vectors (natural-earth-vector repository). Accessed 26 September 2026, https://github.com/nvkelso/natural-earth-vector.
 
-NOAA, 2026a: NOAA High-Resolution Rapid Refresh (HRRR) model. NOAA Open Data Dissemination, Registry of Open Data on AWS, accessed 26 September 2026, https://registry.opendata.aws/noaa-hrrr-pds/.
-
-NOAA, 2026b: NOAA Multi-Radar/Multi-Sensor System (MRMS). NOAA Open Data Dissemination, Registry of Open Data on AWS, accessed 26 September 2026, https://registry.opendata.aws/noaa-mrms-pds/.
-
 NOAA National Data Buoy Center, 2026: Active station list and 5-day standard meteorological data files. Accessed 26 September 2026, https://www.ndbc.noaa.gov/.
 
 NOAA National Geophysical Data Center, 2009: ETOPO1 1 arc-minute global relief model. NOAA National Centers for Environmental Information, accessed 26 September 2026 through the NOAA CoastWatch ERDDAP server (dataset `etopo180`, https://coastwatch.pfeg.noaa.gov/erddap/), https://doi.org/10.7289/V5C8276M.
 
+NOAA, 2026a: NOAA High-Resolution Rapid Refresh (HRRR) model. NOAA Open Data Dissemination, Registry of Open Data on AWS, accessed 26 September 2026, https://registry.opendata.aws/noaa-hrrr-pds/.
+
+NOAA, 2026b: NOAA Multi-Radar/Multi-Sensor System (MRMS). NOAA Open Data Dissemination, Registry of Open Data on AWS, accessed 26 September 2026, https://registry.opendata.aws/noaa-mrms-pds/.
+
 Paszke, A., and Coauthors, 2019: PyTorch: An imperative style, high-performance deep learning library. *Advances in Neural Information Processing Systems 32*, H. Wallach et al., Eds., Curran Associates, 8024–8035.
+
+Paulson, C. A., 1970: The mathematical representation of wind speed and temperature profiles in the unstable atmospheric surface layer. *J. Appl. Meteor.*, **9**, 857–861, https://doi.org/10.1175/1520-0450(1970)009<0857:TMROWS>2.0.CO;2.
 
 Phillips, N. A., 1957: A coordinate system having some special advantages for numerical forecasting. *J. Meteor.*, **14**, 184–185, https://doi.org/10.1175/1520-0469(1957)014<0184:ACSHSS>2.0.CO;2.
 
@@ -107,15 +129,25 @@ Pillow Contributors, 2026: Pillow: The friendly PIL fork. Accessed 26 September 
 
 Pivotal Weather, 2026: Pivotal Weather forecast model maps. Accessed 26 September 2026, https://www.pivotalweather.com/.
 
+Roberts, N. M., and H. W. Lean, 2008: Scale-selective verification of rainfall accumulations from high-resolution forecasts of convective events. *Mon. Wea. Rev.*, **136**, 78–97, https://doi.org/10.1175/2007MWR2123.1.
+
 Sadourny, R., 1975: The dynamics of finite-difference models of the shallow-water equations. *J. Atmos. Sci.*, **32**, 680–689, https://doi.org/10.1175/1520-0469(1975)032<0680:TDOFDM>2.0.CO;2.
 
 Simmons, A. J., and D. M. Burridge, 1981: An energy and angular-momentum conserving vertical finite-difference scheme and hybrid vertical coordinates. *Mon. Wea. Rev.*, **109**, 758–766, https://doi.org/10.1175/1520-0493(1981)109<0758:AEAAMC>2.0.CO;2.
 
 Skamarock, W. C., and J. B. Klemp, 1992: The stability of time-split numerical methods for the hydrostatic and the nonhydrostatic elastic equations. *Mon. Wea. Rev.*, **120**, 2109–2127, https://doi.org/10.1175/1520-0493(1992)120<2109:TSOTSN>2.0.CO;2.
 
+Skamarock, W. C., and J. B. Klemp, 2008: A time-split nonhydrostatic atmospheric model for weather research and forecasting applications. *J. Comput. Phys.*, **227**, 3465–3485, https://doi.org/10.1016/j.jcp.2007.01.037.
+
+Smagorinsky, J., 1963: General circulation experiments with the primitive equations. I. The basic experiment. *Mon. Wea. Rev.*, **91**, 99–164, https://doi.org/10.1175/1520-0493(1963)091<0099:GCEWTP>2.3.CO;2.
+
 Snyder, J. P., 1987: *Map Projections—A Working Manual*. U.S. Geological Survey Professional Paper 1395, https://doi.org/10.3133/pp1395.
 
+Straka, J. M., R. B. Wilhelmson, L. J. Wicker, J. R. Anderson, and K. K. Droegemeier, 1993: Numerical solutions of a non-linear density current: A benchmark solution and comparisons. *Int. J. Numer. Methods Fluids*, **17**, 1–22, https://doi.org/10.1002/fld.1650170103.
+
 Toth, Z., and E. Kalnay, 1993: Ensemble forecasting at NMC: The generation of perturbations. *Bull. Amer. Meteor. Soc.*, **74**, 2317–2330, https://doi.org/10.1175/1520-0477(1993)074<2317:EFANTG>2.0.CO;2.
+
+Weisman, M. L., W. C. Skamarock, and J. B. Klemp, 1997: The resolution dependence of explicitly modeled convective systems. *Mon. Wea. Rev.*, **125**, 527–548, https://doi.org/10.1175/1520-0493(1997)125<0527:TRDOEM>2.0.CO;2.
 
 Wicker, L. J., and W. C. Skamarock, 2002: Time-splitting methods for elastic models using forward time schemes. *Mon. Wea. Rev.*, **130**, 2088–2097, https://doi.org/10.1175/1520-0493(2002)130<2088:TSMFEM>2.0.CO;2.
 
@@ -132,21 +164,31 @@ Zhang, J., and Coauthors, 2016: Multi-Radar Multi-Sensor (MRMS) quantitative pre
 | Arakawa and Lamb (1977) | C-grid staggering | `src/dynamics/grid.py` |
 | Ayer et al. (1955) | pool-adjacent-violators convective adjustment (P-63) | `src/dynamics/convection.py`, `docs/RESEARCH_LOG.md` |
 | Barnes (1964); Koch et al. (1983) | successive-correction analysis, multi-pass with convergence parameter gamma | `src/analysis/barnes.py` |
+| Beljaars and Holtslag (1991) | stable stability functions of the similarity operator | `src/verification/surface_similarity.py` |
+| Benjamin et al. (2016); Dowell et al. (2022) | the operational convection-allowing reference systems (RAP, HRRR) | `docs/CAM_DESIGN.md` |
 | Blaylock (2026) | HRRR download (seeding and diagnosis only) | `src/ingest_hrrr.py`, `diagnose_herbie.py` |
 | Blumberg et al. (2017) | layout of the click-for-sounding panel (skew-T and hodograph) | `src/maps/viewer.py` |
 | Bolton (1980) | saturation vapour pressure | `src/analysis/build.py` |
 | Bougeault (1983); Klemp and Durran (1983) | radiating upper boundary (optional, not ported to torch) | `src/dynamics/radiation.py` |
+| Brutsaert (1975) | clear-sky air emissivity 0.79 | `src/dynamics/land_surface.py` |
+| Bryan and Fritsch (2002) | moist non-hydrostatic benchmark, the S4 gate | `docs/CAM_DESIGN.md` |
 | Buizza et al. (1999) | SPPT-style stochastic tendency perturbations (optional) | `src/dynamics/subgrid.py`, `src/forecast.py` |
 | Cooper (1969) | solar declination for the diurnal surface heat flux (P-59) | `src/dynamics/diurnal.py` |
 | Cressman (1959) | background to the analysis design | `docs/DATA_ASSIMILATION.md` |
 | Davies (1976) | lateral boundary relaxation zone | `src/dynamics/boundaries.py`, `src/forecast.py` |
+| Deardorff (1978) | force-restore ground temperature | `src/dynamics/land_surface.py` |
 | Dowell et al. (2022); NOAA (2026a) | HRRR, which may seed a forecast but never verify one | `src/ingest_hrrr.py` |
 | ECMWF (2026); Hoyer and Hamman (2017) | reading HRRR GRIB2 | `src/ingest_hrrr.py` |
 | Harris et al. (2020) | NumPy, the numerical base of the whole code | throughout |
 | Hunter (2007) | Matplotlib, all maps and figures | `src/maps/render.py`, `src/make_maps.py` |
 | Iowa Environmental Mesonet (2026a, b) | surface (ASOS) and upper-air (RAOB) observations | `src/analysis/sources.py`, `src/verification/fetchers.py` |
+| Kessler (1969) | warm-rain microphysics, stage S4 | `docs/CAM_DESIGN.md` |
+| Klemp and Wilhelmson (1978) | time-split sound waves in a 3D cloud model | `docs/CAM_DESIGN.md` |
+| Klemp et al. (2007); Skamarock and Klemp (2008) | split-explicit non-hydrostatic core (WRF-ARW design), stage S1 | `docs/CAM_DESIGN.md` |
 | Kopp and Lean (2011) | total solar irradiance, 1361 W/m² (P-59) | `src/dynamics/diurnal.py` |
-| Louis (1979) | shape of the Richardson-number stability functions | `src/dynamics/turbulence.py`, `src/dynamics/surface.py` |
+| Laprise (1992) | hydrostatic-pressure vertical coordinate for non-hydrostatic equations | `docs/CAM_DESIGN.md` |
+| Lin et al. (1983) | single-moment ice microphysics, stage S6 | `docs/CAM_DESIGN.md` |
+| Louis (1979) | shape of the Richardson-number stability functions | `src/dynamics/turbulence.py`, `src/dynamics/surface.py`, `src/dynamics/land_surface.py` |
 | Manabe et al. (1965) | dry convective adjustment | `src/dynamics/convection.py` |
 | Miles (1961); Howard (1961) | Ri < 0.25 as the shear-instability criterion; the mixing threshold | `src/dynamics/turbulence.py`, P-60 |
 | Natural Earth (2026) | state, coast and lake lines on the maps | `src/maps/geography.py` |
@@ -154,12 +196,17 @@ Zhang, J., and Coauthors, 2016: Multi-Radar Multi-Sensor (MRMS) quantitative pre
 | NOAA National Data Buoy Center (2026) | buoy and C-MAN observations | `src/analysis/sources.py` |
 | NOAA National Geophysical Data Center (2009) | model terrain (ETOPO1), fetched through ERDDAP | `src/analysis/geo.py` |
 | Paszke et al. (2019) | PyTorch backend | `src/dynamics/backend.py` |
+| Paulson (1970) | unstable profile functions of the similarity operator | `src/verification/surface_similarity.py` |
 | Phillips (1957) | terrain-following sigma coordinate | `src/dynamics/sigma.py` |
 | Pillow Contributors (2026) | reading rendered PNGs in the map tests | `src/maps/test_maps.py` |
 | Pivotal Weather (2026) | product names, units and layout (titles with UTC and US Eastern times) that the maps imitate | `src/maps/render.py` |
+| Roberts and Lean (2008) | fractions skill score for convective precipitation | `docs/CAM_DESIGN.md` |
 | Sadourny (1975) | vector-invariant momentum form of the shallow-water test core | `src/dynamics/shallow_water.py` |
 | Simmons and Burridge (1981) | hydrostatically consistent vertical discretisation | `src/dynamics/sigma.py` |
 | Skamarock and Klemp (1992) | divergence damping (optional, `--div-damp`; P-60 test V) | `src/dynamics/subgrid.py`, `src/forecast.py` |
+| Smagorinsky (1963) | deformation-based 3D turbulence closure | `docs/CAM_DESIGN.md` |
 | Snyder (1987) | Lambert conformal conic formulas | `src/maps/geography.py` |
+| Straka et al. (1993) | density-current benchmark, the S1 gate | `docs/CAM_DESIGN.md` |
 | Toth and Kalnay (1993) | bred-vector idea behind the round-off difference mode | `tools/mode_structure.py`, `tools/mode_budget.py` |
+| Weisman et al. (1997) | ~4 km as the coarsest convection-allowing spacing | `docs/CAM_DESIGN.md` |
 | Wicker and Skamarock (2002) | third-order Runge–Kutta time stepping | `src/dynamics/shallow_water.py`, `src/dynamics/primitive_sigma.py` |

@@ -176,6 +176,17 @@ recorded with `tools/tokens.py --add`.
   - The diurnal surface heating (`--surface-heating`, P-59) is off unless
     asked for.
   - `--persistence` writes the do-nothing reference forecast.
+- **2026-10-02:**
+  - `verify.py` scores the 10 m wind with the neutral log law by default
+    (`--wind-operator log10m`, the user's decision). Archives scored earlier
+    used `lowest` unless their names end in `_w`.
+  - New options, all **off** by default and awaiting the user's decision:
+    - `--advection upwind3` (fixes P-67, test AL);
+    - `--land-surface` (force-restore ground temperature, test AK) with
+      `verify.py --surface-operator similarity`;
+    - `--z0-land`/`--z0-sea` (test AM).
+  - The goal is now a convection-allowing model: `docs/CAM_DESIGN.md`
+    (draft). No large rewrite until the user has reviewed it.
 
 - Index 0 in every vertical array is the **model lid**, not the ground. On the
   analysis's PRESSURE levels (`config.PRESSURE_LEVELS`) index 0 is 1000 hPa —

@@ -117,11 +117,17 @@ def stability_function(Ri_b, ri_crit=0.2):
     return F
 
 
-def surface_drag(u, v, theta, pi, lev, z0=0.1, theta_s=None, ri_crit=0.2):
+def surface_drag(u, v, theta, pi, lev, z0=0.1, theta_s=None, ri_crit=0.2,
+                 stability="cutoff"):
     """
     Momentum tendency from surface stress, applied to the lowest level.
 
         du/dt = -tau_x / (rho * dz1)  =  -Cd |V| u / dz1
+
+    stability selects the stable-side function when theta_s is given:
+    "cutoff" (the original, drag zero above ri_crit) or "louis" (Louis 1979,
+    a long stable tail; used with the force-restore ground temperature,
+    land_surface.py).
 
     Returns (du, dv, info). Only the lowest level is affected; the mixing
     scheme spreads the effect upward from there, which is how a boundary layer
@@ -144,7 +150,13 @@ def surface_drag(u, v, theta, pi, lev, z0=0.1, theta_s=None, ri_crit=0.2):
         Ri_b = xp.zeros_like(u1)
     else:
         Ri_b = bulk_richardson(u1, v1, theta[-1], theta_s, z1)
-        F = stability_function(Ri_b, ri_crit)
+        if stability == "louis":
+            from land_surface import louis_momentum
+            F = louis_momentum(Ri_b, cd_n, xp.maximum(z1, 2.0 * z0) / z0)
+        elif stability == "cutoff":
+            F = stability_function(Ri_b, ri_crit)
+        else:
+            raise ValueError(f"unknown stability {stability!r}")
     cd = cd_n * F
 
     du = xp.zeros_like(u)

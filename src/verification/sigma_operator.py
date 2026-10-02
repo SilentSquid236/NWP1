@@ -99,6 +99,47 @@ class SigmaInterpolator(GridInterpolator):
             return 1.0, agl
         return float(np.log(10.0 / z0) / np.log(agl / z0)), agl
 
+    def surface_similarity(self, theta3d, u3d, v3d, tg2d, lat, lon, z0=0.1):
+        """
+        Monin-Obukhov diagnostics between the ground and the lowest level
+        (surface_similarity.py; P-68 step 2, test AK). tg2d is the model's
+        ground temperature in K (land_surface.py). Returns a dict with the
+        10 m wind factor, the 2 m temperature at the model ground (K), zeta,
+        Ri_b and the lowest level's height above the model ground; or None
+        outside the domain.
+        """
+        from surface_similarity import surface_diagnostics
+        z1 = self.lowest_level_height(theta3d, lat, lon)
+        h = self.model_elevation(lat, lon)
+        ps = self.surface_pressure(lat, lon)
+        th1 = self.horizontal(theta3d[-1], lat, lon)
+        u1 = self.horizontal(u3d[-1], lat, lon)
+        v1 = self.horizontal(v3d[-1], lat, lon)
+        tg = self.horizontal(tg2d, lat, lon)
+        if any(x is None for x in (z1, h, ps, th1, u1, v1, tg)):
+            return None
+        ex = (ps / P0) ** KAPPA
+        agl = float(z1 - h)
+        f10, th2, zeta, ri = surface_diagnostics(np.hypot(u1, v1), th1, tg / ex, agl, z0=z0)
+        return {"wind_factor": float(f10), "T2_model_ground": float(th2 * ex),
+                "zeta": float(zeta), "Ri_bulk": float(ri), "model_level_agl_m": agl,
+                "model_elev_m": float(h), "Tg": float(tg)}
+
+    def station_temperature_similarity(self, theta3d, u3d, v3d, tg2d, lat, lon, station_elev):
+        """2 m temperature by similarity, then the standard lapse from model ground to station."""
+        d = self.surface_similarity(theta3d, u3d, v3d, tg2d, lat, lon)
+        if d is None:
+            return None, {}
+        T2 = d["T2_model_ground"]
+        info = {"temp_operator": "similarity", "zeta": d["zeta"], "Ri_bulk": d["Ri_bulk"],
+                "Tg": d["Tg"], "T2_model_ground": T2}
+        if station_elev is None:
+            return T2, info
+        Tc = elevation_correct_temperature(T2, d["model_elev_m"], station_elev)
+        info.update({"elev_correction_m": float(station_elev - d["model_elev_m"]),
+                     "elev_correction_K": float(Tc - T2)})
+        return Tc, info
+
     def lowest_level_height(self, theta3d, lat, lon):
         """
         Height above sea level of the lowest model level.

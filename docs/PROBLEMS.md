@@ -465,11 +465,22 @@ service, which is P-06 and is where this project's defects have always been.
 - With momentum mixed by the adjustment, one cycle diverges (P-67).
 - It is off by default. Remaining: the evening warm bias the next day (the heat is not removed at night), no clouds, and the wind is unscorable until P-68.
 
+**The user's decision (2026-10-02).** Not the default: "we want a convective allowing model" (`docs/CAM_DESIGN.md`). A CAM takes its surface fluxes from a surface energy budget, not a prescribed curve.
+
+**Step 2, a force-restore ground temperature (`--land-surface`, `src/dynamics/land_surface.py`, 2026-10-02; test AK).** Deardorff (1978) with clear-sky radiation, a bulk sensible heat flux, latent heat as a fixed share of daytime net radiation, and Louis (1979) stability on the drag. It replaces the prescribed flux. It is off by default.
+
+**Test AK (20 cycles).**
+- With the similarity operator, the 2 m T RMSE is 3.25 K, against 3.76 for AD and 3.56 for persistence: better than persistence at 18 of 24 leads.
+- The day bias is +0.51 K and the night bias −1.33 K, against −2.30 and +1.54 for AD.
+- At leads 19–24 the swing is too large (night −2.61 K, day +1.59 K). The model has no clouds, so every night is clear. That is the next limit, not a constant to retune.
+
 ---
 
 
 ## P-64 — Cycling never used the previous forecast: snapshots land one step past the hour
 **Category** B, A · **First seen** 2026-10-01 · **Status** OPEN (fix in, awaiting test)
+
+**2026-10-02.** The user kept the fix (test AF: no detectable skill difference, 1.578 against 1.599 K). It will close once a committed run shows the forecast first guess used at every chained cycle.
 
 **Symptom.** In the test AD campaign every chained cycle logged a fallback. At 06Z and 18Z the log said "first guess: previous_analysis … (6 h old; previous forecast unusable)". At 00Z and 12Z it said "sounding_mean (previous forecast lacked the lead time)". The ingest documentation says the upper air of a sounding-poor cycle comes from the previous run's 6 h forecast. That has not happened in any cycle.
 
@@ -518,12 +529,20 @@ So the heating amplifies something already present rather than creating it.
 **Test AG (one change each).**
 - AG1, no momentum mixing: completes (max|u| ≤ 15.6 m/s).
 - AG2, no night cooling: completes (≤ 15.4).
-- AG3, night cooling only: diverges at 17.48 h.
+- AG3, night cooling only (no daytime heating; momentum still mixed): diverges at 17.48 h.
 
 So it is the steady night cooling of the lowest layer together with the adjustment's instant momentum mixing; neither alone causes it. The candidate configuration is heating with `--no-conv-momentum` (test AH, 20 cycles). The cold-pool dynamics are not yet explained.
 
 **Consequence.** `--surface-heating` stays off by default until this is understood.
 
+
+**2026-10-02: not specific to the heating (tests AJ2 and the location check).** The 28 Sep 06Z cycle with `--z0 1.0` (no heating) diverged at 18.99 h, and 5 of 8 `--no-mixing` runs diverged.
+- The z0 run and the P-67 heated run start in the same box. It is the second or third level above the ground at 45.2–45.4 N, 72.2–72.8 W (northern Vermont, about 20 cells from the northern edge, 170–310 m terrain), in the afternoon and evening of 28 Sep.
+- Growth: 17 → 41 m/s between 15 and 18 h in the z0 run; 22 → 31 m/s at 17 h and 33 → 51 m/s at 21–22 h in the P-67 run.
+- The control has its fastest low-level wind in the same box (16–21 m/s) and survives.
+- ~~Next: a tendency budget at that point (pressure gradient, advection, drag, relaxation), not another variant.~~ done the same day:
+- **The budget (`tools/budget28.py`, which closes exactly).** At a strict local speed maximum, the second-order centred horizontal advection supplies +7 to +66 m/s per hour along the wind, where the continuous term is zero. Pressure gradient and mixing oppose it, and hyperdiffusion removes only 2–7 m/s per hour. So the growth is the advection scheme's dispersion error. Test AL tries third-order upwind-biased advection (`--advection upwind3`).
+- **Test AL (2026-10-02).** With `--advection upwind3`, both failing configurations (28 Sep 06Z with z0 = 1.0, and 28 Sep 00Z heated with momentum mixed) complete 24 h. The fastest wind anywhere stays at 15.6 and 14.9 m/s, against 41.5 and 51.1 m/s before divergence. On 20 cycles skill is unchanged (T +0.002 K, u +0.005, v 0.000 m/s), and runs are about 18 % slower. **Fix available.** It closes when upwind3 becomes the default (the user's decision).
 ---
 
 
@@ -542,7 +561,32 @@ So it is the steady night cooling of the lowest layer together with the adjustme
 - Temperature identical.
 - The model still loses to persistence in wind (u +0.34, v +0.15 m/s pooled), and its speed ratio grows from 1.17 to 1.51 over 24 h, against 1.10 to 1.32 for persistence.
 
-**Open.** Whether to make `log10m` the default (the user's decision). A stability-dependent reduction, since the neutral log law over-reduces above about 50 m. The model's wind growth with lead time is a model error, not an operator one.
+~~**Open.** Whether to make `log10m` the default (the user's decision). A stability-dependent reduction, since the neutral log law over-reduces above about 50 m. The model's wind growth with lead time is a model error, not an operator one.~~ (superseded 2026-10-02, below)
+
+**`log10m` is the default (2026-10-02, the user's decision).** Archives verified before that date used `lowest` unless their name ends in `_w`.
+
+**Step 2, a similarity operator (`--surface-operator similarity`, `src/verification/surface_similarity.py`).** Monin–Obukhov between the model's ground temperature and the lowest level, for both the 10 m wind and the 2 m temperature. It needs a `--land-surface` forecast. The time-of-day split showed that the "growth with lead time" was mostly a night-time excess (P-69), so the neutral operator was wrong at night in the way the old one was wrong at all hours.
+
+---
+
+## P-69 — The 10 m wind is 1.6–1.8 times the observed at night: no stable surface layer
+**Category** G · **First seen** 2026-10-02 · **Status** OPEN
+
+**Symptom.** In the 20 campaign cycles under the 10 m operator, the dry model's 10 m wind is about right by day: speed ratio 1.10, against 0.95 for persistence. At night it is 1.63 (1.37 at leads 1–6, 1.81 at 13–18), against persistence's 1.41. The model's mean speed is about 3.9 m/s at all hours, while the observed falls from 3.6 by day to 2.2–2.7 at night. Test AI's "growth with lead time" (1.17 → 1.51) is mostly the share of night hours in each lead.
+
+**What is known (tests AJ, AJ2).**
+- Against the analysis valid at the same time, the model's lowest-level wind exceeds it by 1.4 m/s at 6 h and 2.3 m/s at 24 h.
+- The excess is confined to the lowest two levels. It is largest over the sea (ratio 1.55 at 24 h) and smallest in the relaxed edge zone (1.19).
+- The sea result rules out one too-small roughness length as the cause.
+- The 2 m temperature shows the same day/night split: bias −2.30 K by day and +1.54 K at night. The prescribed heating fixed part of the day and none of the night.
+- Common cause, to be tested: the ground has no temperature. The surface layer never becomes stable, the drag is always neutral, and both 10 m operators assume a neutral profile.
+
+**Test AJ2 (8 cycles).**
+- Richardson mixing and convective momentum mixing are not the source: removing either leaves the excess unchanged.
+- Doubling the drag (z0 = 1.0) removes 66 % of the lowest-level excess at 6 h and 33 % at 24 h, and lowers wind RMSE by 0.56 (u) and 0.26 (v) m/s.
+- By 24 h the whole lower troposphere is too fast (+2.5 m/s at levels 13–18), which points at the resolved dynamics.
+
+**Test AK (20 cycles).** With the force-restore ground temperature and the similarity operator, the night ratio falls from 1.63 to 0.92 and the day ratio is 1.22. Wind RMSE falls against AD (u −0.107, v −0.163 m/s), but u is still 0.23 m/s worse than persistence. Most of the night excess was the neutral 10 m diagnosis of a surface layer that should be stable. **Status:** largely explained; it stays open until the land surface is adopted or rejected (the user's decision) and the remaining u error is understood (too little turning across the isobars, test AJ2).
 
 ---
 

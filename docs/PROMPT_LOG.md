@@ -240,6 +240,10 @@ on itself.
 | 160 | "all set" (pushed 444fe9f) | **ADM** | The agent pulled on the server and ran test AA itself. The frame fix held (jet bit-identical, skill ±0.02), but the speed was unchanged (3.2 steps/s). Class-splitting test AB, also run directly: 96 % of the violations are 1e-8–1e-3 K on layers the adjustment itself left neutral, and the 20-sweep cap binds on every call. PAV written, with 7 tests (12/12); the agent's expectation that PAV equals the converged sweep scheme was checked and was wrong |
 | 161 | "keep working on improving the model if you reach a point where the dry model is stable we can move to the next step I wont be back until close to 9PM EDT so keep going" | **DIR** | An autonomous block of about 11 hours. Test AC (PAV vs sweep, with a persistence reference) runs from a development copy on the server, because the agent cannot commit. Then a 20-cycle stability campaign on 26–30 September |
 
+| 162 | "Its pulled I will be at class again so keep going" | **DIR** | c7380aa pulled on the server; a second autonomous block. The agent asked for its decisions before the user left |
+
+| 163 | "any approvals you might need ask now" — then answers: heating as default "no we want a convective allowing model"; "plan toward a 3 km non-hydrostatic CAM"; `log10m` default yes; keep P-64; dry fixes first; autonomous jobs and `.bashrc` yes | **DIR**, **ADM** | The project's goal changes from a dry 12 km model to a convection-allowing one. `docs/CAM_DESIGN.md` (draft, costed, staged) is written for review rather than started. The user's "no" to the prescribed heating redirects P-59 to a surface energy budget, the kind a CAM needs (`land_surface.py`, test AK) |
+
 **Observation.** Prompt 53 is 18 words and is the most consequential
 instruction in the project. Before it, nine candidate causes had been patched
 and measured one at a time, all negative. After it, the failure was traced in
