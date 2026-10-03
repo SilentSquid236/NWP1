@@ -187,6 +187,15 @@ recorded with `tools/tokens.py --add`.
     - `--z0-land`/`--z0-sea` (test AM).
   - The goal is now a convection-allowing model: `docs/CAM_DESIGN.md`
     (draft). No large rewrite until the user has reviewed it.
+- **2026-10-03: new defaults (the user's decision after the holdout, test AN).**
+  - `forecast.py` defaults to `--advection upwind3`, the force-restore land
+    surface, and z0 = 1.0 m over land / 0.0002 m over water. The old
+    configuration is `--advection centred2 --no-land-surface --z0 0.1`.
+  - `verify.py --surface-operator auto` (default) scores land-surface
+    forecasts with similarity, and persistence with the standard operator.
+  - `--core nh` (CAM stage S2, `src/dynamics/nh3d.py`) runs on NumPy, with
+    no land surface yet. Its edge relaxation is rescaled per unit time
+    (P-70).
 
 - Index 0 in every vertical array is the **model lid**, not the ground. On the
   analysis's PRESSURE levels (`config.PRESSURE_LEVELS`) index 0 is 1000 hPa —

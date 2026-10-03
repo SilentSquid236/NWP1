@@ -141,6 +141,8 @@ Skamarock, W. C., and J. B. Klemp, 2008: A time-split nonhydrostatic atmospheric
 
 Smagorinsky, J., 1963: General circulation experiments with the primitive equations. I. The basic experiment. *Mon. Wea. Rev.*, **91**, 99–164, https://doi.org/10.1175/1520-0493(1963)091<0099:GCEWTP>2.3.CO;2.
 
+Smith, R. B., 1979: The influence of mountains on the atmosphere. *Adv. Geophys.*, **21**, 87–230, https://doi.org/10.1016/S0065-2687(08)60262-9.
+
 Snyder, J. P., 1987: *Map Projections—A Working Manual*. U.S. Geological Survey Professional Paper 1395, https://doi.org/10.3133/pp1395.
 
 Straka, J. M., R. B. Wilhelmson, L. J. Wicker, J. R. Anderson, and K. K. Droegemeier, 1993: Numerical solutions of a non-linear density current: A benchmark solution and comparisons. *Int. J. Numer. Methods Fluids*, **17**, 1–22, https://doi.org/10.1002/fld.1650170103.
@@ -183,7 +185,7 @@ Zhang, J., and Coauthors, 2016: Multi-Radar Multi-Sensor (MRMS) quantitative pre
 | Hunter (2007) | Matplotlib, all maps and figures | `src/maps/render.py`, `src/make_maps.py` |
 | Iowa Environmental Mesonet (2026a, b) | surface (ASOS) and upper-air (RAOB) observations | `src/analysis/sources.py`, `src/verification/fetchers.py` |
 | Kessler (1969) | warm-rain microphysics, stage S4 | `docs/CAM_DESIGN.md` |
-| Klemp and Wilhelmson (1978) | time-split sound waves in a 3D cloud model | `docs/CAM_DESIGN.md` |
+| Klemp and Wilhelmson (1978) | time-split sound waves in a 3D cloud model | `docs/CAM_DESIGN.md`, `src/dynamics/nh2d.py` |
 | Klemp et al. (2007); Skamarock and Klemp (2008) | split-explicit non-hydrostatic core (WRF-ARW design), stage S1 | `docs/CAM_DESIGN.md` |
 | Kopp and Lean (2011) | total solar irradiance, 1361 W/m² (P-59) | `src/dynamics/diurnal.py` |
 | Laprise (1992) | hydrostatic-pressure vertical coordinate for non-hydrostatic equations | `docs/CAM_DESIGN.md` |
@@ -205,6 +207,7 @@ Zhang, J., and Coauthors, 2016: Multi-Radar Multi-Sensor (MRMS) quantitative pre
 | Simmons and Burridge (1981) | hydrostatically consistent vertical discretisation | `src/dynamics/sigma.py` |
 | Skamarock and Klemp (1992) | divergence damping (optional, `--div-damp`; P-60 test V) | `src/dynamics/subgrid.py`, `src/forecast.py` |
 | Smagorinsky (1963) | deformation-based 3D turbulence closure | `docs/CAM_DESIGN.md` |
+| Smith (1979) | analytic linear mountain wave (Witch of Agnesi), the S1b gate | `docs/CAM_DESIGN.md`, `docs/RESEARCH_LOG.md` |
 | Snyder (1987) | Lambert conformal conic formulas | `src/maps/geography.py` |
 | Straka et al. (1993) | density-current benchmark, the S1 gate | `docs/CAM_DESIGN.md` |
 | Toth and Kalnay (1993) | bred-vector idea behind the round-off difference mode | `tools/mode_structure.py`, `tools/mode_budget.py` |

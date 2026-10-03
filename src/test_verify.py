@@ -225,6 +225,24 @@ def test_old_forecast_format_is_refused():
     report("a pre-sigma forecast file is refused", ok, why)
 
 
+def test_auto_surface_operator():
+    """
+    Default since 2026-10-03: a land-surface forecast is scored with the
+    similarity operator, persistence and forecasts without a ground
+    temperature with the standard one (persistence with a held ground
+    temperature is not a fair reference; test AK).
+    """
+    tg = np.zeros((1, NY, NX))
+    cases = [({"tg": tg, "stopped": np.array("completed")}, "similarity"),
+             ({"tg": tg, "stopped": np.array("persistence")}, "standard"),
+             ({"stopped": np.array("completed")}, "standard"),
+             ({"tg": tg}, "similarity")]
+    got = [V.resolve_surface_operator(fc) for fc, _ in cases]
+    ok = got == [want for _, want in cases]
+    report("auto operator: similarity for land-surface runs, standard for persistence",
+           ok, f"got {got}")
+
+
 if __name__ == "__main__":
     print("\nVerification archiver\n" + "=" * 66)
     for fn in (test_raw_observations_are_stored_verbatim,
@@ -233,7 +251,8 @@ if __name__ == "__main__":
                test_lead_hours_recorded,
                test_elevation_correction_is_recorded,
                test_report_only_refuses_without_cache,
-               test_old_forecast_format_is_refused):
+               test_old_forecast_format_is_refused,
+               test_auto_surface_operator):
         try:
             fn()
         except Exception as e:

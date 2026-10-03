@@ -274,6 +274,9 @@ class Relaxation3D:
         return self.inner.interior_fraction
 
 
+Z0_LAND_DEFAULT = 1.0     # m, land roughness since 2026-10-03 (test AM)
+Z0_SEA_DEFAULT = 0.0002   # m, water roughness since 2026-10-03 (test AM)
+
 U_CEILING = 150.0     # m/s -- the range limit on observed wind; beyond it
                       # the state is not weather and the run is over (P-52)
 
@@ -354,7 +357,10 @@ def run_forecast(model, driver, relax, duration, dt=None, output_every=None,
 
     for k in range(n_steps):
         model.step(dt)
-        relax.apply(model, driver.at(model.time))
+        if hasattr(model, "relax_with"):
+            model.relax_with(relax, driver.at(model.time))
+        else:
+            relax.apply(model, driver.at(model.time))
 
         if k % every_n == 0:
             # Both components: the P-56 runaways are in v first, and a guard
@@ -464,22 +470,29 @@ def main():
                         "(default: turbulence.RI_CRIT, 0.25; P-60 test S)")
     p.add_argument("--no-mixing", action="store_true",
                    help="Turn off turbulent vertical mixing (diagnosis only)")
-    p.add_argument("--advection", choices=("centred2", "upwind3"), default="centred2",
-                   help="Horizontal advection: second-order centred (default) or "
-                        "third-order upwind-biased (Wicker and Skamarock 2002; "
-                        "P-67 test AL)")
-    p.add_argument("--land-surface", action="store_true",
+    p.add_argument("--core", choices=("hydrostatic", "nh"), default="hydrostatic",
+                   help="Dynamical core: the hydrostatic sigma model (default) or the "
+                        "non-hydrostatic mass-coordinate core (nh3d.py; CAM stage S2; NumPy only)")
+    p.add_argument("--advection", choices=("centred2", "upwind3"), default="upwind3",
+                   help="Horizontal advection: third-order upwind-biased (default since "
+                        "2026-10-03; Wicker and Skamarock 2002; P-67 tests AL, AN) or "
+                        "second-order centred (the old default)")
+    p.add_argument("--land-surface", dest="land_surface", action="store_true", default=None,
                    help="Force-restore ground temperature with a surface energy "
-                        "budget (land_surface.py; P-59 step 2, test AK). Off by "
-                        "default; cannot be combined with --surface-heating")
-    p.add_argument("--z0", type=float, default=0.1,
-                   help="Roughness length for the surface drag, m (default 0.1, "
-                        "one value everywhere; test AJ)")
+                        "budget (land_surface.py; P-59, tests AK, AM, AN). ON by default "
+                        "since 2026-10-03 for the hydrostatic core; off with "
+                        "--surface-heating or --core nh")
+    p.add_argument("--no-land-surface", dest="land_surface", action="store_false",
+                   help="Turn the land surface off (the pre-2026-10-03 configuration)")
+    p.add_argument("--z0", type=float, default=None,
+                   help="One roughness length everywhere, m (test AJ). Without it the "
+                        "default since 2026-10-03 is a land/sea map: --z0-land 1.0, "
+                        "--z0-sea 0.0002 (test AM). --z0 0.1 is the old default")
     p.add_argument("--z0-land", type=float, default=None,
-                   help="Roughness over land, m (with --z0-sea: a land/sea map from "
-                        "the raw ETOPO land mask; test AM)")
+                   help="Roughness over land, m (default 1.0 unless --z0 is given; "
+                        "land from the raw ETOPO mask)")
     p.add_argument("--z0-sea", type=float, default=None,
-                   help="Roughness over water, m (test AM)")
+                   help="Roughness over water, m (default 0.0002 unless --z0 is given)")
     p.add_argument("--no-drag", action="store_true",
                    help="Turn off surface drag (diagnosis only; test AJ)")
     p.add_argument("--sponge-levels", type=int, default=5,
@@ -520,6 +533,19 @@ def main():
                    help="Stop integrating after this many minutes of wall "
                         "clock and write the hours reached (cycle budget)")
     args = p.parse_args()
+
+    # DEFAULTS CHANGED 2026-10-03 (user decision after the holdout, test AN):
+    # upwind3 advection, the force-restore land surface, and a land/sea
+    # roughness map. The old configuration is
+    #   --advection centred2 --no-land-surface --z0 0.1
+    if args.z0 is None:
+        if args.z0_land is None and args.z0_sea is None:
+            args.z0_land, args.z0_sea = Z0_LAND_DEFAULT, Z0_SEA_DEFAULT
+        args.z0 = 0.1
+    if args.land_surface is None:
+        args.land_surface = not args.surface_heating and args.core == "hydrostatic"
+        if args.core != "hydrostatic" and not args.surface_heating:
+            print("  NOTE: --core nh has no land surface yet; running without it")
 
     run_dir = Path(args.run_dir)
     files, source = driving_frames(run_dir)
@@ -683,6 +709,21 @@ def main():
     # would let the first relaxation step quietly rewrite the driving data.
     model.pi = pi0.copy()
     model.u, model.v, model.theta = u0.copy(), v0.copy(), th0.copy()
+    if args.core == "nh":
+        # STAGE S2: the non-hydrostatic core behind the same interface. The
+        # hydrostatic model built above supplies the grid, terrain and physics
+        # settings; its prepared state is loaded with w = 0 and a hydrostatic phi.
+        from nh3d import NHModel
+        if args.land_surface or args.surface_heating:
+            raise SystemExit("--core nh does not yet support --land-surface or --surface-heating")
+        if args.backend == "torch":
+            print("  NOTE: --core nh runs on NumPy; --backend torch ignored")
+            args.backend = "numpy"
+        hydro = model
+        model = NHModel(hydro)
+        model.set_state(u0, v0, th0, pi0)
+        print(f"  core           : non-hydrostatic (nh3d.py, ns {model.core.ns}, dt <= {model.dt_max:g} s; "
+              f"edge relaxation rescaled to the hydrostatic step {model.relax_dt_ref:.1f} s)")
 
     if args.land_surface:
         if args.surface_heating:

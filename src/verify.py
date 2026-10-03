@@ -276,11 +276,30 @@ def match_snapshot(fc, snapshot, obs, valid_time, lead_hours,
 # Driver
 # ---------------------------------------------------------------------------
 
+def resolve_surface_operator(fc):
+    """
+    The 'auto' surface operator (default since 2026-10-03).
+
+    Similarity needs the model's ground temperature, so a forecast run with the
+    land surface is scored with it. Persistence is NOT, even when it carries a
+    held ground temperature: holding the cycle-time stability all day reduces
+    its daytime wind as if it were still night (the 'psim' reference, test AK),
+    which is not a fair do-nothing forecast. Persistence keeps the standard
+    operator, as in every comparison since test AD.
+    """
+    stopped = str(np.asarray(fc["stopped"]).item()) if "stopped" in fc else ""
+    return "similarity" if ("tg" in fc and stopped != "persistence") else "standard"
+
+
 def verify(forecast_path, archive_root, run_time=None, window_min=30,
            report_only=False, networks=None, verbose=True,
-           wind_operator="log10m", surface_operator="standard"):
+           wind_operator="log10m", surface_operator="auto"):
     fc = load_forecast(forecast_path)
     times_s = np.asarray(fc["times_s"], dtype=float)
+    if surface_operator == "auto":
+        surface_operator = resolve_surface_operator(fc)
+        if verbose:
+            print(f"  surface op.    : {surface_operator} (auto)")
 
     run_time = run_time or datetime.now(timezone.utc).replace(
         minute=0, second=0, microsecond=0, tzinfo=None)
@@ -399,13 +418,15 @@ def main():
                         "neutral log law (the default since 2026-10-02, "
                         "P-68), or the lowest model level as it is (the "
                         "old default; scores before 2026-10-02 used it)")
-    p.add_argument("--surface-operator", choices=("standard", "similarity"),
-                   default="standard",
+    p.add_argument("--surface-operator", choices=("auto", "standard", "similarity"),
+                   default="auto",
                    help="standard: 2 m temperature from the lowest level by a "
                         "standard lapse rate, wind by --wind-operator. "
                         "similarity: both from Monin-Obukhov similarity between "
                         "the model's ground temperature and the lowest level "
-                        "(needs a --land-surface forecast; test AK)")
+                        "(needs a --land-surface forecast; test AK). auto (default "
+                        "since 2026-10-03): similarity when the forecast carries a "
+                        "ground temperature and is not persistence, else standard")
     p.add_argument("--summary", action="store_true",
                    help="Print scores for the whole archive and exit.")
     args = p.parse_args()

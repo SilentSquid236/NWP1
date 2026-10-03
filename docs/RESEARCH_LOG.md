@@ -4371,6 +4371,333 @@ similarity), with a persistence that holds its ground temperature.
   heating. The `similarity` operator only works with it.
 
 
+## 2026-10-02 (evening) — Threads measured, a holdout week, and the first non-hydrostatic core
+
+**Context (prompts 164–165).**
+- The thread cap may go above 26, as long as other users can still get cores.
+- The user chose roadmap order B: the non-hydrostatic core first, then
+  moisture in it.
+- "You can run the check": a holdout test of the AM candidate.
+
+**Threads measured (`tools/bench_cam.py`; server idle, nice 19).**
+- At 12 km a 2 h forecast takes 49–60 s at 8 to 64 threads, slowest at 64.
+- On 3 km, 40-level arrays the tendency call takes 1670 ms at 8 threads,
+  1147 at 16, 1087 at 32 and 1364 at 64.
+- The code is limited by memory bandwidth (about 160 ns per cell).
+- So more threads buy 1.5 times, not the 2.5–4 times assumed in
+  `docs/CAM_DESIGN.md`.
+- A 3 km whole-domain hydrostatic core alone would take about 4.4 h per
+  24 h. The 1.5 h budget is the binding constraint. The design document's
+  section 3a records this, with float32 and domain decomposition as the
+  untested remedies.
+
+**Test AN (predictions first, `verification_tests/an/an_predictions.txt`): a holdout for the AM candidate.**
+- 32 cycles the candidate never saw: 19–25 Sep, chained from a spin-up at
+  18 Sep 18Z, and 1 Oct.
+- Built from archived observations in a separate data root, then
+  persistence, the default dry model and AM, then verification. It runs on
+  the server; result below when it lands.
+- The analyses build in 5–15 s each.
+
+**Stage S1a: a 2-D non-hydrostatic core (`src/dynamics/nh2d.py`).**
+- A compressible x–z core: height coordinate, flat ground, periodic in x.
+- Exner-pressure form; Arakawa C grid; RK3 with acoustic sub-steps
+  (forward u; vertically implicit w–pressure with off-centring 0.1); a
+  pressure-based divergence damping; upwind3 horizontal advection.
+- Splitting S1 into S1a (height coordinate, flat) and S1b (the Laprise mass
+  coordinate, with terrain) is a deviation from the roadmap. It was made so
+  that a failed benchmark points at one cause, the solver or the coordinate,
+  not both.
+
+**A lapse:** the first density-current run (100 m, dt 1 s) was made before
+its predictions were written. The predictions for the other runs were
+written after it and before them (`s1a_predictions.txt`, quoted here).
+
+| run (Straka et al. 1993 density current, K = 75 m²/s, 900 s) | front (km) | min θ′ (K) | max\|u\| | max\|w\| | symmetry error (K) |
+|---|---|---|---|---|---|
+| reference, 25 m (Straka et al. 1993) | about 15.5 | about −9.8 | | | |
+| 200 m, dt 2 s | 15.50 | −11.61 | 31.1 | 18.2 | 1.6e-13 |
+| 100 m, dt 1 s (run before predictions) | 15.35 | −10.22 | 34.1 | 16.1 | 3.7e-13 |
+| 100 m, dt 0.5 s | 15.35 | −10.20 | 34.1 | 16.1 | 1.5e-13 |
+| 100 m, ns 12 | 15.35 | −10.20 | 34.1 | 16.1 | 3.9e-13 |
+| 50 m, dt 0.5 s | 15.38 | −9.65 | 35.9 | 16.0 | 3.9e-13 |
+
+| prediction | result | |
+|---|---|---|
+| 1. 200 m: front 14.0–16.0 km, min θ′ −8.0 to −10.8 K; 50 m: front 15.0–15.9 km, min θ′ −9.2 to −10.4 K | 200 m: front held, **min θ′ −11.61 refuted**; 50 m: both held | partly refuted |
+| 2. dt 0.5 s: front within 0.10 km, min θ′ within 0.15 K | 0.00 km, 0.02 K | held |
+| 3. ns 12: front within 0.10 km | 0.00 km | held |
+| 4. symmetric to 1e-9 K | 3.9e-13 at most | held |
+
+- The minimum θ′ converges toward the reference: −11.6 at 200 m, −10.2 at
+  100 m, −9.65 at 50 m, against −9.8 at 25 m. The front is within 0.2 km of
+  the reference at every resolution.
+- The flow shows the three rotors of the published solution
+  (`docs/nh2d_density_current.png`).
+- The 200 m overshoot is the coarse resolution plus a non-monotone advection
+  scheme.
+- A sound pulse travels at 345.3 m/s against 345.8 m/s in theory.
+- `test_nh2d.py` 4/4: the tridiagonal solve, the sound speed, the 200 m
+  current, and the acoustic-step independence.
+
+**Not yet done in S1.**
+- The pressure equation is the linearised Exner form, so mass is not
+  conserved exactly. The mass-conservation gate belongs to S1b, whose
+  coordinate is in flux form.
+- The mountain-wave gate is also S1b, which needs terrain.
+
+**Stage S1b: the same solver in the mass coordinate, with terrain (`src/dynamics/nh2d_mass.py`).**
+- The coordinate is Laprise (1992), as in WRF-ARW (Skamarock and Klemp 2008):
+  NWP1's sigma made non-hydrostatic.
+- Prognostic variables: column mass μ (flux form), U = μu, W = μw,
+  Θ = μθ, and the geopotential φ. Pressure comes from the equation of state.
+- The horizontal pressure gradient is in perturbation form against a
+  hydrostatic reference, with the reference balance removed analytically.
+- RK3 with acoustic sub-steps linearised about each stage state (Klemp et al.
+  2007): U forward, then μ, Ω and Θ, then a vertically implicit
+  W–φ tridiagonal solve.
+
+**Predictions (`s1b_predictions.txt`)** were written after the two rest tests
+and before the benchmark runs. The rest tests: an atmosphere at rest over a
+1000 m bell stays at rest to 3e-12 m/s for 1 h, and mass changes by 3e-16.
+
+| prediction | result | |
+|---|---|---|
+| 1. mountain wave (h 10 m, a 10 km, U 10 m/s, isothermal 250 K; 60 levels; 5 h): correlation with the analytic w ≥ 0.90 and slope 0.85–1.15 at 1–10 km | correlation 0.63, slope 0.55 | **refuted** |
+| 2. mass change < 1e-12 | −1.3e-16 | held |
+| 3. density current at 200 m: front within 0.2 km of S1a (15.50), min θ′ within 0.6 K of S1a (−11.61) | front 15.50; **min θ′ −18.2 K**, colder than the initial −15 K | **refuted** |
+
+**What the refutations showed, and what was changed (recorded as a change
+after a failed test, not a pass):**
+- **Mountain wave.** The fit is good near the ground (1–3 km: correlation
+  0.96, slope 0.94) and degrades with height. It did not improve from 5 to
+  10 h, so the cause is not spin-up.
+  - 60 levels give about 6 points per vertical wavelength (2π/l = 3.2 km).
+    With 120 levels the fit is correlation 0.91 and slope 0.78 at 5 h, and
+    0.96 and 0.90 at 10 h. So it was vertical resolution, plus upper levels
+    still adjusting at 5 h.
+  - With the advection fix below, 120 levels and 10 h: correlation 0.92,
+    slope 0.86 (`docs/nh2d_mass_mountain_wave.png`).
+- **Density current.** The θ flux was second-order centred in both
+  directions, which undershoots at a sharp cold front. S1a used upwind3
+  horizontally. Θ now uses a third-order upwind-biased flux in x and in the
+  interior of the column.
+  - At 200 m: front 15.30 km, min θ′ −10.70 K.
+  - At 100 m: front 15.25 km, min θ′ −9.99 K, against about 15.5 km and
+    −9.8 K in the reference and 15.35 km and −10.2 K for S1a.
+  - Mass is conserved to round-off, and the field is symmetric to 1e-11.
+- `test_nh2d_mass.py` 3/3, about 45 s: rest over the bell; the lower-
+  troposphere wave against the analytic solution (60 levels, 5 h: correlation
+  0.95, slope 0.95); the 200 m density current.
+
+**Where S1 stands.**
+- The roadmap's S1 gates (density current within the published spread,
+  mountain wave against its analytic solution, mass to round-off) are met by
+  S1b at 100 m and 120 levels.
+- Two of the three predictions written beforehand failed. Each failure
+  identified a real limitation, and both are recorded above.
+- Next is S2: the 3-D version on the 12 km domain, compared with the
+  hydrostatic model over the 20-cycle campaign.
+
+---
+
+## 2026-10-02 (night) — S2: the 3-D non-hydrostatic core in the forecast pipeline
+
+**Context.** The user chose roadmap option B (non-hydrostatic core first,
+moisture second). S1 ended with a 2-D mass-coordinate core that met its
+gates. S2 puts the 3-D version behind the interface the forecast already
+uses, so the same analysis, boundaries, physics and verification apply.
+
+**What was built.**
+- `src/dynamics/nh3d.py`, class `NH3D`: the S1b mass-coordinate
+  (Laprise 1992) split-explicit core in 3-D on NWP1's sigma levels (index 0
+  = lid) and C-grid. Prognostic μ, U, V, W, Θ, φ; acoustic substeps ns = 6;
+  upwind3 horizontal θ flux (the S1b fix).
+- Class `NHModel`, an adapter that looks like `PrimitiveSigma` to
+  `forecast.py`: properties u, v, theta, pi, surface_pressure; `set_state`
+  (W = 0 and φ integrated hydrostatically from α = RT/p); `max_dt` (60 s cap,
+  0.7 advective CFL); `sigma_dot`; the PAV convective adjustment after each
+  step; and the existing drag, Richardson mixing and sponge as tendencies,
+  with W damped in the sponge.
+- `forecast.py --core {hydrostatic,nh}`. The hydrostatic model is still built
+  first. It supplies the grid, terrain and physics switches, and the
+  prepared initial state is loaded into the NH core. `--core nh` is NumPy
+  only and refuses `--land-surface` and `--surface-heating` for now.
+
+**Checks.** `test_nh3d.py` 5/5:
+1. Rest over a 1500 m mountain when the state is the core's own reference
+   profile: |u|, |v|, |w| < 1e-9 m/s after 1 h. This holds by construction
+   and only shows the code is self-consistent.
+2. Inertial oscillation to 0.01 m/s.
+3. The x and y directions give transposed fields to 1e-10 K.
+4. The adapter's edge relaxation depends on elapsed time, not on the step
+   count (see the defect below).
+5. The September terrain test that the first hydrostatic core failed (it
+   diverged at +3 h; `docs/instability_growth.png`). This time the state
+   differs from the reference profile: isothermal 250 K at rest over a
+   2500 m mountain. The spurious wind settles at 0.13–0.27 m/s and |w| at
+   2–4 mm/s, with no growth over 24 h and mass conserved to 4e-16
+   (`docs/nh3d_terrain_rest.png`).
+
+`test_forecast.py` 15/15 is unchanged.
+
+**First real case (desktop, NumPy, one core; 28 Sep 06Z, the P-67 case).**
+The 24 h run completed in 18.0 min, with max|u| 13.4–15.6 m/s. The
+reference is AL (hydrostatic core, upwind3, same physics).
+
+*Defect found by the comparison (P-70, category C: a per-step constant
+used where a per-time rate was meant).* `forecast.py`'s Davies weights are applied once per step. Their
+values (width 15, α 0.1) were set with the hydrostatic core's ~17 s step,
+so at the NH core's 60 s step the same weights relaxed ~3.5 times more
+weakly per hour. The adapter now rescales them to the same e-folding time,
+a_eff = 1 − (1 − a)^(dt/dt_ref), with dt_ref the hydrostatic core's stable
+step for the run (16.7 s here).
+
+| NH − AL, rms over the grid | 1 h | 24 h |
+|---|---|---|
+| u, per-step weights (m/s) | 0.38 | 0.73 |
+| u, weights per unit time (m/s) | 0.025 | 0.21 |
+| v, weights per unit time (m/s) | 0.024 | 0.19 |
+| θ, weights per unit time (K) | 0.012 | 0.12 |
+| surface pressure, per-step weights (hPa) | 0.84 | 0.59 |
+| surface pressure, weights per unit time (hPa) | 0.078 | 0.085 |
+
+Before the fix the u difference was 38 % of AL's own 24 h change
+(1.92 m/s rms). After it, the difference is 11 %. The hydrostatic core's
+24 h change in θ is 1.0 K rms. The largest local θ difference is 2.1 K,
+where the two runs' convective adjustments differ.
+
+**For the collaboration study.** This defect could only be found by
+running the new core next to the old one on the same case. Every unit test
+of each module passed. The weights were correct for the core they were
+tuned on and silently wrong for any other step length. A comparison against
+observations alone would have shown it only as slightly worse boundary
+behaviour.
+
+**Status.** S2 integration done; the 20-cycle gate (test AO) is the next
+entry.
+
+---
+
+## 2026-10-02 (night) — Test AN: the AM candidate on a week it never saw
+
+**Context.** AM (`--advection upwind3 --land-surface --z0-land 1.0
+--z0-sea 0.0002`, scored with the similarity operator) beat persistence on
+the 26–30 Sep development week by T −0.288 K, u −0.045 and v −0.069 m/s.
+Every choice in it was made while looking at that week. The user approved a
+holdout check before any of it becomes a default.
+
+**Method.** New analyses were built from archived observations in a separate
+data root (`scratch/holdroot`, code c7380aa, same ingest). They cover
+19 Sep 00Z – 25 Sep 18Z (28 cycles, chained from an 18 Sep 18Z spin-up) and
+1 Oct 00–18Z (4 cycles). Three arms: persistence, AD (the present default)
+and AM. Predictions were written before any cycle was built
+(`an/an_predictions.txt`).
+
+**Result.**
+
+| Prediction | Outcome |
+|---|---|
+| 1. All AD and AM runs complete 24 h | **Refuted.** AM 32/32. AD diverged twice: 22 Sep 18Z at 22.50 h and 1 Oct 12Z at 23.59 h |
+| 2. AM (sim) beats persistence in T, at ≥ 12 of 24 leads | **Held.** −1.055 K, 20 of 24 leads, 27 of 30 cycles |
+| 3. AM u and v no worse than persistence by > 0.05 m/s | **Held**, u narrowly: u +0.043 (13 of 24 leads), v −0.029 (18 of 24) |
+| 4. AM beats AD in T, u and v | **Held.** T −1.089 K, u −0.308, v −0.081 m/s |
+
+The comparisons use the 30 cycles every arm verified. The job verified
+persistence and AM only after AD's verification succeeded, so the two cycles
+where AD diverged were not scored for any arm. AM completed both of them.
+
+Pooled RMSE, all leads (standard operators unless stated):
+
+| Arm | 2 m T (K) | 10 m wind vector (m/s) | Speed ratio day / night |
+|---|---|---|---|
+| Persistence | 4.94 | 3.09 | 0.63 / 0.99 |
+| AD | 4.59 | 3.36 | 0.89 / 1.37 |
+| AM, standard operator | 3.99 | 3.47 | 0.75 / 1.46 |
+| AM, similarity operator | 3.44 | 3.10 | 0.86 / 0.64 |
+
+**Interpretation.**
+- **AM's temperature margin is larger on the holdout than on the week it
+  was developed on** (−1.06 against −0.29 K). This is not evidence that AM
+  improved. Persistence did much worse on the holdout week (T RMSE 4.94
+  against 3.56): its diurnal range was larger, and AM's advantage is the
+  land surface's diurnal cycle. AM also beats persistence in T under the
+  standard operator (3.99 against 4.94), so the result does not depend on
+  the operator.
+- **The wind margin is small, and the same leads lose as before.** u is
+  worse than persistence at leads 1–4 and 19–24, by up to +0.28 m/s. T is
+  worse at leads 21–24, by up to +0.47 K. This is the same late-lead
+  weakness the development week showed. The model has no clouds and no
+  moisture, so its second afternoon and night are where persistence wins
+  (P-59).
+- **AM's night 10 m wind is now too weak under the similarity operator
+  (ratio 0.64).** In the development week it was 0.89. The stable-layer
+  reduction may be too strong on clear, calm nights. This is recorded and
+  not tuned.
+- **The centred2 advection diverged twice more on unseen cycles, near the
+  end of the run (P-67).** upwind3 completed both. These are the first
+  failures of the unmodified default configuration; the two earlier P-67
+  cases used z0 = 1.0 and surface heating. centred2 has now failed on four
+  real cases, and upwind3 on none of the 54 it has run (20 campaign + 2
+  P-67 cases + 32 holdout).
+
+**Status.** The holdout supports the candidate. Predictions 2–4 held;
+prediction 1 failed only for the old default.
+
+**Decision (user, 2026-10-03): adopt the full AM configuration.** Defaults
+now:
+- `forecast.py`: `--advection upwind3`; the force-restore land surface on
+  for the hydrostatic core (`--no-land-surface` turns it off; it is off
+  automatically with `--surface-heating` or `--core nh`); and roughness
+  1.0 m over land and 0.0002 m over water unless `--z0` is given.
+- `verify.py`: `--surface-operator auto`. Forecasts that carry a ground
+  temperature are scored with the similarity operator. Persistence, and
+  forecasts with no ground temperature, keep the standard operator, so the
+  persistence reference is unchanged (`resolve_surface_operator`; test in
+  `test_verify.py`, 8/8).
+
+The old configuration is `--advection centred2 --no-land-surface --z0 0.1`.
+`daily.sh` passes none of these flags, so the server cycle picks up the new
+defaults on its next `git pull`. P-67 is closed. P-59 stays open for the
+late leads and the weak night wind.
+
+---
+
+## 2026-10-03 — Test AO: the S2 gate passes
+
+**Method.** The non-hydrostatic core (`--core nh --advection upwind3 --z0 0.1
+--no-land-surface`, i.e. AL's physics) was run on the 20 campaign cycles
+(26 Sep 00Z – 30 Sep 18Z). Each run used NumPy on one server core at nice 19,
+with all 20 in parallel. Runs were scored with the same operators as AL and
+compared with AL (the hydrostatic core with the same physics). Predictions
+were written on 2026-10-02 before any server run (`ao/ao_predictions.txt`).
+Submission was delayed a night, and the job line was updated for the new
+defaults; the predictions were not changed.
+
+| Prediction | Outcome |
+|---|---|
+| 1. 20/20 complete, max wind < 60 m/s | **Held.** 20/20; highest max wind in a run 47.6 m/s (the 26 Sep jet) |
+| 2. Mean over leads within ±0.10 K and ±0.10 m/s of AL | **Held.** T −0.015 K, u −0.006, v +0.012 m/s |
+| 3. No lead differs by more than 0.25 | **Held.** Largest: T −0.03 K, u −0.03, v +0.02 m/s |
+| 4. Every cycle under 40 min on one core | **Held.** 25.8–28.6 min |
+
+**Interpretation.**
+- At 12 km the two cores give the same forecast to within a few hundredths
+  of a kelvin and a metre per second. That is the expected result, since
+  non-hydrostatic effects are negligible at this grid spacing. It shows the
+  NH core, its adapter and the physics hooks reproduce the model already
+  verified. It says nothing yet about storm-scale skill.
+- The NH core is slightly better in T at every lead (by up to 0.03 K). The
+  difference is too small to interpret.
+- **Cost is now the binding question.** On one core the NH core takes
+  ~27 min for 24 h at 12 km. The hydrostatic core takes ~10 min at
+  8 torch threads. At 3 km there are 16 times as many columns, and the
+  step is about 4 times shorter. S3 (benchmarks: float32, threads, domain
+  decomposition, a torch backend for `nh3d.py`) decides whether 3 km fits
+  the 1.5 h budget, and on what domain.
+
+**Status.** S2 passed. Next is S3.
+
 ## 2026-09-25 — Forecast maps and a Pivotal-style viewer
 
 **Context.** Prompt 120: the forecasts need maps "like how a site like

@@ -244,6 +244,14 @@ on itself.
 
 | 163 | "any approvals you might need ask now" — then answers: heating as default "no we want a convective allowing model"; "plan toward a 3 km non-hydrostatic CAM"; `log10m` default yes; keep P-64; dry fixes first; autonomous jobs and `.bashrc` yes | **DIR**, **ADM** | The project's goal changes from a dry 12 km model to a convection-allowing one. `docs/CAM_DESIGN.md` (draft, costed, staged) is written for review rather than started. The user's "no" to the prescribed heating redirects P-59 to a surface energy budget, the kind a CAM needs (`land_surface.py`, test AK) |
 
+| 164 | "what is the dry model confidence and can we move on the wet" | **DIR** | The agent's assessment: the dry model is stable with high confidence within one tested regime and moderately accurate. The remaining large error is clouds, which only moisture can fix. Recommended: lock in defaults, run a holdout week, then moisture |
+
+| 165 | "the thread limit can change as long as others can use threads if demand is needed" | **CON** | The thread benchmark it prompted showed the code is limited by memory bandwidth: 1.5 times faster at most from more threads. The 1.5 h budget, not the thread cap, is what rules out a 3 km whole-domain CAM |
+
+| 166 | "option b would be the best and you can run the check" | **DIR** | The non-hydrostatic core comes before moisture. Holdout test AN (32 unseen cycles) is running. Stage S1a was built and benchmarked the same evening |
+| 167 | (two figures attached, no text: `docs/instability_cross_section.png` and `docs/instability_growth.png`, the September 2500 m terrain failure) | **OBS** | Read as a question: does the new core have the same failure? The agent reran the test on the NH core with a state that differs from its reference profile. The spurious wind settled at 0.13–0.27 m/s, with no growth in 24 h. The test became `test_nh3d.py` 5 and the figure `nh3d_terrain_rest.png` |
+| 168 | Answer to the agent's question after holdout AN: "Adopt full AM" | **DIR** | upwind3, the land surface, the land/sea z0 map and the auto similarity operator became the defaults (2026-10-03). P-67 closed |
+
 **Observation.** Prompt 53 is 18 words and is the most consequential
 instruction in the project. Before it, nine candidate causes had been patched
 and measured one at a time, all negative. After it, the failure was traced in

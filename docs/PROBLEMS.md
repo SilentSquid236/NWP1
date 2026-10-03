@@ -477,6 +477,8 @@ service, which is P-06 and is where this project's defects have always been.
 ---
 
 
+- **2026-10-03: the land surface is now the default** (`--land-surface` on for the hydrostatic core, with the land/sea z0 map and the similarity operator chosen automatically for land-surface forecasts). Holdout (test AN, 30 cycles): 2 m T RMSE 3.44 K against persistence 4.94 K and the old default 4.59 K. Still open: the model loses to persistence at leads 21–24 (no clouds, no moisture), and the holdout night 10 m wind ratio is 0.64 (too weak).
+
 ## P-64 — Cycling never used the previous forecast: snapshots land one step past the hour
 **Category** B, A · **First seen** 2026-10-01 · **Status** OPEN (fix in, awaiting test)
 
@@ -505,44 +507,6 @@ service, which is P-06 and is where this project's defects have always been.
 
 **Fix (working copy).** The land mask is read from the unsmoothed `data/static/terrain_etopo_<ny>x<nx>.npz`, with a warning fallback to the old mask. Test AE has to be repeated with it, and its first results are reported as contaminated by this.
 
----
-
-
-## P-67 — Surface heating destabilises the 28 Sep 00Z cycle at 22.5 h
-**Category** C, G · **First seen** 2026-10-01 · **Status** OPEN
-
-**Symptom.** In AE20 (`--surface-heating`, correct land mask, PAV, new defaults), the 00Z 2026-09-28 run diverged at 22.46 h (367 m/s). The same cycle without heating (campaign AD) completed 24 h. max|u| holds at 14–17 m/s until 14 h, then grows through the next day: 22 m/s at 17 h, 24 at 21 h, 39 at 22 h, then it diverges, late afternoon local time (22Z).
-
-**What is known.** `tools/locate_growth.py`:
-- The largest hourly changes are in the lowest levels (L17–L19, about 100–300 m above ground) at rows 65–81, columns 41–72: northern New York and New England, terrain up to 515 m (mean 196 m), 15–30 cells from the edge.
-- From the first hours, at night, hourly changes reach 4–8 m/s with 10–30 points over 5 m/s.
-- From 12 h they reach 11–17 m/s, and at 21–22 h the change rises to 29–31 m/s at L15 (about 500 m).
-- The unheated run has the same noisy patch (5–11 m/s hourly changes at L18, rows 65–80, columns 41–64), but it stays bounded (max|u| near 14 m/s throughout).
-
-So the heating amplifies something already present rather than creating it.
-
-**Candidates (test AG, one change each, heating otherwise on):**
-- (a) the adjustment's instant mixing of momentum through the daytime mixed layer;
-- (b) the steady night cooling over sloping terrain (drainage, or the sigma pressure-gradient error made worse by strong surface inversions);
-- (c) the daytime heating itself.
-
-**Test AG (one change each).**
-- AG1, no momentum mixing: completes (max|u| ≤ 15.6 m/s).
-- AG2, no night cooling: completes (≤ 15.4).
-- AG3, night cooling only (no daytime heating; momentum still mixed): diverges at 17.48 h.
-
-So it is the steady night cooling of the lowest layer together with the adjustment's instant momentum mixing; neither alone causes it. The candidate configuration is heating with `--no-conv-momentum` (test AH, 20 cycles). The cold-pool dynamics are not yet explained.
-
-**Consequence.** `--surface-heating` stays off by default until this is understood.
-
-
-**2026-10-02: not specific to the heating (tests AJ2 and the location check).** The 28 Sep 06Z cycle with `--z0 1.0` (no heating) diverged at 18.99 h, and 5 of 8 `--no-mixing` runs diverged.
-- The z0 run and the P-67 heated run start in the same box. It is the second or third level above the ground at 45.2–45.4 N, 72.2–72.8 W (northern Vermont, about 20 cells from the northern edge, 170–310 m terrain), in the afternoon and evening of 28 Sep.
-- Growth: 17 → 41 m/s between 15 and 18 h in the z0 run; 22 → 31 m/s at 17 h and 33 → 51 m/s at 21–22 h in the P-67 run.
-- The control has its fastest low-level wind in the same box (16–21 m/s) and survives.
-- ~~Next: a tendency budget at that point (pressure gradient, advection, drag, relaxation), not another variant.~~ done the same day:
-- **The budget (`tools/budget28.py`, which closes exactly).** At a strict local speed maximum, the second-order centred horizontal advection supplies +7 to +66 m/s per hour along the wind, where the continuous term is zero. Pressure gradient and mixing oppose it, and hyperdiffusion removes only 2–7 m/s per hour. So the growth is the advection scheme's dispersion error. Test AL tries third-order upwind-biased advection (`--advection upwind3`).
-- **Test AL (2026-10-02).** With `--advection upwind3`, both failing configurations (28 Sep 06Z with z0 = 1.0, and 28 Sep 00Z heated with momentum mixed) complete 24 h. The fastest wind anywhere stays at 15.6 and 14.9 m/s, against 41.5 and 51.1 m/s before divergence. On 20 cycles skill is unchanged (T +0.002 K, u +0.005, v 0.000 m/s), and runs are about 18 % slower. **Fix available.** It closes when upwind3 becomes the default (the user's decision).
 ---
 
 
@@ -592,6 +556,56 @@ So it is the steady night cooling of the lowest layer together with the adjustme
 
 
 # FIXED
+
+
+## P-67 — Surface heating destabilises the 28 Sep 00Z cycle at 22.5 h
+**Category** C, G · **First seen** 2026-10-01 · **Status** FIXED · **Fixed** 2026-10-03
+
+**Symptom.** In AE20 (`--surface-heating`, correct land mask, PAV, new defaults), the 00Z 2026-09-28 run diverged at 22.46 h (367 m/s). The same cycle without heating (campaign AD) completed 24 h. max|u| holds at 14–17 m/s until 14 h, then grows through the next day: 22 m/s at 17 h, 24 at 21 h, 39 at 22 h, then it diverges, late afternoon local time (22Z).
+
+**What is known.** `tools/locate_growth.py`:
+- The largest hourly changes are in the lowest levels (L17–L19, about 100–300 m above ground) at rows 65–81, columns 41–72: northern New York and New England, terrain up to 515 m (mean 196 m), 15–30 cells from the edge.
+- From the first hours, at night, hourly changes reach 4–8 m/s with 10–30 points over 5 m/s.
+- From 12 h they reach 11–17 m/s, and at 21–22 h the change rises to 29–31 m/s at L15 (about 500 m).
+- The unheated run has the same noisy patch (5–11 m/s hourly changes at L18, rows 65–80, columns 41–64), but it stays bounded (max|u| near 14 m/s throughout).
+
+So the heating amplifies something already present rather than creating it.
+
+**Candidates (test AG, one change each, heating otherwise on):**
+- (a) the adjustment's instant mixing of momentum through the daytime mixed layer;
+- (b) the steady night cooling over sloping terrain (drainage, or the sigma pressure-gradient error made worse by strong surface inversions);
+- (c) the daytime heating itself.
+
+**Test AG (one change each).**
+- AG1, no momentum mixing: completes (max|u| ≤ 15.6 m/s).
+- AG2, no night cooling: completes (≤ 15.4).
+- AG3, night cooling only (no daytime heating; momentum still mixed): diverges at 17.48 h.
+
+So it is the steady night cooling of the lowest layer together with the adjustment's instant momentum mixing; neither alone causes it. The candidate configuration is heating with `--no-conv-momentum` (test AH, 20 cycles). The cold-pool dynamics are not yet explained.
+
+**Consequence.** `--surface-heating` stays off by default until this is understood.
+
+
+**2026-10-02: not specific to the heating (tests AJ2 and the location check).** The 28 Sep 06Z cycle with `--z0 1.0` (no heating) diverged at 18.99 h, and 5 of 8 `--no-mixing` runs diverged.
+- The z0 run and the P-67 heated run start in the same box. It is the second or third level above the ground at 45.2–45.4 N, 72.2–72.8 W (northern Vermont, about 20 cells from the northern edge, 170–310 m terrain), in the afternoon and evening of 28 Sep.
+- Growth: 17 → 41 m/s between 15 and 18 h in the z0 run; 22 → 31 m/s at 17 h and 33 → 51 m/s at 21–22 h in the P-67 run.
+- The control has its fastest low-level wind in the same box (16–21 m/s) and survives.
+- ~~Next: a tendency budget at that point (pressure gradient, advection, drag, relaxation), not another variant.~~ done the same day:
+- **The budget (`tools/budget28.py`, which closes exactly).** At a strict local speed maximum, the second-order centred horizontal advection supplies +7 to +66 m/s per hour along the wind, where the continuous term is zero. Pressure gradient and mixing oppose it, and hyperdiffusion removes only 2–7 m/s per hour. So the growth is the advection scheme's dispersion error. Test AL tries third-order upwind-biased advection (`--advection upwind3`).
+- **Test AL (2026-10-02).** With `--advection upwind3`, both failing configurations (28 Sep 06Z with z0 = 1.0, and 28 Sep 00Z heated with momentum mixed) complete 24 h. The fastest wind anywhere stays at 15.6 and 14.9 m/s, against 41.5 and 51.1 m/s before divergence. On 20 cycles skill is unchanged (T +0.002 K, u +0.005, v 0.000 m/s), and runs are about 18 % slower. **Fix available.** It closes when upwind3 becomes the default (the user's decision).
+- **Test AN (holdout, 2026-10-02).** The unmodified default (centred2) diverged on two of 32 unseen cycles: 22 Sep 18Z at 22.50 h and 1 Oct 12Z at 23.59 h. These are the first failures without z0 or heating changes. upwind3 (in AM) completed all 32. Totals: centred2 has failed on 4 real cases, upwind3 on 0 of 54.
+- **Closed 2026-10-03.** The user adopted the AM configuration after the holdout (test AN), and `--advection upwind3` is now the default. Measurement: upwind3 has completed all 54 runs (20 campaign, the 2 P-67 cases, 32 holdout cycles); centred2 failed on 4 real cases. `--advection centred2` still selects the old scheme.
+
+## P-70 — The NH core's edge relaxation was 3.5 times too weak: per-step weights at a longer step
+**Category** C · **First seen** 2026-10-02 · **Status** FIXED · **Fixed** 2026-10-02
+
+**Symptom.** The first 24 h `--core nh` run (28 Sep 06Z) differed from the hydrostatic run with the same physics (AL) by 0.38 m/s rms in u after 1 h and 0.73 m/s at 24 h. That is 38 % of AL's own 24 h change. Surface pressure differed by 0.84 hPa rms after 1 h, and the NH run gained domain mass faster (+1.44 against +1.10 hPa in the first hour).
+
+**Cause.** `Relaxation.apply` in `forecast.py` applies the Davies weights (width 15, α 0.1 at the edge) once per step. Their values were set with the hydrostatic core's ~17 s step. The NH core steps at 60 s, so the same per-step weights relaxed the edges about 3.5 times more weakly per hour. Each module was correct alone; the coupling assumed a step length.
+
+**Fix.** `NHModel.relax_with` rescales the weights to the same e-folding time, a_eff = 1 − (1 − a)^(dt/dt_ref), where dt_ref is the hydrostatic core's stable step for the run (16.7 s on this case). Measured after the fix: 0.025 m/s rms in u at 1 h and 0.21 m/s at 24 h; surface pressure 0.078 and 0.085 hPa. Test `test_nh3d.py` 4: one 20 s step equals two 10 s steps, and one 60 s step equals three 20 s steps.
+
+**Remaining.** The hydrostatic core has the same coupling: its relaxation strength changes whenever its own step changes (`--dt-factor`, a different domain). This is not fixed there, because its weights were tuned at the step it runs at.
 
 ## P-66 — Verification takes 10-14 min per run: all-pairs buddy search in QC
 **Category** H · **First seen** 2026-10-01 · **Status** FIXED · **Fixed** 2026-10-01

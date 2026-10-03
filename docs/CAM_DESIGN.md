@@ -104,6 +104,43 @@ and it costs 7–9 min per 24 h.
 - **Decision for the user later:** nest or full domain, and whether the 1.5 h
   budget or the thread cap may change for the CAM.
 
+### 3a. Measured on 2026-10-02 (`tools/bench_cam.py`; server idle, nice 19)
+
+The user allowed more than 26 threads, as long as others can still get cores
+when they need them. Before relying on that, the current core's tendency
+computation (upwind3, float64) was timed on real-sized arrays.
+
+| arrays | 8 threads | 16 | 32 | 64 |
+|---|---|---|---|---|
+| 12 km, 110 × 97 × 20 | 33.3 ms (156 ns/cell) | 32.8 | 34.4 | 37.5 |
+| 3 km, 440 × 388 × 40 | 1670 ms (245 ns/cell) | 1147 (168) | **1087 (159)** | 1364 (200) |
+
+A full 2 h forecast at 12 km took 49–60 s at 8 to 64 threads (more threads
+was slower).
+
+**What this changes.**
+- Threads help only at the larger size, and only up to 16–32: 1.5 times
+  faster than 8 threads, not the 2.5–4 times assumed in section 3. Beyond
+  32 it gets slower.
+- About 160 ns per cell regardless of thread count means the core is
+  limited by memory bandwidth, not by cores.
+- So for the 3 km, 40-level domain one tendency call takes about 1.1 s. An
+  RK3 step (three calls) takes about 3.3 s. 24 h at dt = 18 s is about
+  4,800 steps, so about **4.4 h for a hydrostatic core alone**, before the
+  non-hydrostatic cost (k) and physics. The section 3 estimate for that row
+  (~10.5 h with k = 2.5) stands. The "with 24 threads + float32" column was
+  too optimistic on the thread part.
+- **Still untested:**
+  - float32, which should help a bandwidth-limited code by up to about 2
+    times;
+  - splitting the domain over several processes, one per CPU socket, which
+    is the usual way to get more total memory bandwidth on a 104-core
+    machine. That is an engineering stage of its own (domain decomposition
+    with halo exchange).
+- **The 1.5 h budget is the binding constraint, not the thread count.** With
+  today's code, only the 450–600 km nest fits, or a whole-domain run with
+  float32 plus domain decomposition.
+
 ## 4. Roadmap
 
 Each stage ends at a gate test with predictions written before it, as for
@@ -112,13 +149,24 @@ the dry model. No stage starts until the previous gate holds.
 | stage | content | gate |
 |---|---|---|
 | S0 (now) | finish the dry 12 km fixes: near-surface wind excess (P-69), the heating instability (P-67), the night warm bias | P-69 and P-67 closed or accepted with a measurement |
-| S1 | 2D (x–z) non-hydrostatic core: Laprise coordinate, split-explicit acoustic steps, vertically implicit w–geopotential solve | standard benchmarks: the Straka et al. (1993) density current within the published spread at 100–200 m; a linear hydrostatic mountain wave against its analytic solution; a rising warm bubble that conserves mass to round-off |
+| S1a (done 2026-10-02) | 2D (x–z) compressible core, height coordinate, flat, periodic: split-explicit RK3, vertically implicit w–pressure, upwind3 (`src/dynamics/nh2d.py`) | the Straka et al. (1993) density current: front within 0.2 km of the reference at 200, 100 and 50 m, minimum θ′ converging (−11.6, −10.2, −9.65 against −9.8); sound speed within 0.15 % |
+| S1b (done 2026-10-02) | the same solver in the Laprise (1992) mass coordinate with terrain, flux form (`src/dynamics/nh2d_mass.py`) | met: mountain wave correlation 0.92 and slope 0.86 against the analytic solution (Smith 1979) at 120 levels; mass to 1e-16; density current front 15.25 km and min θ′ −9.99 K at 100 m; rest over a 1000 m bell to 1e-12 m/s. Two of the three predictions failed first (see the research log) |
 | S2 | 3D non-hydrostatic core at 12 km on the present domain, same boundaries and analysis | over the 20-cycle campaign, skill within ± 0.1 K and ± 0.1 m/s of the hydrostatic model (non-hydrostatic effects are small at 12 km); no instability |
 | S3 | benchmark: the S2 core at 4 km and 3 km on sized arrays, float32 vs float64, 8/16/24 threads | measured k and speed-ups; pick the grid (section 3) with the user |
 | S4 | moisture: water vapour with positive-definite advection, saturation adjustment, warm rain (Kessler 1969) | Bryan and Fritsch (2002) moist benchmark; dewpoint verified against ASOS; vapour mass conserved |
 | S5 | surface layer with heat and moisture fluxes; a simple land-surface balance; shortwave and longwave radiation; PBL scheme | a diurnal 2 m temperature cycle with no prescribed flux; the evening warm bias smaller than with the prescribed flux |
 | S6 | ice microphysics, single-moment (Lin et al. 1983) | simulated reflectivity verified against MRMS; precipitation verified with the fractions skill score (Roberts and Lean 2008) |
 | S7 | the CAM in the daily cycle, nested in or replacing the 12 km model | 24 h inside 1.5 h on 20 consecutive cycles |
+
+**S2 status (2026-10-03).** Integrated: `nh3d.py` (NH3D and the NHModel
+adapter) behind `forecast.py --core nh`. `test_nh3d.py` 5/5, including
+the 2500 m rest test that the first hydrostatic core failed. That test
+shows no growth in 24 h (`nh3d_terrain_rest.png`). The 28 Sep 06Z case
+ran 24 h in 18 min on one desktop core with NumPy (the hydrostatic core
+takes about 10 min at 8 torch threads). The edge relaxation was found to
+depend on the step length and is now rescaled per unit time (P-70). **S2 passed (test AO, 2026-10-03).** Over 20 cycles the mean difference from
+the hydrostatic model is T −0.015 K, u −0.006 m/s and v +0.012 m/s. All
+20 runs completed, each in 26–29 min on one server core.
 
 **Known risks, stated now.**
 - **Observation-only initial conditions.** Without radar data assimilation, a

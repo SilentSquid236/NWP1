@@ -53,6 +53,10 @@ NOTES = {
     "src/dynamics/convection.py": "dry convective adjustment: PAV (default) and the old sweep scheme",
     "src/dynamics/diurnal.py": "prescribed diurnal surface heat flux from solar elevation (P-59, optional)",
     "src/dynamics/test_advection.py": "tests: order, extrema and 2-dx damping of the horizontal advection schemes",
+    "src/dynamics/nh2d.py": "2-D compressible non-hydrostatic core (x-z, height coordinate), split-explicit RK3; CAM stage S1a",
+    "src/dynamics/test_nh2d.py": "tests: tridiagonal solve, sound speed, Straka density current at 200 m, acoustic-step independence",
+    "src/dynamics/nh2d_mass.py": "2-D non-hydrostatic core in the Laprise mass coordinate with terrain; CAM stage S1b",
+    "src/dynamics/test_nh2d_mass.py": "tests: rest over a 1000 m bell, linear mountain wave vs analytic, density current, mass conservation",
     "src/dynamics/land_surface.py": "force-restore ground temperature with a clear-sky surface energy budget; Louis stability (P-59 step 2, --land-surface)",
     "src/dynamics/test_land_surface.py": "tests: force-restore ground, Louis functions, night/day columns, coupling",
     "src/dynamics/radiation.py": "radiative upper boundary: wave flux through the lid",
@@ -102,6 +106,11 @@ NOTES = {
     "src/dynamics/instability_cross_section.png": "figure: w and theta' through the mountain",
     "src/dynamics/instability_growth.png": "figure: max|u| against forecast hour",
     "docs/diurnal_heating_skill.png": "pooled 2 m temperature RMSE and bias: persistence, dry model, dry model + surface heating (tests AD, AH)",
+    "docs/nh2d_density_current.png": "S1a core: the Straka et al. (1993) density current at 900 s on a 100 m grid",
+    "docs/nh2d_mass_mountain_wave.png": "S1b core: linear mountain wave, model against the analytic solution",
+    "src/dynamics/nh3d.py": "3-D non-hydrostatic mass-coordinate core (NH3D) and its forecast adapter (NHModel, --core nh); CAM stage S2",
+    "src/dynamics/test_nh3d.py": "tests: rest over terrain, inertial oscillation, x/y symmetry, relaxation per unit time, 2500 m rest test",
+    "docs/nh3d_terrain_rest.png": "S2 core: isothermal atmosphere at rest over 2500 m, no growth in 24 h",
     "docs/am_skill_by_lead.png": "pooled RMSE by lead: persistence, dry model, land surface, and the AM candidate (test AM)",
 
     # --- verification / postproc -------------------------------------------
@@ -159,6 +168,7 @@ NOTES = {
     "tools/aj_diag.py": "test AJ: model wind against the analysis valid at the same time, by region and level (server paths)",
     "tools/aj_cmp.py": "test AJ2: lowest-level wind excess over the analysis for forecast variants (server paths)",
     "tools/locate28.py": "where the 28 Sep divergences start: fastest wind, level and place by hour (P-67; server paths)",
+    "tools/bench_cam.py": "time the core's tendency call on 12 km and 3 km arrays at several thread counts (CAM stage S3 groundwork)",
     "tools/budget28.py": "P-67 momentum-tendency budget at the 28 Sep hot spot from saved hourly states (server paths)",
     "tools/lead_scores.py": "pooled per-lead 2 m T and 10 m wind bias/RMSE for several archives to CSV (test AM figure; server paths)",
     "tools/phase_scores.py": "surface scores split by time of day: 2 m T bias/RMSE, 10 m wind ratio/RMSE (tests AJ, AK)",
@@ -305,6 +315,9 @@ that was is not recoverable, which is the whole argument for the column.
 | `test_convection.py` | dry convective adjustment, PAV | 12/12 | 2026-10-01 |
 | `test_diurnal.py` | diurnal surface heat flux | 5/5 | 2026-10-01 |
 | `test_advection.py` | horizontal advection schemes (centred2, upwind3) | 4/4 | 2026-10-02 |
+| `test_nh2d.py` | 2-D non-hydrostatic core (S1a) | 4/4 | 2026-10-02 |
+| `test_nh2d_mass.py` | mass-coordinate non-hydrostatic core (S1b) | 3/3 | 2026-10-02 |
+| `test_nh3d.py` | 3-D non-hydrostatic core and forecast adapter (S2) | 5/5 | 2026-10-02 |
 | `test_land_surface.py` | force-restore ground temperature and its coupling | 8/8 | 2026-10-02 |
 | `test_interpolate.py` | pressure -> sigma conversion | 8/8 | — |
 | `test_radiation.py` | radiative upper boundary | 7/7 | 2026-09-12 |
