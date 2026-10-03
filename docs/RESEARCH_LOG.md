@@ -4698,6 +4698,158 @@ defaults; the predictions were not changed.
 
 **Status.** S2 passed. Next is S3.
 
+---
+
+## 2026-10-03 — S3a/S3b: what the 3 km core costs, and what could pay for it
+
+**Context.** S2 passed with the NH core in NumPy on one core. Before the CAM
+is designed further, S3 measures its cost at 3 km and the back ends that
+could bring it inside the 1.5 h budget. Constraint: nothing may be installed
+on the server. Probes found:
+- torch 2.8 (CPU) works, but `torch.compile` does not: there is no C++
+  compiler.
+- numba is present but broken (fails to import against this NumPy).
+- `gcc` 11.5 with OpenMP works.
+
+The server has two 26-core Xeon Gold 6230R sockets (two NUMA nodes).
+Predictions were written before each run (`s3/s3a_predictions.txt`,
+`s3/s3b_predictions.txt`).
+
+**S3a: the core as written** (`tools/bench_nh3d.py`, dynamics only, NumPy
+float64, one core).
+
+| Grid | Step | ns per cell-step | 24 h | Peak memory |
+|---|---|---|---|---|
+| 12 km × 20 (110×97), dt 60 s | 0.58 s | 2727 | 0.23 h | 0.30 GB |
+| 12 km × 40, dt 60 s | 1.19 s | 2782 | 0.47 h | 0.40 GB |
+| 4 km × 40 (330×291), dt 25 s | 14.2 s | 3689 | 13.6 h | 2.1 GB |
+| 3 km × 20 (440×388), dt 20 s | 12.5 s | 3647 | 14.9 h | 1.9 GB |
+| 3 km × 40, dt 20 s | 35.0 s | 5122 | **42.0 h** | 3.2 GB |
+
+1. Cost per cell-step size-independent within ±30 %: **refuted.** It grows
+   with the array: +35 % at 4 km and +88 % at 3 km × 40, as the working set
+   leaves the cache.
+2. 3 km × 40 over 20 h on one core: **held** (42 h, 28 times the budget).
+3. Memory under 10 GB: **held** (3.2 GB).
+4. The acoustic substep is the largest own-time entry at every size:
+   **held** (about half the step). `np.roll` is next (about 15–20 %).
+
+**S3b: one stencil, three back ends** (`tools/bench_stencil.py`). One
+memory-bound stencil of the core's kind on the 3 km × 40 array. The C
+version is plain C with OpenMP, compiled by the server's gcc and called
+through ctypes.
+
+| Back end | Threads | ns/cell | vs NumPy float64 |
+|---|---|---|---|
+| NumPy float64 (today) | 1 | 34.6 | 1× |
+| NumPy float32 | 1 | 14.2 | 2.4× |
+| torch float64 | 26 | 9.8 | 3.5× |
+| torch float32 | 26 | 4.6 | 7.6× |
+| C float64 | 1 | 3.2 | 11× |
+| C float64 | 26 | 0.38 | 91× |
+| C float32 | 26 | 0.16 | **216×** |
+| C float32 | 52 | 0.17 | 204× |
+
+1. C float32 at 26 threads at least 20× faster: **held** (216×).
+2. torch float32 at most 4× faster: **refuted** (7.6×). The September
+   thread benchmark understated torch on this stencil.
+3. 26 → 52 threads gains less than 1.3×: **held**. 52 threads is slightly
+   slower, as expected when one thread first touches the arrays, which then
+   sit on one NUMA node.
+4. All back ends agree with NumPy float64 (float32 to 4.6e-7): **held**.
+
+**Interpretation.**
+- NumPy evaluates each operation as a separate pass over memory. On a
+  memory-bound stencil, most of the cost is moving arrays, not arithmetic.
+  A fused C loop reads each input once. That alone is 11× on one core.
+  OpenMP adds another 8–14× on one socket, until the socket's memory
+  bandwidth is saturated: 0.16 ns/cell with four float32 arrays is about
+  100 GB/s, close to the six DDR4 channels' peak.
+- **Projection (figure `s3_backend_cost.png`).** A whole-core speed-up is
+  smaller than one stencil's, because of the tridiagonal solves, the
+  physics and the Python between kernels. If the core reaches 30×, the
+  3 km × 40 dynamics take about 1.4 h. At 100× they take 0.4 h, which
+  leaves room for moisture and physics. torch float32 at 7.6× gives
+  5.5 h, which does not fit on the full domain.
+- So the whole 3 km domain inside 1.5 h needs compiled kernels (C/OpenMP on
+  one socket, about 26 threads). Without them the options are 4 km, a
+  smaller 3 km domain, or a larger budget. That is a design decision for
+  the user.
+
+**Status.** S3a/S3b done. The back end, and with it the 3 km domain, waits
+for the user's choice.
+
+---
+
+## 2026-10-03 — S4: the NH dynamics in C, 44 times faster, same answer
+
+**Context.** The user chose compiled C kernels (prompt 170). Design:
+- One C file, `src/dynamics/nh3d_kernels.c`, compiled by the machine's own
+  gcc at first use (`src/dynamics/cnh.py`). It is cached by a hash of the
+  source and flags and called through ctypes, so nothing is installed.
+- `NH3D(backend="c")` and `forecast.py --nh-backend c --threads N`. NumPy
+  stays the default and the reference.
+- Every kernel transcribes a NumPy expression in the same order of
+  operations, compiled with `-ffp-contract=off` so that rounding can match.
+- Horizontal neighbours come from index tables built with the grid's own
+  edge rule, so periodic and replicate edges are both exact.
+
+There are eleven kernels in all:
+- the acoustic substep in three passes (pressure and divergence damping;
+  the U, V update; a column pass for μ, Ω, Θ, φ and the implicit w solve);
+- the tendencies in three passes (column diagnostics; momentum; Θ, W, φ);
+- the acoustic set-up in two passes;
+- the final sum.
+
+The physics hooks (drag, mixing, PAV) are still NumPy.
+
+**Checks** (`test_nh3d_c.py` 6/6, run on the server; the desktop has no
+working gcc and reports SKIPPED):
+- tendencies equal NumPy to 1.8e-13 relative (dμ, FΘ and Fφ exactly);
+- a full step (6 steps) equals NumPy to 4e-13 relative, with both edge
+  modes and ns = 6 and 12;
+- the result is bit-identical on 1 and 4 threads;
+- a wrong dtype is refused.
+
+**Speed** (predictions in `s4/s4a…s4c_predictions.txt`, written before each
+run):
+
+| Test | Configuration | Step | 24 h | Prediction |
+|---|---|---|---|---|
+| S3a | NumPy, 3 km × 40, 1 core | 35.0 s | 42.0 h | — |
+| S4a | acoustic substeps only in C, 26 threads | 17.6 s | 21.1 h | 2–3× faster: **held** (2.0×) |
+| S4b | all dynamics in C, 13 threads | 1.36 s | 1.63 h | — |
+| S4b | all dynamics in C, 26 threads | 0.79 s | **0.95 h** | under 1.0 s: **held** (44× NumPy) |
+| S4b | all dynamics in C, 52 threads | 0.64 s | 0.77 h | gain from 26 → 52 under 1.3×: **held** (1.23×) |
+| S4b | 12 km × 20, 8 threads | 0.076 s | 1.8 min | under 0.05 s: **refuted** |
+
+The column pass of the acoustic substep is now the largest single cost
+(33 % of the step).
+
+**Real case (S4c).** 28 Sep 06Z, 24 h, test AO's configuration, 8 threads.
+The run completed in 4.7 min, against 27.8 min for AO's NumPy run of the
+same cycle. Field differences from the NumPy run at 24 h are rms
+3.2e-13 m/s in u, 3.4e-13 in v and 1.9e-13 K in θ, i.e. round-off. All
+three predictions held. At 12 km most of the 4.7 min is now the NumPy
+physics and Python. The physics is called in every RK stage.
+
+**Interpretation.**
+- The full 3 km × 40 level dynamics now fit inside the budget on one
+  socket: 0.95 h for 24 h at 26 threads. That leaves about 0.5 h for
+  physics, moisture, I/O and the analysis.
+- Two costs come next:
+  1. The NumPy physics is called three times per step and will dominate
+     at 3 km. The standard remedy is physics once per step, held over the
+     RK stages, with the physics in C later.
+  2. Moisture adds advected fields (vapour, cloud, rain; later ice).
+     Each adds about one Θ-like transport per step.
+- float32 (S3b: a further ~2.4× on a stencil) is held in reserve. The C
+  file already compiles a float32 set. It is not used until a test shows
+  float32 does not change the forecast.
+
+**Status.** S4 (the C core) done and verified. The core is a drop-in
+backend; nothing changes for the 12 km production model.
+
 ## 2026-09-25 — Forecast maps and a Pivotal-style viewer
 
 **Context.** Prompt 120: the forecasts need maps "like how a site like

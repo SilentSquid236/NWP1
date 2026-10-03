@@ -251,6 +251,8 @@ on itself.
 | 166 | "option b would be the best and you can run the check" | **DIR** | The non-hydrostatic core comes before moisture. Holdout test AN (32 unseen cycles) is running. Stage S1a was built and benchmarked the same evening |
 | 167 | (two figures attached, no text: `docs/instability_cross_section.png` and `docs/instability_growth.png`, the September 2500 m terrain failure) | **OBS** | Read as a question: does the new core have the same failure? The agent reran the test on the NH core with a state that differs from its reference profile. The spurious wind settled at 0.13–0.27 m/s, with no growth in 24 h. The test became `test_nh3d.py` 5 and the figure `nh3d_terrain_rest.png` |
 | 168 | Answer to the agent's question after holdout AN: "Adopt full AM" | **DIR** | upwind3, the land surface, the land/sea z0 map and the auto similarity operator became the defaults (2026-10-03). P-67 closed |
+| 169 | "done" (pushed 873b2cf and pulled on the server) | **ADM** | The agent started S3 itself: baseline cost (S3a: 42 h for 24 h at 3 km × 40 levels in NumPy) and a back-end comparison (S3b: C/OpenMP 216×, torch 7.6× on one stencil) |
+| 170 | Answer to the agent's question after S3: "C/OpenMP kernels" | **DIR** | The CAM core's hot loops move to C with OpenMP, compiled by the server's gcc and called through ctypes. Python keeps orchestration, I/O and verification; each kernel is tested against its NumPy original |
 
 **Observation.** Prompt 53 is 18 words and is the most consequential
 instruction in the project. Before it, nine candidate causes had been patched

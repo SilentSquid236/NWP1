@@ -45,6 +45,7 @@ NWP_Deployment_Package/
 |   |-- nh2d_density_current.png          # S1a core: the Straka et al. (1993) density current at 900 s on a 100 m grid
 |   |-- nh2d_mass_mountain_wave.png       # S1b core: linear mountain wave, model against the analytic solution
 |   |-- nh3d_terrain_rest.png             # S2 core: isothermal atmosphere at rest over 2500 m, no growth in 24 h
+|   |-- s3_backend_cost.png               # S3: stencil cost by back end and projected 3 km wall clock
 |   `-- token_ledger.csv                  # per-session token counts; measured and estimated kept apart
 |-- skills/                            # recurring procedures as SKILL.md -- how habits survive a new session
 |   |-- nwp-debug/
@@ -75,6 +76,7 @@ NWP_Deployment_Package/
 |   |   |-- backend_reference.py          # the realistic reference integration used to compare backends
 |   |   |-- balance_check.py              # initial-state balance and Nh/U by terrain height
 |   |   |-- boundaries.py                 # Davies relaxation, limited-area driver (6/6)
+|   |   |-- cnh.py                        # S4: builds nh3d_kernels.c with gcc at first use (cached) and binds it with ctypes
 |   |   |-- convection.py                 # dry convective adjustment: PAV (default) and the old sweep scheme
 |   |   |-- diagnose_growth.py            # energy budget by term / level / wavenumber
 |   |   |-- diurnal.py                    # prescribed diurnal surface heat flux from solar elevation (P-59, optional)
@@ -95,6 +97,7 @@ NWP_Deployment_Package/
 |   |   |-- nh2d.py                       # 2-D compressible non-hydrostatic core (x-z, height coordinate), split-explicit RK3; CAM stage S1a
 |   |   |-- nh2d_mass.py                  # 2-D non-hydrostatic core in the Laprise mass coordinate with terrain; CAM stage S1b
 |   |   |-- nh3d.py                       # 3-D non-hydrostatic mass-coordinate core (NH3D) and its forecast adapter (NHModel, --core nh); CAM stage S2
+|   |   |-- nh3d_kernels.c                # S4: the NH core's dynamics as C/OpenMP kernels (acoustic substeps, tendencies, set-up), transcribed from nh3d.py
 |   |   |-- noise_ladder.py               # initial-noise amplitude threshold
 |   |   |-- primitive3d.py                # pressure-coordinate 3D core  [SUPERSEDED by sigma]
 |   |   |-- primitive_sigma.py            # THE CORE -- sigma primitive equations, prognostic p_s
@@ -139,6 +142,7 @@ NWP_Deployment_Package/
 |   |   |-- test_nh2d.py                  # tests: tridiagonal solve, sound speed, Straka density current at 200 m, acoustic-step independence
 |   |   |-- test_nh2d_mass.py             # tests: rest over a 1000 m bell, linear mountain wave vs analytic, density current, mass conservation
 |   |   |-- test_nh3d.py                  # tests: rest over terrain, inertial oscillation, x/y symmetry, relaxation per unit time, 2500 m rest test
+|   |   |-- test_nh3d_c.py                # tests: C kernels against the NumPy core (tendencies, full steps, both edge modes, threads, dtype guard)
 |   |   |-- test_primitive3d.py           # suite for primitive3d.py
 |   |   |-- test_primitive_sigma.py       # suite for primitive_sigma.py
 |   |   |-- test_radiation.py             # suite for radiation.py
@@ -188,6 +192,8 @@ NWP_Deployment_Package/
 |   |-- aj_diag.py                        # test AJ: model wind against the analysis valid at the same time, by region and level (server paths)
 |   |-- apply_sync.py                     # applies a sync archive safely -- no nesting, never touches data/
 |   |-- bench_cam.py                      # time the core's tendency call on 12 km and 3 km arrays at several thread counts (CAM stage S3 groundwork)
+|   |-- bench_nh3d.py                     # S3a: cost of the NH core on sized grids (seconds per step, ns per cell-step, profile)
+|   |-- bench_stencil.py                  # S3b: one core-like stencil in NumPy, torch and C/OpenMP (gcc + ctypes)
 |   |-- bench_threads.py                  # numpy vs torch thread scaling on model-sized arrays, before any port
 |   |-- budget28.py                       # P-67 momentum-tendency budget at the 28 Sep hot spot from saved hourly states (server paths)
 |   |-- check_backend.py                  # on a new machine: torch vs numpy speed and agreement at several thread counts
@@ -247,6 +253,7 @@ that was is not recoverable, which is the whole argument for the column.
 | `test_nh2d.py` | 2-D non-hydrostatic core (S1a) | 4/4 | 2026-10-02 |
 | `test_nh2d_mass.py` | mass-coordinate non-hydrostatic core (S1b) | 3/3 | 2026-10-02 |
 | `test_nh3d.py` | 3-D non-hydrostatic core and forecast adapter (S2) | 5/5 | 2026-10-02 |
+| `test_nh3d_c.py` | C kernels of the NH core against NumPy (S4; needs gcc, else SKIPPED) | 6/6 (server) | 2026-10-03 |
 | `test_land_surface.py` | force-restore ground temperature and its coupling | 8/8 | 2026-10-02 |
 | `test_interpolate.py` | pressure -> sigma conversion | 8/8 | — |
 | `test_radiation.py` | radiative upper boundary | 7/7 | 2026-09-12 |

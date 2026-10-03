@@ -196,6 +196,12 @@ recorded with `tools/tokens.py --add`.
   - `--core nh` (CAM stage S2, `src/dynamics/nh3d.py`) runs on NumPy, with
     no land surface yet. Its edge relaxation is rescaled per unit time
     (P-70).
+  - `--core nh --nh-backend c --threads N` runs the NH dynamics in C/OpenMP
+    (`src/dynamics/nh3d_kernels.c`, built by gcc on first use through
+    `cnh.py`; cache in `$NWP_CBUILD` or the temp directory). NumPy stays
+    the reference. Every C kernel must match its NumPy expression to
+    round-off (`test_nh3d_c.py`, which needs gcc: the server has it, the
+    desktop does not). Physics hooks are still NumPy.
 
 - Index 0 in every vertical array is the **model lid**, not the ground. On the
   analysis's PRESSURE levels (`config.PRESSURE_LEVELS`) index 0 is 1000 hPa —

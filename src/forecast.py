@@ -473,6 +473,10 @@ def main():
     p.add_argument("--core", choices=("hydrostatic", "nh"), default="hydrostatic",
                    help="Dynamical core: the hydrostatic sigma model (default) or the "
                         "non-hydrostatic mass-coordinate core (nh3d.py; CAM stage S2; NumPy only)")
+    p.add_argument("--nh-backend", choices=("numpy", "c"), default="numpy",
+                   help="With --core nh: NumPy (the reference) or compiled C kernels with "
+                        "OpenMP (nh3d_kernels.c, built with gcc at first use; CAM stage S4). "
+                        "--threads sets the OpenMP thread count")
     p.add_argument("--advection", choices=("centred2", "upwind3"), default="upwind3",
                    help="Horizontal advection: third-order upwind-biased (default since "
                         "2026-10-03; Wicker and Skamarock 2002; P-67 tests AL, AN) or "
@@ -720,8 +724,10 @@ def main():
             print("  NOTE: --core nh runs on NumPy; --backend torch ignored")
             args.backend = "numpy"
         hydro = model
-        model = NHModel(hydro)
+        model = NHModel(hydro, backend=args.nh_backend, threads=args.threads)
         model.set_state(u0, v0, th0, pi0)
+        if args.nh_backend == "c":
+            print(f"  NH kernels     : compiled C (nh3d_kernels.c), {model.core.threads} OpenMP threads")
         print(f"  core           : non-hydrostatic (nh3d.py, ns {model.core.ns}, dt <= {model.dt_max:g} s; "
               f"edge relaxation rescaled to the hydrostatic step {model.relax_dt_ref:.1f} s)")
 

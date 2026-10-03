@@ -75,8 +75,28 @@ def thomas(a, b, c, d):
 
 class NH3D:
     def __init__(self, grid, levels, terrain=None, theta_ref=None, K=0.0, ns=6,
-                 beta=0.1, div_damp=0.1, z_top_ref=None):
+                 beta=0.1, div_damp=0.1, z_top_ref=None, backend="numpy", threads=0):
         self.grid, self.lev = grid, levels
+        # BACKEND (CAM stage S4a). "numpy" is the reference. "c" runs the
+        # acoustic substeps in compiled kernels (nh3d_kernels.c via cnh.py),
+        # transcribed from _acoustic below and tested against it.
+        if backend not in ("numpy", "c"):
+            raise ValueError(f"unknown backend {backend!r}")
+        self.backend = backend
+        self._ck = None
+        if backend == "c":
+            import cnh
+            self._ck = cnh.load("f64")
+            self.threads = self._ck.set_threads(threads)
+            ex = grid.edge_mode
+            self._xm1 = cnh.shift_index(grid.nx, -1, ex)
+            self._xp1 = cnh.shift_index(grid.nx, 1, ex)
+            self._ym1 = cnh.shift_index(grid.ny, -1, ex)
+            self._yp1 = cnh.shift_index(grid.ny, 1, ex)
+            self._idx = {"xm1": self._xm1, "xp1": self._xp1, "ym1": self._ym1, "yp1": self._yp1,
+                         "xm2": cnh.shift_index(grid.nx, -2, ex), "xp2": cnh.shift_index(grid.nx, 2, ex),
+                         "ym2": cnh.shift_index(grid.ny, -2, ex), "yp2": cnh.shift_index(grid.ny, 2, ex)}
+            self._wk = {}
         gr, lev = grid, levels
         ny, nx, nz = gr.ny, gr.nx, lev.nz
         self.nx, self.ny, self.nz = nx, ny, nz
@@ -198,7 +218,17 @@ class NH3D:
         return float(np.sum(self.mu)) * self.grid.dx * self.grid.dy
 
     # --- tendencies --------------------------------------------------------
+    def _work(self, name, levels):
+        """A scratch array reused between calls (C backend only)."""
+        shape = (levels, self.ny, self.nx) if levels else (self.ny, self.nx)
+        a = self._wk.get(name)
+        if a is None or a.shape != shape:
+            a = self._wk[name] = np.empty(shape)
+        return a
+
     def tendencies(self, mu, U, V, W, Th, phi):
+        if self._ck is not None:
+            return self._tendencies_c(mu, U, V, W, Th, phi)
         nz = self.nz
         gr = self.grid
         al, p = self.diagnose(mu, Th, phi)
@@ -277,6 +307,8 @@ class NH3D:
         return F
 
     def _acoustic(self, X0, Xs, F, nsteps, dtau):
+        if self._ck is not None:
+            return self._acoustic_c(X0, Xs, F, nsteps, dtau)
         nz, gr = self.nz, self.grid
         mus, Us, Vs, Ws, Ths, phis = Xs
         dmuF, FU, FV, FW, FTh, Fphi = F
@@ -342,6 +374,85 @@ class NH3D:
             f2[-1] = 0.0
         return (mus + m2, Us + U2, Vs + V2, Ws + W2, Ths + T2, phis + f2)
 
+    def _tendencies_c(self, mu, U, V, W, Th, phi):
+        """tendencies() in compiled kernels (same arithmetic; test_nh3d_c.py)."""
+        C = np.ascontiguousarray
+        ck, gr, nz = self._ck, self.grid, self.nz
+        mu, U, V, W, Th, phi = (C(x) for x in (mu, U, V, W, Th, phi))
+        wk = {k: self._work(k, nz) for k in ("pp", "dpp", "phim", "phipm", "A1", "A2",
+                                               "u", "v", "th", "sdm")}
+        wk.update({k: self._work(k, nz + 1) for k in ("Om", "sd", "w")})
+        wk.update({k: self._work(k, 0) for k in ("dmu", "mup")})
+        ref = self._cref()
+        ck.td_col(self._idx, gr.dx, gr.dy, P0, RD, GAMMA, ref["ds"], ref["sf"], ref["pb"],
+                  ref["alb"], ref["mub"], ref["phib"], mu, U, V, W, Th, phi, wk)
+        FU, FV, FTh = np.empty_like(U), np.empty_like(V), np.empty_like(Th)
+        FW, Fphi = np.empty_like(W), np.empty_like(phi)
+        ck.td_uv(self._idx, gr.dx, gr.dy, ref["sf"], ref["f_u"], ref["f_v"], mu, ref["mub"],
+                 ref["pb"], wk, U, V, FU, FV)
+        ck.td_tw(self._idx, gr.dx, gr.dy, G, ref["ds"], ref["dsw"], ref["sh"], mu, U, V, wk,
+                 phi, FTh, FW, Fphi)
+        F = [wk["dmu"].copy(), FU, FV, FW, FTh, Fphi]
+        if self.extra_tendency is not None:
+            extra = self.extra_tendency(mu, U, V, W, Th, phi)
+            for i, key in enumerate(("mu", "U", "V", "W", "Th", "phi")):
+                if key in extra:
+                    F[i] = F[i] + extra[key]
+        return F
+
+    def _cref(self):
+        """Contiguous copies of the fixed arrays the kernels read."""
+        if not hasattr(self, "_cref_cache"):
+            C = np.ascontiguousarray
+            self._cref_cache = {"ds": C(self.ds, dtype=float), "dsw": C(self.dsw, dtype=float),
+                                "sf": C(self.sf, dtype=float), "sh": C(self.sh, dtype=float),
+                                "pb": C(self.pb), "alb": C(self.alb), "mub": C(self.mub),
+                                "phib": C(self.phib),
+                                "f_u": C(np.broadcast_to(self.f_u, (self.ny, self.nx)), dtype=float),
+                                "f_v": C(np.broadcast_to(self.f_v, (self.ny, self.nx)), dtype=float)}
+        return self._cref_cache
+
+    def _acoustic_c(self, X0, Xs, F, nsteps, dtau):
+        """_acoustic in compiled kernels: set-up, substeps and the final sum
+        (same arithmetic as the NumPy version; test_nh3d_c.py)."""
+        nz, gr, ck = self.nz, self.grid, self._ck
+        C = np.ascontiguousarray
+        X0 = tuple(C(x) for x in X0)
+        Xs = tuple(C(x) for x in Xs)
+        mus, Us, Vs, Ws, Ths, phis = Xs
+        dmuF, FU, FV, FW, FTh, Fphi = (C(x) for x in F)
+        ref = self._cref()
+        ap, am = 0.5 * (1 + self.beta), 0.5 * (1 - self.beta)
+        n3 = {k: self._work("a_" + k, nz) for k in ("al", "Qc", "E", "ths")}
+        ck.as_a(P0, RD, GAMMA, ref["ds"], mus, Ths, phis, n3["al"], n3["Qc"], n3["E"], n3["ths"])
+        o = {k: self._work("a_" + k, nz) for k in ("cu", "cv", "thu", "thv", "lower", "diag",
+                                                    "upper", "U2", "V2", "T2", "p_old", "pd")}
+        o.update({k: self._work("a_" + k, nz + 1) for k in ("thw", "dphidx", "dphidy",
+                                                             "dphi_ds", "W2", "f2")})
+        o.update({k: self._work("a_" + k, 0) for k in ("mu_u", "mu_v", "Bv", "m2")})
+        Gk = C(dtau * G * ap / self.dsw[:nz])
+        bvc = dtau * ap * G
+        ck.as_b(self._idx, gr.dx, gr.dy, bvc, ref["sh"], Gk, mus, n3["al"], n3["ths"], phis,
+                Xs, X0, n3["Qc"], n3["E"], o)
+        Qc, E, pd = n3["Qc"], n3["E"], o["pd"]
+        m2, U2, V2, W2, T2, f2 = o["m2"], o["U2"], o["V2"], o["W2"], o["T2"], o["f2"]
+        args_uv = (self._xm1, self._ym1, dtau, gr.dx, gr.dy, FU, FV, o["cu"], o["mu_u"],
+                   o["cv"], o["mu_v"])
+        args_col = (self._xp1, self._yp1, dtau, gr.dx, gr.dy, G, am, ref["ds"], ref["dsw"], Gk,
+                    dmuF, FTh, Fphi, FW, o["thw"], o["thu"], o["thv"], Qc, E,
+                    o["dphidx"], o["dphidy"], o["dphi_ds"], mus, o["Bv"],
+                    o["lower"], o["diag"], o["upper"])
+        for _ in range(nsteps):
+            ck.ac_pd(Qc, T2, E, f2, o["p_old"], self.div_damp, pd)
+            ck.ac_uv(*args_uv, pd, f2, U2, V2)
+            ck.ac_col(*args_col, pd, U2, V2, m2, T2, W2, f2)
+        out = []
+        for x, d in zip(Xs, (m2, U2, V2, W2, T2, f2)):
+            r = np.empty_like(x)
+            ck.add_into(x, d, r)
+            out.append(r)
+        return tuple(out)
+
     def _vface_lin(self, th):
         o = np.empty((self.nz + 1,) + th.shape[1:])
         o[1:-1] = 0.5 * (th[1:] + th[:-1]); o[0] = th[0]; o[-1] = th[-1]
@@ -374,11 +485,12 @@ class NHModel:
     Prescribed heating and the land surface are not wired in yet.
     """
 
-    def __init__(self, hydro, theta_ref=None, ns=6, dt_max=60.0, div_damp=0.1):
+    def __init__(self, hydro, theta_ref=None, ns=6, dt_max=60.0, div_damp=0.1,
+                 backend="numpy", threads=0):
         self.h = hydro
         self.grid, self.lev = hydro.grid, hydro.lev
         self.core = NH3D(hydro.grid, hydro.lev, terrain=hydro.terrain, theta_ref=theta_ref,
-                         ns=ns, div_damp=div_damp)
+                         ns=ns, div_damp=div_damp, backend=backend, threads=threads)
         self.core.extra_tendency = self._physics
         self.dt_max = float(dt_max)
         self.land_surface = None

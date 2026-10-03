@@ -168,6 +168,21 @@ depend on the step length and is now rescaled per unit time (P-70). **S2 passed 
 the hydrostatic model is T −0.015 K, u −0.006 m/s and v +0.012 m/s. All
 20 runs completed, each in 26–29 min on one server core.
 
+**S3 measurements (2026-10-03).** The NumPy core needs 42 h for 24 h at
+3 km × 40 levels on one core. On one representative stencil, plain C with
+OpenMP (server gcc, ctypes, nothing installed) is 216× faster in float32 at
+26 threads, against 7.6× for torch float32. The full 3 km domain inside
+1.5 h therefore needs compiled kernels (research log, S3a/S3b;
+`s3_backend_cost.png`).
+
+**S4 done (2026-10-03): the NH dynamics in C.** `nh3d_kernels.c`, built by
+gcc at first use through `cnh.py`, called with ctypes. It matches NumPy to
+round-off (4e-13 after 6 steps; 3e-13 m/s rms after a real 24 h forecast).
+At 3 km × 40 levels a step takes 0.79 s on 26 threads, so 24 h of
+dynamics takes 0.95 h. Next for cost: physics once per step instead of
+once per RK stage, then physics in C, then moisture (the old S4 is now the
+next stage).
+
 **Known risks, stated now.**
 - **Observation-only initial conditions.** Without radar data assimilation, a
   CAM spends its first 6–12 h spinning up convection. MRMS is available, so

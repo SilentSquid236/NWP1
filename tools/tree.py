@@ -111,6 +111,12 @@ NOTES = {
     "src/dynamics/nh3d.py": "3-D non-hydrostatic mass-coordinate core (NH3D) and its forecast adapter (NHModel, --core nh); CAM stage S2",
     "src/dynamics/test_nh3d.py": "tests: rest over terrain, inertial oscillation, x/y symmetry, relaxation per unit time, 2500 m rest test",
     "docs/nh3d_terrain_rest.png": "S2 core: isothermal atmosphere at rest over 2500 m, no growth in 24 h",
+    "tools/bench_nh3d.py": "S3a: cost of the NH core on sized grids (seconds per step, ns per cell-step, profile)",
+    "tools/bench_stencil.py": "S3b: one core-like stencil in NumPy, torch and C/OpenMP (gcc + ctypes)",
+    "docs/s3_backend_cost.png": "S3: stencil cost by back end and projected 3 km wall clock",
+    "src/dynamics/nh3d_kernels.c": "S4: the NH core's dynamics as C/OpenMP kernels (acoustic substeps, tendencies, set-up), transcribed from nh3d.py",
+    "src/dynamics/cnh.py": "S4: builds nh3d_kernels.c with gcc at first use (cached) and binds it with ctypes",
+    "src/dynamics/test_nh3d_c.py": "tests: C kernels against the NumPy core (tendencies, full steps, both edge modes, threads, dtype guard)",
     "docs/am_skill_by_lead.png": "pooled RMSE by lead: persistence, dry model, land surface, and the AM candidate (test AM)",
 
     # --- verification / postproc -------------------------------------------
@@ -318,6 +324,7 @@ that was is not recoverable, which is the whole argument for the column.
 | `test_nh2d.py` | 2-D non-hydrostatic core (S1a) | 4/4 | 2026-10-02 |
 | `test_nh2d_mass.py` | mass-coordinate non-hydrostatic core (S1b) | 3/3 | 2026-10-02 |
 | `test_nh3d.py` | 3-D non-hydrostatic core and forecast adapter (S2) | 5/5 | 2026-10-02 |
+| `test_nh3d_c.py` | C kernels of the NH core against NumPy (S4; needs gcc, else SKIPPED) | 6/6 (server) | 2026-10-03 |
 | `test_land_surface.py` | force-restore ground temperature and its coupling | 8/8 | 2026-10-02 |
 | `test_interpolate.py` | pressure -> sigma conversion | 8/8 | — |
 | `test_radiation.py` | radiative upper boundary | 7/7 | 2026-09-12 |
