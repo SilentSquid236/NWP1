@@ -4850,6 +4850,382 @@ physics and Python. The physics is called in every RK stage.
 **Status.** S4 (the C core) done and verified. The core is a drop-in
 backend; nothing changes for the 12 km production model.
 
+---
+
+## 2026-10-03 — S5: decisions, physics once per step, 40 levels, and a 3 km analysis that fills the gaps
+
+**Decisions (user).**
+- The 3 km run gets its own analysis from observations, with lateral
+  boundaries from the 12 km forecast of the same cycle (prompt 172).
+- Station interpolation to fill the gaps between stations should be part
+  of it (prompt 173).
+
+The plan for stage S5 (nine steps) was approved with that addition.
+
+**S5a: physics once per step, and 40 levels** (12 km, 20 campaign cycles, C
+backend, 8 threads; predictions in `s5/s5a_predictions.txt`).
+- `NHModel(physics_every="step")` / `forecast.py --nh-physics step`
+  evaluates drag, mixing, the sponge and the w damping once per large step
+  and holds them over the three RK stages, as WRF does. `test_nh3d.py` 6:
+  5 evaluations in 5 steps instead of 15.
+- `forecast.py --levels N` sets the sigma level count. The sponge depth
+  scales with it (10 levels at 40).
+
+| Prediction | Outcome |
+|---|---|
+| 1. All 40 runs complete | **Held** (20/20 per arm) |
+| 2. Physics once per step vs AO within ±0.05 | **Held**: T, u and v all 0.000 to three decimals |
+| 3. A 12 km cycle under 2.8 min | **Refuted**: 3.0–4.0 min, though with four runs and test S5b sharing the machine, so not a clean timing |
+| 4. 40 vs 20 levels within ±0.15 | **Held**: T +0.116 K (worse, up to +0.25 K at leads 8–10), u −0.100, v −0.091 m/s (better at all 24 leads) |
+
+40 levels moves the lowest level from σ 0.965 (~290 m) to 0.983 (~140 m),
+and that changes what the 2 m and 10 m operators extrapolate from. The
+better wind is consistent with a lowest level closer to 10 m. The worse
+daytime temperature has not been diagnosed. This core has no land surface
+yet, so its lowest level has no diurnal cycle. The CAM uses 40 levels
+because convection needs them; the temperature difference is recorded and
+not tuned.
+
+**S5b: the 3 km analysis and the gap-filling** (8 cycles, 27–28 Sep; rebuilt
+from the observations the 12 km cycles archived; scored only on the withheld
+ASOS stations, one in five; predictions in `s5/s5b_predictions.txt`).
+- `ingest_obs.py --spacing-km 3` produces a 389 × 439 grid. It has new
+  options:
+  - `--out-root`: a separate tree (`tensors_3km`);
+  - `--from-raw --raw-from`: the 12 km cycle's archived observations;
+  - `--background-analysis`: the 12 km analysis of the same cycle,
+    regridded (`build.regrid_features`), as the first guess.
+- The terrain is fetched once at 1 arc-minute: `geo.load_terrain` now picks
+  the ETOPO stride from the cell size.
+- **Gap-filling** (`--gapfill`): `barnes.barnes_increments_aware` changes
+  the surface Barnes analysis three ways. All three constants were chosen
+  before the run:
+  - weights fall off with the height difference between station and grid
+    point, exp(−(Δz/300 m)²), so a valley station does not set a ridge;
+  - weights are halved between land and water;
+  - a third pass shortens the length scale (120 → 71 → 42 km).
+
+  It is computed in chunks (a 3 km grid against ~2000 stations).
+  `test_barnes_aware.py` 4/4.
+- `score_withheld` now scores the 10 m wind as well as 2 m T.
+
+Pooled over the 8 cycles (572 withheld temperatures, ~520 per wind
+component):
+
+| Analysis | 2 m T RMSE (K) | 10 m u (m/s) | 10 m v (m/s) | Build (s) |
+|---|---|---|---|---|
+| 12 km, as in production | 1.641 | 1.916 | 2.040 | 9 |
+| 3 km, plain Barnes | 1.603 | 1.905 | 2.043 | 53 |
+| **3 km, gap-filling** | **1.541** | **1.871** | **1.962** | 124 |
+| 3 km, gap-filling, terrain slope limit 0.03 | 1.571 | 1.870 | 1.992 | 120 |
+
+Predictions:
+1. Builds under 10 min: **held**.
+2. Gap-filling beats plain 3 km and 12 km in T: **held** (−0.10 K against
+   12 km; better in 7 of 8 cycles).
+3. Plain 3 km within ±0.1 K of 12 km: **held** (−0.04).
+4. Gap-filling winds no worse than 12 km by more than 0.1: **held**
+   (better: u −0.05, v −0.08).
+5. Steeper terrain (slope limit 0.03 instead of 0.0086) at least as good:
+   **refuted** (1.571 against 1.541).
+
+**Interpretation.**
+- The gain is modest and comes from where the stations are. A 3 km grid
+  cannot see structure between stations 30–50 km apart. What the
+  gap-filling adds is to stop increments crossing large height
+  differences and coastlines, and to let dense clusters of stations
+  resolve smaller scales.
+- Why steeper terrain did not help is open. One candidate is that
+  lapse-correcting a station to steeper grid terrain moves its value
+  further with the fixed 6.5 K/km lapse rate, which is wrong under an
+  inversion.
+- A logistics defect showed up here (P-71). Every Python step sets its
+  thread caps to half the machine (`resources.py`). Eight parallel analyses
+  therefore took the load to 94 on 104 cores. `tools/cam_cycle.sh` now sets
+  `NWP_RESOURCE_FRACTION=0.25`.
+
+**Status.** Physics once per step and 40 levels are used for the 3 km run.
+The gap-filling analysis is the 3 km analysis. Next is the first nested
+forecast (S5c).
+
+---
+
+## 2026-10-03 (night) — S5c: the first 3 km nested forecast is stable, and four times too slow
+
+**Method.**
+- `tools/cam_cycle.sh 2026-09-28T06` with `NWP_SKIP_12KM=1`, so the
+  campaign's existing 12 km analysis and forecast were used.
+- The 3 km gap-filling analysis (93 s) was followed by the NH core in C at
+  26 threads, 40 levels, physics once per step, and edges from the 12 km
+  forecast every hour.
+- The time step was 25.7 s, set by the new acoustic limit.
+
+Predictions were written before the run (`s5/s5c_predictions.txt`).
+
+| Prediction | Outcome |
+|---|---|
+| 1. Completes 24 h, wind under 60 m/s | **Refuted** for 24 h: the deadline stopped it at 9.54 h after 84 min. It was stable throughout (max wind 18.9 m/s). |
+| 2. Analysis + forecast under 80 min | **Refuted**: 3.7 s per step, ~3.5 h projected for 24 h |
+| 3. Peak memory under 30 GB | **Held** (10.2 GB) |
+| 4. Edge θ within 1 K of the 12 km driver; interior differs more | **Held**: rms θ difference by band, at 6 h and 9 h: outer 5 cells 0.008 K; rest of the zone 0.35 K; interior 0.54–0.64 K |
+
+**Where the time went** (cProfile of 1 h, 141 steps):
+
+| Part | s per step |
+|---|---|
+| C dynamics kernels | ~1.1 |
+| NumPy physics (mixing 0.85, drag 0.24, the rest 0.3) | 1.44 |
+| Relaxation over the whole domain (incl. hydrostatic φ) | 0.47 |
+| Boundary-frame time interpolation, whole domain | 0.14 |
+| PAV convective adjustment | 0.14 |
+| Python/NumPy overhead (array adds of the physics, properties) | ~0.4 |
+
+The frame set-up also took 16 s per hourly frame, about 7 min for
+24 h, because the convective adjustment ran over every column.
+
+**Interpretation.** The NH dynamics are no longer the cost; everything
+around them is. At 12 km these parts were negligible. At 3 km each one is a
+full-domain NumPy pass. This is a defect of the integration, not of the
+physics: P-72.
+
+**S5d (the fix, in progress).**
+1. Drag and Richardson mixing in C (`phys_col`), transcribed from
+   `surface.py` and `turbulence.py`. The sponge and the w damping now act
+   only on the levels where they are non-zero.
+2. Relaxation over the zone only (`relax_mu`, `relax_col`). The time
+   interpolation of the driving frames happens inside the kernel, at zone
+   columns only (`BoundaryDriver.bracket`).
+3. The physics tendencies are added in place by a threaded kernel.
+4. Frames are stabilised in the zone only (`stabilise_frame(columns=)`;
+   `test_forecast.py` 16/16).
+5. OpenMP threads are bound to consecutive cores
+   (`OMP_PLACES=cores OMP_PROC_BIND=close` in `cam_cycle.sh`).
+
+---
+
+## 2026-10-04/05 — S5c2, S5e, S5c3: the 3 km 24 h forecast now fits the budget (53.6 min)
+
+**S5c2** (job ac9ea647; the S5d fixes: physics and zone relaxation in C).
+Same case as S5c (28 Sep 06Z, 24 h, 26 threads, `NWP_SKIP_12KM=1`).
+Predictions in `s5/s5c2_predictions.txt`.
+- Stable (max wind 20.1 m/s). About 1.6 s per step, so the deadline
+  stopped it at **21.79 h** after 84.1 min.
+- Writing 21 float64 snapshots with `np.savez_compressed` (3.1 GB file,
+  one core, zlib level 6) took about 7 min more. The cycle took 92.2 min,
+  over the 90 min budget. Peak memory 17.9 GB.
+- Identical to S5c to 4e-13 up to 9 h (the C physics transcribes the NumPy
+  physics). Edge θ difference from the 12 km driver 0.008 K; interior θ
+  difference 0.86 K at 21 h.
+- Predictions: (1) completes 24 h — **refuted**; (2) 1.0–1.6 s/step —
+  **held**, at the upper edge; (3) frame time — not measured; (4)
+  round-off-identical to S5c — **held**.
+
+**Profile 2** (job 9b984695; cProfile, 141 steps = 1 h). Per step, under
+the profiler: the dynamics 1.155 s, of which the four kernels that walk one
+column at a time took 0.89 s (`ac_col` 0.44, `td_tw` 0.17, `td_col` 0.15,
+`as_b` 0.13). Outside the dynamics: PAV 0.135 s, the u/v properties
+(division by μ, three times a step) 0.10 s, C physics 0.07 s.
+
+**Why the column kernels were slow.** Arrays are (nz, ny, nx). A kernel
+that walks one column at a time reads each level ny·nx elements apart. With
+~30 arrays and 40 levels that is ~1200 separate memory streams per column,
+more than the hardware prefetcher follows. The point-wise kernels
+(`ac_uv`, `td_uv`), which run along rows, cost a fifth as much per array.
+
+**S5e: changes** (all bit-identical to what they replace).
+1. **Blocked column kernels** (`ac_col_b`, `td_col_b`, `td_tw_b`, `as_b_b`
+   in `nh3d_kernels.c`). The same per-column arithmetic in the same order,
+   on blocks of 32 neighbouring columns. The level loop is outside and the
+   column loop inside, so each level is a contiguous run. `cnh.py` selects
+   them by default (`NWP_NH_LAYOUT=block`; `column` gives the S4 kernels).
+2. **PAV adjustment in C** (`pav_col`). It works in place, with the same
+   θ/u/v round trip through μ as the NumPy path.
+3. **Largest wind for `max_dt` in C** (`uv_maxabs`).
+4. **3 km output as float32, zlib level 1.** Grids above 100 000 columns
+   (`forecast.LARGE_GRID`) only; 12 km output is unchanged. New options
+   `--output-dtype` and `--output-level`. float32 holds θ to 1.5e-5 K and
+   π to 0.004 Pa, far below what ASOS verification resolves.
+
+Tests: `test_nh3d_c.py` 13/13 on the server. New tests 10–13: blocked =
+column kernels bit for bit (nx = 45, a partial block, both edge modes); C
+PAV = NumPy PAV exactly (1327 adjusted columns in both); C max wind = NumPy
+exactly. `test_forecast.py` 17/17 (new: output precision rule and
+read-back).
+
+**S5e test** (job e4e83f10; predictions in `s5/s5e_predictions.txt`).
+
+| Prediction | Outcome |
+|---|---|
+| 1. Tests pass; blocked bit-identical to column | **Held** (13/13; differences 0.0) |
+| 2. Dynamics bench, block ≤ 0.75 × column | **Held**: 1.148 → 0.736 s/step (0.64×) |
+| 3. Real 1 h nested run ≤ 1.15 s/step | **Held**: 0.98 s/step |
+| 4. Writing the 1 h output ≤ 2.5 s | **Refuted**, narrowly: 3 s (67 MB), against 10.1 s before |
+| 5. Fields at 1 h vs S5c2: max \|Δθ\| ≤ 1e-4 K | **Held**: 1.5e-5 K, the float32 rounding of 354 K |
+
+**S5c3** (job e52a8289; the full cycle through `tools/cam_cycle.sh`,
+`NWP_SKIP_12KM=1`, 26 threads at nice 19; predictions in
+`s5/s5c3_predictions.txt`).
+
+| Prediction | Outcome |
+|---|---|
+| 1. Completes 24 h, wind under 60 m/s | **Held**: completed, max wind 19.3 m/s |
+| 2. Mean ≤ 1.05 s/step | **Held**: 0.845 s/step (3384 steps in 47.6 min) |
+| 3. Cycle ≤ 65 min (≤ 70 with the 12 km run) | **Held**: **53.6 min** (analysis 1.6, forecast set-up ~1, steps 47.6, write 1.3) |
+| 4. Peak memory ≤ 16 GB | **Refuted**: 18.2 GB. The snapshots are still kept as float64 in memory and stacked at the end. |
+| 5. Bit-identical to S5c2 | **Held**: max \|Δθ\| 1.53e-5 K at every common hour (float32 output rounding only) |
+| 6. Thread binding: spread within 10 % of close at 26 threads; 52 threads gain < 15 % | **Held**: spread 0.819 vs close 0.748 s/step (9.5 % slower); unbound 0.730; 52 threads 0.641 (14 % faster) |
+
+- The output was 1613 MB, written in 79 s. `/data5` has 26 TB free.
+- The ledger line in `compute_hours.csv`: 53.6 min, 26 threads,
+  23.23 core-hours, status 0.
+- With the 12 km cycle (3–4 min in S5a, about 5 with its ingest) the pair
+  takes about 59 min of the 90 min budget.
+
+**First 3 km verification** (one cycle; 2 m T against ~1040 ASOS reports
+an hour). RMSE 1.66 K at 1 h, rising to 3.0–3.1 K at 12–14 h (18–20Z),
+2.6–2.7 K at 18–24 h. The bias is near zero for 3 h, then cold, reaching
+−1.75 K at 14 h (20Z). A cold afternoon bias is what a core with no land
+surface should show (P-59: the NH core has none yet). One cycle shows
+nothing about 3 km against 12 km; that is the campaign step.
+
+**Interpretation.**
+- The remaining cost is now the dynamics itself: the full nested step
+  costs 0.845 s against 0.748 s for the dynamics alone. The physics, PAV,
+  relaxation and loop overhead together take ~0.1 s.
+- The column kernels were limited by memory access, not by arithmetic.
+  Reordering the loops gave 1.56× on the dynamics with no change to a
+  single bit of the answer.
+- The 1 h test ran at 0.98 s/step and the 24 h run at 0.845. The server
+  load was ~24 during both, so this is not contention alone. The likely
+  cause is the start-up of the run (compilation cache, first-touch pages),
+  amortised over 3384 steps; it was not measured.
+- 52 threads would give 14 % more speed for twice the cores. 26 threads
+  remain the default, which leaves the second socket to other users.
+
+**Status.** P-72 closed. The plan steps "Cycle script for the pair" and
+"Stability and cost trial" are complete. Next is the campaign verification
+(3 km against 12 km over the campaign cycles).
+
+---
+
+## 2026-10-05 — S5g: the dry 3 km nest over 20 cycles — better 10 m wind, no better 2 m temperature
+
+**Design** (predictions in `s5/s5g_predictions.txt`, written before the run).
+- **Cycles.** The 20 campaign cycles, 26 Sep 00Z – 30 Sep 18Z.
+- **How the 3 km runs were made.** `tools/cam_cycle.sh` with
+  `NWP_SKIP_12KM=1` produced each 3 km run from:
+  - its own gap-filling 3 km analysis;
+  - edges from the 12 km forecast in `tensors_3d`, which is test AD's
+    chain (hydrostatic, no land surface).
+- **Code and machine.** S5e code. 19 new runs; 28 Sep 06Z was reused from
+  S5c3, same code. The runs went two at a time, each pinned to one socket
+  (taskset even/odd CPUs, 26 threads each), at nice 19.
+- **Arms.** All four were verified again here with the same `verify.py`
+  (surface operator `auto`) on the same observation archives. They are
+  compared only on matches present in all four (478 774 pairs), with
+  `tools/cam_compare.py`.
+
+| Arm | What it is |
+|---|---|
+| cam3 | 3 km NH, 40 levels, dry, no land surface |
+| nh12 | 12 km NH, 40 levels, dry (test S5a b2) |
+| ad12 | 12 km hydrostatic, 20 levels: the 3 km run's driver (test AD) |
+| am12 | 12 km production defaults (test AM): upwind3, land surface, z0 by land/sea, similarity operator |
+
+**Cost.** All 19 runs completed 24 h. The largest wind in the hourly prints
+was 18.5–38.3 m/s per run (`cam_<cycle>.log`). Each run's
+time steps took 53.3–60.3 min, and each cycle 58.9–66.8 min, with two
+cycles sharing the machine. The job took 10.1 h, at most 525 core-hours.
+
+**Result, pooled over 20 cycles and 24 leads** (RMSE; bias in brackets).
+
+| | cam3 | nh12 | ad12 | am12 |
+|---|---|---|---|---|
+| 2 m T (K), n 165 968 | 3.888 (−0.12) | 3.879 (−0.25) | 3.761 (−0.13) | **3.223** (−0.23) |
+| 2 m T, day | 4.197 (−1.48) | 4.241 (−1.61) | 4.033 (−1.51) | 3.335 (+0.22) |
+| 2 m T, night | 3.562 (+1.20) | 3.492 (+1.07) | 3.476 (+1.21) | 3.111 (−0.66) |
+| 10 m u (m/s), n 156 349 | **2.420** (−0.83) | 2.722 (−1.14) | 2.819 (−1.29) | 2.433 (−0.93) |
+| 10 m v (m/s), n 156 457 | 2.202 (−0.47) | 2.279 (−0.69) | 2.359 (−0.88) | **2.141** (−0.20) |
+
+Per cycle, cam3 against nh12:
+- T: cam3 better in 10 of 20 cycles (mean +0.005 K);
+- u: better in 17 of 20 (−0.262 m/s);
+- v: better in 15 of 20 (−0.073 m/s).
+
+By lead (`cam_skill_by_lead.png`), the u gain is 0.08 m/s at 1 h and
+0.3–0.4 m/s from 6 h on. So most of it comes from the forecast, not the
+analysis.
+
+**By terrain** (relief in a 21 km box of the unlimited ETOPO terrain: 225
+flat stations, 119 hilly, 23 mountain), cam3 minus nh12 RMSE:
+
+| | flat | hilly | mountain |
+|---|---|---|---|
+| 2 m T (K) | +0.041 | −0.022 | −0.133 |
+| 10 m u (m/s) | −0.219 | −0.458 | −0.445 |
+| 10 m v (m/s) | −0.006 | −0.154 | −0.422 |
+
+**Predictions.**
+
+| Prediction | Outcome |
+|---|---|
+| 1. All 19 runs complete, wind < 60 m/s | **Held** (largest hourly max 38.3 m/s) |
+| 2. Every cycle ≤ 60 min with two pinned streams | **Refuted**: 58.9–66.8 min. Two runs at once cost each one 10–20 % against S5c3's 53.6 min alone. Every cycle is still inside the 90 min budget. |
+| 3. T within ±0.15 K of nh12 | **Held** (+0.009 K) |
+| 4. T better than nh12 at leads 1–3 h | **Refuted** as stated: better at 1 h (1.748 vs 1.804) and 2 h (2.311 vs 2.326), worse at 3 h (2.863 vs 2.853) |
+| 5. Wind better than nh12 by 0–0.2 m/s in u and v | **Refuted for u** (−0.30 m/s, more than predicted); **held for v** (−0.08) |
+| 6. T gain larger in mountain than flat terrain | **Held** (mountain −0.13 K, flat +0.04 K), with the class change noted below |
+| 7. am12 beats cam3 by > 0.5 K by day, less by night | **Held** (day 0.86 K, night 0.45 K) |
+| 8. cam3 beats ad12 in T by ≥ 0.1 K | **Refuted**: cam3 is 0.13 K worse than its own driver |
+
+**A change to the instrument after a first look (stated for the record).**
+The terrain classes were first computed from the forecast file's terrain.
+An interim run on the first 8 cycles put 365 of 367 stations in "flat"
+and none in "mountain". The cause is the 3 km terrain's slope limit
+(0.0086), which caps the relief in a 21 km box at ~155 m. The classes now
+use the unlimited ETOPO terrain on the same grid
+(`data/static/terrain_etopo_389x439.npz`, 0–1533 m), with the class edges
+unchanged. The interim had already shown the two hilly stations' scores,
+so prediction 6 was not judged blind to every number. The by-lead and
+pooled results do not depend on the classes.
+
+**Interpretation.**
+- **10 m wind: resolution helps, and it helps most over terrain.** The
+  dry 3 km run's u error is 11 % below the dry 12 km NH run's, and its
+  bias is 0.3 m/s smaller. Over hilly and mountain stations the gain is
+  twice the flat-station gain. Without a land surface, the dry 3 km run
+  matches production in u (2.420 vs 2.433) and comes within 0.06 m/s in
+  v. This is the first CAM result that is a gain rather than a cost.
+- **2 m temperature: resolution does nothing until the surface exists.**
+  The two dry NH runs are the same to 0.01 K. Both have a day cold bias
+  (−1.5 K) and a night warm bias (+1.2 K), the signature of a missing
+  diurnal cycle (P-59: the NH core has no land surface). Production's
+  land surface is worth 0.67 K over cam3. The dry hydrostatic driver
+  being 0.13 K better than either NH run was not expected, and it was
+  not diagnosed here. The AO gate measured NH against AL, not AD. A
+  candidate is the 40-level daytime T penalty already seen in S5a
+  (+0.12 K).
+- **What it does not show.** One week, one season, all dry. There is no
+  convection to resolve, so this tests terrain and boundary-layer flow,
+  not storms. The 3 km analysis differs from the 12 km one (gap-filling),
+  so "resolution" here means grid plus analysis. The lead-1 gap shows the
+  analysis's share is small for wind.
+
+**After the campaign: snapshots kept at the output precision** (check S5h,
+job 738dace6). `run_forecast(snapshot_dtype=)` now holds the 3 km snapshots
+as float32, which halves the ~3.9 GB they took in S5c3 (prediction 4 of
+S5c3 failed on memory). A 2 h nested run with the change is identical to
+S5c3's hours 1–2 (max |Δ| 0.0 in θ, u, v, π; float32 against float32).
+Peak memory was 5.2 GB at 2 h. The 24 h peak was not measured.
+
+**Status.** The S5 plan's campaign step is done. The figure is
+`docs/cam_skill_by_lead.png`. The next physics for the NH core is clear:
+the land surface (force-restore, as in AM) before moisture. It is what
+the 2 m temperature lacks, and the CAM's T cannot be judged without it.
+That is a change to the roadmap order. **The user chose it (2026-10-05): land surface for the NH core first, then moisture.**
+
+---
+
 ## 2026-09-25 — Forecast maps and a Pivotal-style viewer
 
 **Context.** Prompt 120: the forecasts need maps "like how a site like

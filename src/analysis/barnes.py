@@ -105,3 +105,78 @@ def mean_spacing_km(lat_o, lon_o):
     r2 = sq_distance_km(lat_o, lon_o, lat_o, lon_o)
     np.fill_diagonal(r2, np.inf)
     return float(np.mean(np.sqrt(r2.min(axis=1))))
+
+
+def barnes_increments_aware(lat_g, lon_g, lat_o, lon_o, d, sigma_o, L_km,
+                            lam=0.25, passes=2, gamma=0.35, s_ref=None,
+                            z_g=None, z_o=None, H_m=None,
+                            land_g=None, land_o=None, coast_factor=1.0,
+                            chunk=20000):
+    """
+    barnes_increments with two optional weight factors, for the 3 km
+    analysis (CAM stage S5, "fill the gaps between stations"):
+
+      elevation  w *= exp(-((z_x - z_i) / H_m)^2)
+                 a station spreads its increment mostly to terrain at about
+                 its own height, so a valley reading does not set a ridge
+                 (night-time inversions make the two differ by several K);
+      land/sea   w *= coast_factor where one point is land and the other water
+                 (a coastal station's increment reaches less far over the sea).
+
+    The same factors are used between observations, so every pass stays a
+    successive correction of what the previous pass left at the stations.
+    Grid points are processed in chunks, so a 3 km grid (~170 000 points)
+    against ~2000 stations does not need a 3 GB matrix. With no factors this
+    returns barnes_increments to round-off (test_barnes_aware.py).
+    """
+    lat_g = np.asarray(lat_g, float)
+    shape = lat_g.shape
+    lat_gf, lon_gf = lat_g.ravel(), np.asarray(lon_g, float).ravel()
+    d = np.asarray(d, float).ravel()
+    sigma_o = np.broadcast_to(np.asarray(sigma_o, float), d.shape)
+    ok = np.isfinite(d)
+    if not ok.any():
+        return np.zeros(shape)
+    lat_o = np.asarray(lat_o, float).ravel()[ok]
+    lon_o = np.asarray(lon_o, float).ravel()[ok]
+    d_ok, s_ok = d[ok], sigma_o[ok]
+    s_ref = float(np.median(s_ok)) if s_ref is None else float(s_ref)
+    use_z = H_m is not None and z_g is not None and z_o is not None
+    use_l = coast_factor != 1.0 and land_g is not None and land_o is not None
+    if use_z:
+        zg = np.asarray(z_g, float).ravel()
+        zo = np.asarray(z_o, float).ravel()[ok]
+        zo = np.where(np.isfinite(zo), zo, np.nan)
+    if use_l:
+        lg = np.asarray(land_g, bool).ravel()
+        lo_ = np.asarray(land_o, bool).ravel()[ok]
+
+    def factor(za, la_, zb, lb):
+        f = 1.0
+        if use_z:
+            dz = za[:, None] - zb[None, :]
+            f = f * np.where(np.isfinite(dz), np.exp(-(dz / H_m) ** 2), 1.0)
+        if use_l:
+            f = f * np.where(la_[:, None] != lb[None, :], coast_factor, 1.0)
+        return f
+
+    r2_oo = sq_distance_km(lat_o, lon_o, lat_o, lon_o)
+    f_oo = factor(zo if use_z else None, lo_ if use_l else None,
+                  zo if use_z else None, lo_ if use_l else None)
+    inc_g = np.zeros(lat_gf.size)
+    inc_o = np.zeros(d_ok.size)
+    L = float(L_km)
+    for _ in range(max(1, int(passes))):
+        resid = d_ok - inc_o
+        for a in range(0, lat_gf.size, chunk):
+            b = min(a + chunk, lat_gf.size)
+            r2 = sq_distance_km(lat_gf[a:b], lon_gf[a:b], lat_o, lon_o)
+            wg = _weights(r2, L, s_ok, s_ref) * factor(zg[a:b] if use_z else None,
+                                                       lg[a:b] if use_l else None,
+                                                       zo if use_z else None,
+                                                       lo_ if use_l else None)
+            inc_g[a:b] += (wg @ resid) / (wg.sum(axis=1) + lam)
+        wo = _weights(r2_oo, L, s_ok, s_ref) * f_oo
+        inc_o += (wo @ resid) / (wo.sum(axis=1) + lam)
+        L *= gamma ** 0.5
+    return inc_g.reshape(shape)

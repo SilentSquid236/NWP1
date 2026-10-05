@@ -160,7 +160,11 @@ def load_terrain(domain, ny, nx, cache_dir, fetcher=None, verbose=True):
     if fetcher is None:
         from netpolicy import PoliteFetcher
         fetcher = PoliteFetcher()
-    url = etopo_url(domain)
+    # Source resolution: 2 arc-minutes (~3.7 km) is plenty for the 12 km grid,
+    # but would leave a 3 km grid with empty cells; use 1 arc-minute when a
+    # cell is smaller than 4 arc-minutes (CAM stage S5).
+    cell_arcmin = 60.0 * (domain["lat_max"] - domain["lat_min"]) / ny
+    url = etopo_url(domain, stride=1 if cell_arcmin < 4.0 else 2)
     if verbose:
         print(f"  terrain        : fetching ETOPO once from NOAA ERDDAP", flush=True)
     lat, lon, alt = parse_erddap_csv(fetcher.get_text(url, timeout=300))

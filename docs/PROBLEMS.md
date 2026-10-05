@@ -38,6 +38,18 @@ hypothesis, **G** missing physics, **H** performance, **I** logistics.
 
 # OPEN
 
+
+## P-71 — Every Python step claims half the server's threads, so parallel jobs oversubscribe it
+**Category** I, H · **First seen** 2026-10-03 · **Status** OPEN
+
+**Symptom.** Test S5b ran eight 3 km analyses in parallel, each "single core" with `OMP_NUM_THREADS=1`. The server load reached 94 on 104 cores. The other jobs at the time used about 32 threads.
+
+**Cause.** `resources.apply()` runs at import in every entry point. It overwrites `OMP_NUM_THREADS`, `MKL_NUM_THREADS` and `OPENBLAS_NUM_THREADS` with 50 % of the machine (52), whatever the caller exported. The Barnes analysis is matrix products, so each process used up to 52 BLAS threads.
+
+**Mitigation.** `tools/cam_cycle.sh` exports `NWP_RESOURCE_FRACTION=0.25`, which `resources.py` reads. The C kernels set their own count (`--threads`) and are unaffected.
+
+**Open.** The right fix is for `resources.apply()` to respect an explicitly exported thread count. That changes every entry point, so it waits for the user.
+
 ## P-52 — A dead run is not detected until the end of the forecast hour
 **Category** E, H · **Status** OPEN · **First seen** 2026-09-12
 
@@ -479,6 +491,8 @@ service, which is P-06 and is where this project's defects have always been.
 
 - **2026-10-03: the land surface is now the default** (`--land-surface` on for the hydrostatic core, with the land/sea z0 map and the similarity operator chosen automatically for land-surface forecasts). Holdout (test AN, 30 cycles): 2 m T RMSE 3.44 K against persistence 4.94 K and the old default 4.59 K. Still open: the model loses to persistence at leads 21–24 (no clouds, no moisture), and the holdout night 10 m wind ratio is 0.64 (too weak).
 
+**NH core (2026-10-05, test S5g).** The NH core still has no land surface. Over 20 cycles both dry NH runs (3 km and 12 km) show the P-59 signature: 2 m T bias −1.5 K by day and +1.2 K by night. The 12 km production model with its land surface scores 3.22 K against 3.89 K for the dry 3 km run. Wiring the force-restore land surface into `NHModel` is the proposed next CAM step.
+
 ## P-64 — Cycling never used the previous forecast: snapshots land one step past the hour
 **Category** B, A · **First seen** 2026-10-01 · **Status** OPEN (fix in, awaiting test)
 
@@ -556,6 +570,30 @@ service, which is P-06 and is where this project's defects have always been.
 
 
 # FIXED
+
+## P-72 — The 3 km run spends 70 % of each step outside the C dynamics
+**Category** H · **First seen** 2026-10-03 · **Status** FIXED 2026-10-05
+
+**Symptom.** In test S5c, the first 3 km nested forecast took 3.7 s per step against 0.8 s for the dynamics benchmark (S4b). The 90 min budget stopped it at 9.5 h.
+
+**Cause (cProfile, 141 steps).**
+- The NumPy physics (1.44 s per step);
+- the relaxation over the whole domain, plus the boundary-frame interpolation (0.61 s);
+- the PAV adjustment (0.14 s);
+- array overhead (~0.4 s).
+
+Each is a full-domain NumPy pass. At 12 km that was negligible.
+
+**Fix (S5d).** Physics in C; relaxation and frame interpolation over the zone only; physics added in place; frames stabilised in the zone only; thread binding. Each kernel is tested against the NumPy code (`test_nh3d_c.py` 7–8). It closes when a 3 km 24 h run fits the budget.
+
+**S5c2 (with the S5d fix).** 1.6 s per step; the deadline stopped the run at 21.79 h, and writing the float64 output (zlib 6) took ~7 min more: 92.2 min in all.
+
+**Second cause (profile 2).** The four kernels that walk one column at a time (`ac_col`, `td_col`, `td_tw`, `as_b`) took 0.89 s of a 1.49 s step. Each level of a column is ny·nx elements from the next, which is ~1200 memory streams per column.
+
+**Fix (S5e).** The same kernels on blocks of 32 columns, level loop outside (bit-identical; `test_nh3d_c.py` 10–11); PAV and the max-wind in C (12–13); 3 km output as float32 at zlib level 1.
+
+**Closed by S5c3** (2026-10-05): the 3 km 24 h cycle completed in 53.6 min (0.845 s per step; output 1.6 GB in 79 s), bit-identical to S5c2 apart from the float32 output rounding (1.5e-5 K).
+
 
 
 ## P-67 — Surface heating destabilises the 28 Sep 00Z cycle at 22.5 h

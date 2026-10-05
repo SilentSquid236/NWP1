@@ -66,7 +66,16 @@ def _ptr(a, ctype):
 class Kernels:
     """The kernel set for one precision (f64 or f32)."""
 
-    def __init__(self, real="f64"):
+    LAYOUTS = ("block", "column")
+
+    def __init__(self, real="f64", layout=None):
+        """layout: "block" (CAM stage S5e: column kernels on blocks of
+        neighbouring columns, bit-identical and faster) or "column" (the S4
+        one-column-at-a-time kernels). Default: $NWP_NH_LAYOUT, else block."""
+        layout = layout or os.environ.get("NWP_NH_LAYOUT", "block")
+        if layout not in self.LAYOUTS:
+            raise ValueError(f"layout must be one of {self.LAYOUTS}, got {layout!r}")
+        self.layout = layout
         self.real = real
         self.dtype = np.float64 if real == "f64" else np.float32
         self.ct = ctypes.c_double if real == "f64" else ctypes.c_float
@@ -76,13 +85,20 @@ class Kernels:
         self._threads.restype = ctypes.c_int
         self._pd = getattr(self.lib, "ac_pd" + s)
         self._uv = getattr(self.lib, "ac_uv" + s)
-        self._col = getattr(self.lib, "ac_col" + s)
-        self._td_col = getattr(self.lib, "td_col" + s)
+        b = "_b" if layout == "block" else ""
+        self._col = getattr(self.lib, "ac_col" + b + s)
+        self._td_col = getattr(self.lib, "td_col" + b + s)
         self._td_uv = getattr(self.lib, "td_uv" + s)
-        self._td_tw = getattr(self.lib, "td_tw" + s)
+        self._td_tw = getattr(self.lib, "td_tw" + b + s)
         self._as_a = getattr(self.lib, "as_a" + s)
-        self._as_b = getattr(self.lib, "as_b" + s)
+        self._as_b = getattr(self.lib, "as_b" + b + s)
+        self._pav = getattr(self.lib, "pav_col" + s)
+        self._pav.restype = ctypes.c_long
+        self._uvmax = getattr(self.lib, "uv_maxabs" + s)
         self._add = getattr(self.lib, "add_into" + s)
+        self._phys = getattr(self.lib, "phys_col" + s)
+        self._rmu = getattr(self.lib, "relax_mu" + s)
+        self._rcol = getattr(self.lib, "relax_col" + s)
 
     def set_threads(self, n):
         """Set the OpenMP thread count (n <= 0 leaves it); returns the count in use."""
@@ -186,15 +202,58 @@ class Kernels:
             raise ValueError("add_into: shapes differ")
         self._add(ctypes.c_size_t(x.size), self._a(x), self._a(y), self._a(out))
 
+    # --- physics and lateral relaxation (CAM stage S5d) -----------------------
+    def phys_col(self, idx, p_top, P0, KAPPA, RD, G0, ri_crit, k_max, mixing_length,
+                 do_drag, do_mix, sigma, sigma_half, z0, mu, U, V, Th, FU, FV, FT):
+        nz, ny, nx = U.shape
+        a, i, r = self._a, self._idx, self._r
+        self._phys(nz, ny, nx, i(idx["xm1"]), i(idx["ym1"]), r(p_top), r(P0), r(KAPPA), r(RD),
+                   r(G0), r(ri_crit), r(k_max), r(mixing_length), int(bool(do_drag)),
+                   int(bool(do_mix)), a(sigma), a(sigma_half), a(z0), a(mu), a(U), a(V), a(Th),
+                   a(FU), a(FV), a(FT))
+
+    def relax_mu(self, cols, a2, mu, wa, wb, piA, piB, mu_new):
+        self._rmu(int(cols.size), self._idx(cols), self._a(a2), self._a(mu), self._r(wa),
+                  self._r(wb), self._a(piA), self._a(piB), self._a(mu_new))
+
+    def relax_col(self, cols, idx, p_top, P0, KAPPA, RD, G, sf, ds, terrain, a2, mu_old, mu_new,
+                  wa, wb, uA, uB, vA, vB, tA, tB, U, V, Th, W, phi):
+        nz, ny, nx = U.shape
+        a, i, r = self._a, self._idx, self._r
+        self._rcol(nz, ny, nx, int(cols.size), i(cols), i(idx["xm1"]), i(idx["ym1"]),
+                   r(p_top), r(P0), r(KAPPA), r(RD), r(G), a(sf), a(ds), a(terrain), a(a2),
+                   a(mu_old), a(mu_new), r(wa), r(wb), a(uA), a(uB), a(vA), a(vB), a(tA), a(tB),
+                   a(U), a(V), a(Th), a(W), a(phi))
+
+    # --- after the step (CAM stage S5e) ---------------------------------------
+    def pav_col(self, xm1, ym1, tol, mix, dsigma, mu, U, V, Th):
+        """Dry convective adjustment (PAV) in place on U, V, Th; returns the
+        number of adjusted columns."""
+        nz, ny, nx = Th.shape
+        a = self._a
+        return int(self._pav(nz, ny, nx, self._idx(xm1), self._idx(ym1), self._r(tol),
+                             int(bool(mix)), a(dsigma), a(mu), a(U), a(V), a(Th)))
+
+    def uv_maxabs(self, xm1, ym1, mu, U, V):
+        """(max |U/mu_u|, max |V/mu_v|); NaN if either has a NaN."""
+        nz, ny, nx = U.shape
+        out = np.empty(2, dtype=self.dtype)
+        self._uvmax(nz, ny, nx, self._idx(xm1), self._idx(ym1), self._a(mu), self._a(U),
+                    self._a(V), self._a(out))
+        return float(out[0]), float(out[1])
+
 
 _CACHE = {}
 
 
-def load(real="f64"):
-    """The kernel set for 'f64' or 'f32' (built on first use)."""
-    if real not in _CACHE:
-        _CACHE[real] = Kernels(real)
-    return _CACHE[real]
+def load(real="f64", layout=None):
+    """The kernel set for 'f64' or 'f32' (built on first use); layout as in
+    Kernels (default $NWP_NH_LAYOUT, else "block")."""
+    layout = layout or os.environ.get("NWP_NH_LAYOUT", "block")
+    key = (real, layout)
+    if key not in _CACHE:
+        _CACHE[key] = Kernels(real, layout)
+    return _CACHE[key]
 
 
 def available():

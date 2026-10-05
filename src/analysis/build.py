@@ -287,8 +287,16 @@ def value_at_height(F, Z, zt, kind):
 
 
 def blend_surface(fields, Z, terrain, obs, lat, lon, domain,
-                  blend_depth_m=1000.0, L_km=120.0, max_elev_mismatch_m=600.0):
-    """Analyse surface innovations and apply them to the lowest levels."""
+                  blend_depth_m=1000.0, L_km=120.0, max_elev_mismatch_m=600.0,
+                  aware=None):
+    """Analyse surface innovations and apply them to the lowest levels.
+
+    aware (CAM stage S5, gap-filling on the 3 km grid): None for the 12 km
+    analysis as before, or a dict {"H_m", "coast_factor", "passes", "land"}
+    that switches to barnes_increments_aware -- weights reduced with the
+    height difference between station and grid point and across the coast,
+    and a third pass at a shorter length scale (120 -> 71 -> 42 km).
+    """
     info = {}
     w = np.clip(1.0 - (Z - terrain[None]) / blend_depth_m, 0.0, 1.0)
     for var, dz in (("TMP", 2.0), ("RH", 2.0), ("UGRD", 10.0), ("VGRD", 10.0)):
@@ -309,8 +317,16 @@ def blend_surface(fields, Z, terrain, obs, lat, lon, domain,
         sfc = value_at_height(fields[var], Z, terrain + dz, var)
         d = y - geo.bilinear(sfc, la, lo, domain, clip=True)
         d = np.where(use, d, np.nan)
-        inc = barnes.barnes_increments(lat, lon, la, lo, d, s, L_km,
-                                       lam=0.25, passes=2)
+        if aware is None:
+            inc = barnes.barnes_increments(lat, lon, la, lo, d, s, L_km,
+                                           lam=0.25, passes=2)
+        else:
+            land = np.asarray(aware["land"], bool)
+            land_o = geo.bilinear(land.astype(float), la, lo, domain, clip=True) >= 0.5
+            inc = barnes.barnes_increments_aware(
+                lat, lon, la, lo, d, s, L_km, lam=0.25, passes=aware["passes"],
+                z_g=terrain, z_o=elev, H_m=aware["H_m"],
+                land_g=land, land_o=land_o, coast_factor=aware["coast_factor"])
         fields[var] = fields[var] + w * inc[None]
         info[var] = int(np.isfinite(d).sum())
     fields["RH"] = np.clip(fields["RH"], 1.0, 100.0)
@@ -363,7 +379,7 @@ def first_guess_from_analysis(features):
 def build_analysis(cycle, observations, terrain, domain, levels_hpa,
                    previous_forecast=None, previous_rh=None,
                    previous_analysis=None, surface_blend=True,
-                   below_ground="none"):
+                   below_ground="none", background=None, surface_aware=None):
     """
     Returns (features [C, L, Y, X] float32, meta dict).
 
@@ -385,7 +401,11 @@ def build_analysis(cycle, observations, terrain, domain, levels_hpa,
     so = superob_soundings(used, levels_pa)
 
     bg, bg_label = None, None
-    if previous_forecast is not None:
+    if background is not None:
+        # A ready first guess on THIS grid (the 3 km analysis starts from the
+        # 12 km analysis of the same cycle, regridded; CAM stage S5).
+        bg, bg_label = {k: np.array(v, float) for k, v in background[0].items()}, background[1]
+    elif previous_forecast is not None:
         path, lead = previous_forecast
         bg = first_guess_from_forecast(path, lead, levels_pa, previous_rh)
         if bg is not None:
@@ -414,7 +434,8 @@ def build_analysis(cycle, observations, terrain, domain, levels_hpa,
                          "an analysis")
     Z = hydrostatic_heights(fields["TMP"], fields["RH"], pmsl, levels_pa)
     if surface_blend:
-        fields, sfc_info = blend_surface(fields, Z, terrain, used, lat, lon, domain)
+        fields, sfc_info = blend_surface(fields, Z, terrain, used, lat, lon, domain,
+                                         aware=surface_aware)
     else:
         # Diagnostic switch (P-56 test A): heights still anchored to the
         # analysed sea-level pressure, but no surface T/RH/wind increments.
@@ -453,3 +474,18 @@ def build_analysis(cycle, observations, terrain, domain, levels_hpa,
         }),
     }
     return feats, meta
+
+
+def regrid_features(features, domain, ny, nx):
+    """
+    An analysis [C, L, Y, X] on one grid of the domain, bilinearly
+    interpolated to the cell centres of an (ny, nx) grid of the same domain
+    (the 12 km analysis as the 3 km first guess; CAM stage S5).
+    """
+    f = np.asarray(features, float)
+    lat, lon = geo.cell_centres(domain, ny, nx)
+    out = np.empty(f.shape[:2] + (ny, nx))
+    for c in range(f.shape[0]):
+        for k in range(f.shape[1]):
+            out[c, k] = geo.bilinear(f[c, k], lat, lon, domain, clip=True)
+    return out

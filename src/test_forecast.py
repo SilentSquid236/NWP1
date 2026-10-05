@@ -456,6 +456,50 @@ def test_relaxation_toward_stabilised_frame_stays_stable():
            f"column drift {drift:.1e}")
 
 
+def test_zone_only_frame_adjustment():
+    """
+    CAM stage S5d. stabilise_frame(columns=mask) adjusts exactly the masked
+    columns as the whole-frame adjustment would, and leaves the rest as given.
+    """
+    from sigma import SigmaLevels
+    lev = SigmaLevels(20)
+    rng = np.random.default_rng(0)
+    th = 290 + 40 * (1 - lev.sigma)[:, None, None] + rng.normal(0, 2, (20, 12, 14))
+    u = rng.normal(0, 5, th.shape); v = rng.normal(0, 5, th.shape)
+    pi = np.full((12, 14), 8e4)
+    a = stabilise_frame(th, u, v, pi, lev)
+    m = np.zeros((12, 14), bool); m[:3] = True; m[:, -2:] = True
+    b = stabilise_frame(th, u, v, pi, lev, columns=m)
+    d_in = max(float(np.abs(x[:, m] - y[:, m]).max()) for x, y in zip(a[:3], b[:3]))
+    d_out = max(float(np.abs(x[:, ~m] - y[:, ~m]).max()) for x, y in zip((th, u, v), b[:3]))
+    report("zone-only frame adjustment equals the full one in the zone, untouched outside",
+           d_in == 0.0 and d_out == 0.0 and a[3]["unstable_before"] > 0,
+           f"zone difference {d_in:.1e}, outside change {d_out:.1e}")
+
+
+def test_large_grid_output_is_float32_and_readable():
+    """S5e: grids above forecast.LARGE_GRID columns write float32 at zlib 1;
+    small grids keep float64 and np.savez_compressed; the file loads as before."""
+    import forecast as F
+    from types import SimpleNamespace as NS
+    small = F._output_mode(NS(output_dtype="auto", output_level=None), (40, 97, 110))
+    large = F._output_mode(NS(output_dtype="auto", output_level=None), (40, 389, 439))
+    forced = F._output_mode(NS(output_dtype="f64", output_level=0), (40, 389, 439))
+    rng = np.random.default_rng(1)
+    th = 300 + rng.normal(0, 5, (3, 4, 5, 6))
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "f.npz"
+        F._savez_level(path, 1, theta=th.astype(np.float32), lat=None, source=np.array("x"))
+        with np.load(path, allow_pickle=True) as z:
+            back, src = z["theta"], str(z["source"])
+        ok_read = back.dtype == np.float32 and float(np.abs(back - th).max()) < 1e-4 \
+            and src == "x"
+    ok = (small == (np.float64, None) and large == (np.float32, 1)
+          and forced == (np.float64, 0) and ok_read)
+    report("3 km output: float32 + zlib 1 above LARGE_GRID; 12 km unchanged; file reads back",
+           ok, f"small {small}, large {large}, forced {forced}, read ok {ok_read}")
+
+
 if __name__ == "__main__":
     print("\nForecast driver integration\n" + "=" * 62)
     for fn in (test_channels_require_height,
@@ -472,7 +516,9 @@ if __name__ == "__main__":
                test_final_output_time_is_written,
                test_output_times_are_on_the_hour,
                test_stable_frame_is_unchanged,
-               test_relaxation_toward_stabilised_frame_stays_stable):
+               test_relaxation_toward_stabilised_frame_stays_stable,
+               test_zone_only_frame_adjustment,
+               test_large_grid_output_is_float32_and_readable):
         try:
             fn()
         except Exception as e:

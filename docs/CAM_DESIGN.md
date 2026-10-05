@@ -183,6 +183,35 @@ dynamics takes 0.95 h. Next for cost: physics once per step instead of
 once per RK stage, then physics in C, then moisture (the old S4 is now the
 next stage).
 
+**S5 (dry 3 km nest) status (2026-10-05).** A 3 km × 40-level grid
+(389 × 439) with its own gap-filling analysis, nested in the 12 km
+forecast (`tools/cam_cycle.sh`). Measured cost:
+- After the S5d/S5e kernels (physics, PAV, zone relaxation, blocked column
+  kernels, all in C and tested against NumPy), a 24 h run takes 0.845 s per
+  step (dt 25.7 s, set by the acoustic limit).
+- The whole cycle took 53.6 min at 26 threads (test S5c3). With the 12 km
+  cycle, the pair needs about 59 of the 90 min.
+- Section 3's budget question is answered for the dry model. Moisture will
+  add advected species and microphysics. The θ flux part of `td_tw` is
+  the nearest analogue of one advected 3-D field: roughly 0.03–0.05 s per
+  step over the three RK stages. Five more fields would add about
+  0.15–0.25 s per step, before microphysics. That is an estimate, not a
+  measurement.
+
+**S5g (20 cycles, paired matches).** The dry 3 km run has these RMSEs:
+- 10 m u: 2.420 m/s, against 2.722 for the dry 12 km NH run (better in 17
+  of 20 cycles), and level with production (2.433);
+- 10 m v: 2.202 m/s, against 2.279 for 12 km NH;
+- 2 m T: 3.888 K, against 3.879 for 12 km NH and 3.223 for production
+  with its land surface.
+
+The wind gain is about twice as large over hilly and mountain stations as
+over flat ones.
+
+**Change of order (decided by the user, 2026-10-05):** the land surface for the NH
+core before moisture. Without it the CAM's 2 m temperature cannot be
+judged, and production's surface is worth 0.67 K over the dry 3 km run.
+
 **Known risks, stated now.**
 - **Observation-only initial conditions.** Without radar data assimilation, a
   CAM spends its first 6–12 h spinning up convection. MRMS is available, so

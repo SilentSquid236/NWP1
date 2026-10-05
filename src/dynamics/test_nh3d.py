@@ -126,5 +126,21 @@ report("an isothermal atmosphere at rest over 2500 m (state != reference) stays 
        max(umax) < 0.5 and umax[-1] < 2 * umax[0] and abs(m5.core.total_mass() / M5 - 1) < 1e-13,
        f"max|u| by hour {', '.join(f'{x:.3f}' for x in umax)} m/s")
 
+# 6. Physics once per step: one evaluation per step instead of one per RK stage
+def _calls(mode):
+    h6 = _HydroNoPhys(g5); h6.terrain = h5.terrain
+    m6 = nh3d.NHModel(h6, physics_every=mode)
+    m6.set_state(z5, z5, 250.0 * (1.0e5 / p5) ** (287.04 / 1004.5), mu5)
+    for _ in range(5):
+        m6.step(60.0)
+    return m6.physics_calls, m6
+
+n_stage, a6 = _calls("stage")
+n_step, b6 = _calls("step")
+d6 = float(np.abs(a6.u - b6.u).max())
+report("physics_every='step' evaluates the physics once per step (stage: three times)",
+       n_stage == 15 and n_step == 5 and d6 < 1e-12 and b6.core.extra_tendency == b6._physics,
+       f"calls: stage {n_stage}, step {n_step}; max|du| {d6:.1e} m/s with no physics active; hook restored")
+
 print(f"\n{sum(results)}/{len(results)} passed")
 raise SystemExit(0 if all(results) else 1)

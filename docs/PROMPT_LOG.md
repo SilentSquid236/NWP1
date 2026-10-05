@@ -253,6 +253,11 @@ on itself.
 | 168 | Answer to the agent's question after holdout AN: "Adopt full AM" | **DIR** | upwind3, the land surface, the land/sea z0 map and the auto similarity operator became the defaults (2026-10-03). P-67 closed |
 | 169 | "done" (pushed 873b2cf and pulled on the server) | **ADM** | The agent started S3 itself: baseline cost (S3a: 42 h for 24 h at 3 km × 40 levels in NumPy) and a back-end comparison (S3b: C/OpenMP 216×, torch 7.6× on one stencil) |
 | 170 | Answer to the agent's question after S3: "C/OpenMP kernels" | **DIR** | The CAM core's hot loops move to C with OpenMP, compiled by the server's gcc and called through ctypes. Python keeps orchestration, I/O and verification; each kernel is tested against its NumPy original |
+| 171 | "done" (pushed c762835 and pulled) | **ADM** | — |
+| 172 | Answer: the 3 km run gets "own 3 km analysis + 12 km edges" | **DIR** | Stage S5 is planned around a 3 km analysis from observations and boundaries from the 12 km forecast |
+| 173 | "You can also add some interpolation of stations to fill in gaps" | **MET** | Added as a plan step. Terrain- and coast-aware Barnes with a shorter third pass. On withheld stations the 3 km analysis scores T 1.541 K against 1.641 K for 12 km (test S5b) |
+| 174 | "lets also keep track of computaional hours if we havent" | **ADM** | `docs/COMPUTE_LEDGER.md/.csv` built from the job records; `daily.sh` and `cam_cycle.sh` append a line per cycle to `compute_hours.csv`. To 2026-10-05: 51 server jobs, 40.5 run-hours, ≤1235 core-hours |
+| 175 | Answer after S5g: "Land surface first" | **DIR** | The roadmap order changes: the force-restore land surface goes into the NH core before moisture. S5g had shown the dry 3 km run gains in 10 m wind (u 2.42 vs 2.72 m/s) but not in 2 m T (3.89 K against 3.22 K for production with its land surface) |
 
 **Observation.** Prompt 53 is 18 words and is the most consequential
 instruction in the project. Before it, nine candidate causes had been patched

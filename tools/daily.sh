@@ -165,5 +165,13 @@ if [ -f "$RUNDIR/forecast.npz" ] || [ -f "$RUNDIR/obs_analysis_f00.npz" ]; then
     maps --run-dir "$RUNDIR"
 fi
 
+# Compute ledger (docs/COMPUTE_LEDGER.md): one line per run, kept with the logs.
+log_compute() {   # script, threads
+    local f="$LOGDIR/compute_hours.csv" wall
+    wall=$(( $(date +%s) - T0 ))
+    [ -f "$f" ] || echo "start_utc,cycle,script,wall_min,threads,core_h,status" > "$f"
+    echo "$(date -u -d @"$T0" +%FT%TZ),$RUN,$1,$(awk "BEGIN{printf \"%.1f\", $wall/60}"),$2,$(awk "BEGIN{printf \"%.2f\", $wall*$2/3600}"),$STATUS" >> "$f"
+}
+log_compute daily.sh "$THREADS"
 echo "=== done  $(date -u +%FT%TZ)  +$(( ($(date +%s) - T0) / 60 )) min  status=$STATUS" >> "$LOG"
 exit "$STATUS"

@@ -203,7 +203,7 @@ def build_grid(fields, levels, domain=None):
 FRAME_MAX_SWEEPS = 1000   # a one-off per frame, so run to convergence
 
 
-def stabilise_frame(theta, u, v, pi, lev):
+def stabilise_frame(theta, u, v, pi, lev, columns=None):
     """
     Remove static instability from a boundary frame, once (P-63).
 
@@ -211,7 +211,25 @@ def stabilise_frame(theta, u, v, pi, lev):
     step, but run to convergence. Returns (theta, u, v, info); a frame that is
     already stable comes back unchanged. Raises if it does not converge,
     because an edge that stays unstable would bring P-63 straight back.
+
+    columns (CAM stage S5d): a 2-D boolean mask of the columns that matter
+    -- the relaxation zone. The adjustment is column by column, so only those
+    columns are adjusted; the others are returned as they were. At 3 km a
+    whole-frame adjustment took 16 s per hourly frame.
     """
+    if columns is not None:
+        cols = np.flatnonzero(np.asarray(columns).ravel())
+        nz = theta.shape[0]
+        sub = lambda a: np.ascontiguousarray(a.reshape(a.shape[0], -1)[:, cols])[:, None, :]
+        th_s, u_s, v_s = sub(theta), sub(u), sub(v)
+        pi_s = np.ascontiguousarray(np.asarray(pi).ravel()[cols])[None, :]
+        th_s, u_s, v_s, info = stabilise_frame(th_s, u_s, v_s, pi_s, lev)
+        out = []
+        for full, part in ((theta, th_s), (u, u_s), (v, v_s)):
+            a = np.array(full, copy=True)
+            a.reshape(nz, -1)[:, cols] = part[:, 0, :]
+            out.append(a)
+        return out[0], out[1], out[2], info
     info = {"unstable_before": unstable_fraction(theta), "sweeps": 0,
             "unstable_after": 0.0}
     if info["unstable_before"] == 0:
@@ -222,7 +240,6 @@ def stabilise_frame(theta, u, v, pi, lev):
         raise RuntimeError(f"boundary frame still {info['unstable_after']:.2e} "
                            f"unstable after {info['sweeps']} sweeps")
     return theta, u, v, info
-
 
 def state_to_boundary(u, v, theta, pi=None):
     """Package a model state as boundary-driver input."""
@@ -296,7 +313,7 @@ def _land_mask(terrain):
 
 
 def run_forecast(model, driver, relax, duration, dt=None, output_every=None,
-                 progress=True, deadline_s=None, info=None):
+                 progress=True, deadline_s=None, info=None, snapshot_dtype=None):
     """
     Integrate with boundary relaxation, collecting output states.
 
@@ -357,7 +374,9 @@ def run_forecast(model, driver, relax, duration, dt=None, output_every=None,
 
     for k in range(n_steps):
         model.step(dt)
-        if hasattr(model, "relax_with"):
+        if hasattr(model, "relax_with_driver"):
+            model.relax_with_driver(relax, driver, model.time)
+        elif hasattr(model, "relax_with"):
             model.relax_with(relax, driver.at(model.time))
         else:
             relax.apply(model, driver.at(model.time))
@@ -409,6 +428,11 @@ def run_forecast(model, driver, relax, duration, dt=None, output_every=None,
             next_i += 1
             snap = [to_numpy(a) if torch_run else a.copy()
                     for a in (model.u, model.v, model.theta, model.pi)]
+            if snapshot_dtype is not None:
+                # S5e: kept at the output precision (float32 for the 3 km
+                # run), so the 24 snapshots take half the memory. The file
+                # is the same: _write_forecast casts to this dtype anyway.
+                snap = [np.asarray(a, dtype=snapshot_dtype) for a in snap]
             stamp = target if abs(model.time - target) < 1e-6 * dt else model.time
             snapshots.append((stamp, *snap))
             if getattr(model, "land_surface", None) is not None:
@@ -477,6 +501,13 @@ def main():
                    help="With --core nh: NumPy (the reference) or compiled C kernels with "
                         "OpenMP (nh3d_kernels.c, built with gcc at first use; CAM stage S4). "
                         "--threads sets the OpenMP thread count")
+    p.add_argument("--nh-physics", choices=("stage", "step"), default="stage",
+                   help="With --core nh: evaluate the physics in every RK stage (default) or "
+                        "once per step, held over the stages (CAM stage S5)")
+    p.add_argument("--boundary-forecast", default=None,
+                   help="Nest: lateral boundaries from this coarser forecast.npz of the "
+                        "same domain and cycle, interpolated to this grid every hour "
+                        "(nest.py; CAM stage S5). Default: the analysis held fixed")
     p.add_argument("--advection", choices=("centred2", "upwind3"), default="upwind3",
                    help="Horizontal advection: third-order upwind-biased (default since "
                         "2026-10-03; Wicker and Skamarock 2002; P-67 tests AL, AN) or "
@@ -499,9 +530,13 @@ def main():
                    help="Roughness over water, m (default 0.0002 unless --z0 is given)")
     p.add_argument("--no-drag", action="store_true",
                    help="Turn off surface drag (diagnosis only; test AJ)")
-    p.add_argument("--sponge-levels", type=int, default=5,
+    p.add_argument("--sponge-levels", type=int, default=None,
                    help="Levels below the lid in the wind sponge (P-60 test R); "
-                        "the default of 5 is the measured choice")
+                        "default 5 at 20 levels (the measured choice), scaled with "
+                        "--levels to keep the same depth in sigma")
+    p.add_argument("--levels", type=int, default=None,
+                   help="Number of sigma levels (default: the analysis's pressure-level "
+                        "count, 20). CAM stage S5 uses 40")
     p.add_argument("--stochastic", action="store_true",
                    help="Enable SPPT-style tendency perturbations (Buizza et al. 1999)")
     p.add_argument("--seed", type=int, default=None)
@@ -533,6 +568,12 @@ def main():
                    help="Do not convectively adjust the boundary frames "
                         "(the behaviour before P-63; comparison only)")
     p.add_argument("--out", default=None, help="Where to write forecast .npz")
+    p.add_argument("--output-dtype", choices=("auto", "f64", "f32"), default="auto",
+                   help="precision of the written fields (default auto: float32 for grids "
+                        f"above {LARGE_GRID} columns, i.e. the 3 km run; float64 otherwise)")
+    p.add_argument("--output-level", type=int, default=None, choices=range(0, 10),
+                   metavar="0-9", help="zlib level for the output (0 = none); default: "
+                   "np.savez_compressed for float64, level 1 for float32")
     p.add_argument("--deadline-min", type=float, default=None,
                    help="Stop integrating after this many minutes of wall "
                         "clock and write the hours reached (cycle budget)")
@@ -562,7 +603,7 @@ def main():
     print(config.describe())
     print(resources.describe(RESOURCE_PLAN))
     print(f"  driving frames : {len(files)} from {run_dir} ({source})")
-    if len(files) == 1:
+    if len(files) == 1 and not args.boundary_forecast:
         print("  boundaries     : held at the initial state for the whole run "
               "(nothing observed later may enter)")
     print()
@@ -572,7 +613,14 @@ def main():
     # pressure levels -- not because they must match, but because a different
     # count would silently change the vertical resolution of every result
     # measured so far.
-    lev = SigmaLevels(config.N_LEVELS)
+    nlev = config.N_LEVELS if args.levels is None else int(args.levels)
+    if nlev < 4:
+        raise SystemExit(f"--levels {nlev}: need at least 4")
+    lev = SigmaLevels(nlev)
+    if args.sponge_levels is None:
+        # Same depth in sigma as the measured 5 of 20: the top quarter of the
+        # half levels, which with the 1.4 stretch is sigma < 0.14 either way.
+        args.sponge_levels = max(1, int(round(5 * nlev / 20)))
 
     fields0, meta0 = load_state(files[0])
     grid = build_grid(fields0, levels)
@@ -615,6 +663,32 @@ def main():
                 frame_frac = max(frame_frac, cinfo["unstable_before"])
         times.append(i * 3600.0)
         states.append(state_to_boundary(u, v, th, pi_b))
+    if args.boundary_forecast:
+        # NESTED RUN (CAM stage S5): the edges follow a coarser forecast of the
+        # same cycle, hour by hour, instead of the analysis held fixed. Hour 0
+        # is this run's own initial state; later hours come from nest.py.
+        import nest
+        nf = nest.frames_from_forecast(args.boundary_forecast, terrain, lev.sigma, args.hours)
+        times, states = times[:1], states[:1]
+        # Only the relaxation zone (plus one cell) ever reads a frame.
+        zone = Relaxation3D(grid, width=args.relax_width, alpha_max=args.relax_alpha).alpha2d > 0
+        zone_d = zone.copy()
+        zone_d[1:] |= zone[:-1]; zone_d[:-1] |= zone[1:]; zone_d[:, 1:] |= zone[:, :-1]; zone_d[:, :-1] |= zone[:, 1:]
+        for t, u, v, th, pi_b in nf:
+            if t <= 0.0:
+                continue
+            if not args.raw_boundaries:
+                th, u, v, cinfo = stabilise_frame(th, u, v, pi_b, lev, columns=zone_d)
+                if cinfo["unstable_before"] > 0:
+                    n_unstable_frames += 1
+                    frame_sweeps = max(frame_sweeps, cinfo["sweeps"])
+                    frame_frac = max(frame_frac, cinfo["unstable_before"])
+            times.append(t)
+            states.append(state_to_boundary(u, v, th, pi_b))
+        print(f"  nested in      : {args.boundary_forecast} ({len(nf)} hourly frames)")
+        if times[-1] < args.hours * 3600.0 - 1e-6:
+            print(f"  NOTE: the coarse forecast ends at {times[-1] / 3600:.2f} h; the edges are "
+                  f"held at its last frame after that")
     driver = BoundaryDriver(times, states)
     print(f"  boundaries     : {driver}")
     if args.raw_boundaries:
@@ -724,10 +798,13 @@ def main():
             print("  NOTE: --core nh runs on NumPy; --backend torch ignored")
             args.backend = "numpy"
         hydro = model
-        model = NHModel(hydro, backend=args.nh_backend, threads=args.threads)
+        model = NHModel(hydro, backend=args.nh_backend, threads=args.threads,
+                        physics_every=args.nh_physics)
         model.set_state(u0, v0, th0, pi0)
         if args.nh_backend == "c":
             print(f"  NH kernels     : compiled C (nh3d_kernels.c), {model.core.threads} OpenMP threads")
+        if args.nh_physics == "step":
+            print("  NH physics     : once per step, held over the RK stages")
         print(f"  core           : non-hydrostatic (nh3d.py, ns {model.core.ns}, dt <= {model.dt_max:g} s; "
               f"edge relaxation rescaled to the hydrostatic step {model.relax_dt_ref:.1f} s)")
 
@@ -811,11 +888,13 @@ def main():
     if args.dt_factor != 1.0:
         dt_run = args.dt_factor * model.max_dt()
         print(f"  timestep used  : {dt_run:.1f} s (x{args.dt_factor:g})\n")
+    out_dtype = _output_mode(args, np.shape(to_numpy(model.pi)))[0]
     snaps = run_forecast(model, driver, relax, args.hours * 3600, dt=dt_run,
                          output_every=args.output_every * 3600,
                          deadline_s=(None if args.deadline_min is None
                                      else 60.0 * args.deadline_min),
-                         info=info)
+                         info=info,
+                         snapshot_dtype=(None if out_dtype == np.float64 else out_dtype))
     if not snaps:
         print(f"\nNo forecast hour completed ({info.get('stopped')}); "
               f"nothing written.")
@@ -823,16 +902,53 @@ def main():
     return _write_forecast(args, run_dir, snaps, info, lev, terrain, meta0, source)
 
 
+# OUTPUT SIZE (CAM stage S5e). At 3 km x 40 levels a 24 h run is 3.4 GB of
+# float64 fields; np.savez_compressed (zlib level 6, one core) took ~7 min of
+# the 90 min cycle in test S5c2. For grids above LARGE_GRID columns, "auto"
+# writes float32 (theta to ~2e-5 K, pi to ~0.01 Pa: far below what ASOS
+# verification resolves) with zlib level 1. Smaller grids (the 12 km run)
+# keep float64 and np.savez_compressed, unchanged.
+LARGE_GRID = 100_000
+
+
+def _output_mode(args, shape):
+    """(dtype, zlib level or None for np.savez_compressed) for the output."""
+    want = getattr(args, "output_dtype", "auto") or "auto"
+    large = int(np.prod(shape[-2:])) > LARGE_GRID
+    if want == "auto":
+        want = "f32" if large else "f64"
+    level = getattr(args, "output_level", None)
+    if level is None and want == "f32":
+        level = 1
+    return (np.float32 if want == "f32" else np.float64), level
+
+
+def _savez_level(path, level, **arrays):
+    """np.savez with a chosen zlib level (0 = stored, no compression)."""
+    import zipfile
+    comp = zipfile.ZIP_STORED if level == 0 else zipfile.ZIP_DEFLATED
+    kw = {} if level == 0 else {"compresslevel": int(level)}
+    with zipfile.ZipFile(path, "w", compression=comp, allowZip64=True, **kw) as zf:
+        for name, a in arrays.items():
+            with zf.open(name + ".npy", "w", force_zip64=True) as f:
+                np.lib.format.write_array(f, np.asanyarray(a), allow_pickle=True)
+
+
 def _write_forecast(args, run_dir, snaps, info, lev, terrain, meta0, source):
     """Write the snapshots in the format verify.py and make_maps.py read."""
     out = Path(args.out or (run_dir / "forecast.npz"))
-    np.savez_compressed(
+    dtype, level = _output_mode(args, np.shape(snaps[0][1]))
+    t_w = time.time()
+    save = np.savez_compressed if level is None else \
+        (lambda path, **kw: _savez_level(path, level, **kw))
+    save(
         out,
         times_s=np.array([s[0] for s in snaps]),
-        u=np.stack([s[1] for s in snaps]),
-        v=np.stack([s[2] for s in snaps]),
-        theta=np.stack([s[3] for s in snaps]),
-        pi=np.stack([s[4] for s in snaps]),
+        u=np.stack([s[1] for s in snaps]).astype(dtype, copy=False),
+        v=np.stack([s[2] for s in snaps]).astype(dtype, copy=False),
+        theta=np.stack([s[3] for s in snaps]).astype(dtype, copy=False),
+        pi=np.stack([s[4] for s in snaps]).astype(dtype, copy=False),
+        output_dtype=np.array(np.dtype(dtype).name),
         sigma=lev.sigma,
         p_top=lev.p_top,
         terrain=terrain,
@@ -846,6 +962,9 @@ def _write_forecast(args, run_dir, snaps, info, lev, terrain, meta0, source):
     )
     print(f"\nWrote {len(snaps)} snapshots -> {out}  ({info.get('stopped')}, "
           f"{info.get('wall_s', float('nan'))/60:.1f} min)")
+    print(f"  output         : {np.dtype(dtype).name}, "
+          f"{'zlib 6 (savez_compressed)' if level is None else f'zlib {level}'}, "
+          f"{out.stat().st_size / 1e6:.0f} MB in {time.time() - t_w:.0f} s")
     print("Next: verify once the forecast window has closed "
           "(src/verify_pending.py).")
     stopped = info.get("stopped", "")

@@ -397,7 +397,12 @@ class NH3D:
             extra = self.extra_tendency(mu, U, V, W, Th, phi)
             for i, key in enumerate(("mu", "U", "V", "W", "Th", "phi")):
                 if key in extra:
-                    F[i] = F[i] + extra[key]
+                    e = extra[key]
+                    if isinstance(e, np.ndarray) and e.shape == F[i].shape and e.flags.c_contiguous \
+                            and e.dtype == F[i].dtype:
+                        ck.add_into(F[i], e, F[i])          # in place, threaded (S5d)
+                    else:
+                        F[i] = F[i] + e
         return F
 
     def _cref(self):
@@ -486,7 +491,16 @@ class NHModel:
     """
 
     def __init__(self, hydro, theta_ref=None, ns=6, dt_max=60.0, div_damp=0.1,
-                 backend="numpy", threads=0):
+                 backend="numpy", threads=0, physics_every="stage"):
+        # PHYSICS ONCE PER STEP (CAM stage S5). "stage" evaluates drag, mixing,
+        # sponge and w damping in every RK stage (3 per step), as S2 did.
+        # "step" evaluates them once from the state at the start of the step
+        # and holds the tendencies over the three stages, as WRF does. With the
+        # dynamics in C the NumPy physics is most of the remaining cost.
+        if physics_every not in ("stage", "step"):
+            raise ValueError(f"physics_every must be 'stage' or 'step', not {physics_every!r}")
+        self.physics_every = physics_every
+        self.physics_calls = 0
         self.h = hydro
         self.grid, self.lev = hydro.grid, hydro.lev
         self.core = NH3D(hydro.grid, hydro.lev, terrain=hydro.terrain, theta_ref=theta_ref,
@@ -582,6 +596,10 @@ class NHModel:
 
     # --- physics as tendencies ----------------------------------------------
     def _physics(self, mu, U, V, W, Th, phi):
+        self.physics_calls += 1
+        c, hy = self.core, self.h
+        if c._ck is not None and getattr(hy, "theta_surface", None) is None:
+            return self._physics_c(mu, U, V, W, Th, phi)
         from surface import surface_drag
         from turbulence import vertical_mixing
         c, hy = self.core, self.h
@@ -604,24 +622,137 @@ class NHModel:
             FV -= sp * (V - mu_v[None] * self._v_ref)
         return {"U": FU, "V": FV, "Th": FT, "W": -self._wdamp * W}
 
+    def _physics_c(self, mu, U, V, W, Th, phi):
+        """_physics with drag and mixing in C (phys_col; same arithmetic, neutral
+        drag only -- with a surface temperature the NumPy path is used). The
+        sponge and the w damping act only on the levels where they are non-zero.
+        CAM stage S5d."""
+        from sigma import RD as RD_, G0, P0 as P0_, KAPPA as KAPPA_
+        c, hy, ck = self.core, self.h, self.core._ck
+        C = np.ascontiguousarray
+        mu, U, V, Th = C(mu), C(U), C(V), C(Th)
+        if not hasattr(self, "_z0map"):
+            self._z0map = C(np.broadcast_to(np.asarray(hy.z0, dtype=float), mu.shape), dtype=float)
+            self._sig = C(self.lev.sigma, dtype=float)
+            self._sigh = C(self.lev.sigma_half, dtype=float)
+        FU, FV, FT = np.empty_like(U), np.empty_like(V), np.empty_like(Th)
+        ck.phys_col(c._idx, self.lev.p_top, P0_, KAPPA_, RD_, G0, hy.ri_crit, hy.k_max,
+                    hy.mixing_length, hy.drag, hy.mixing, self._sig, self._sigh, self._z0map,
+                    mu, U, V, Th, FU, FV, FT)
+        FW = np.zeros_like(W)
+        sp = np.asarray(hy._sponge, dtype=float)
+        ks = int(np.count_nonzero(sp.reshape(-1)))       # sponge levels sit at the top
+        if ks and np.count_nonzero(sp.reshape(-1)[:ks]) != ks:
+            ks = sp.shape[0]                              # not top-contiguous: all levels
+        if self._u_ref is not None and hy.sponge_levels > 0 and ks:
+            mu_u, mu_v = c.h_to_u(mu), c.h_to_v(mu)
+            FU[:ks] -= sp[:ks] * (U[:ks] - mu_u[None] * self._u_ref[:ks])
+            FV[:ks] -= sp[:ks] * (V[:ks] - mu_v[None] * self._v_ref[:ks])
+        kw = int(np.count_nonzero(self._wdamp.reshape(-1)))
+        if kw and np.count_nonzero(self._wdamp.reshape(-1)[:kw]) != kw:
+            kw = self._wdamp.shape[0]
+        if kw:
+            FW[:kw] = -self._wdamp[:kw] * W[:kw]
+        return {"U": FU, "V": FV, "Th": FT, "W": FW}
+
+    def relax_with_driver(self, relax, driver, t):
+        """relax_with(relax, driver.at(t)), computed in the relaxation zone only.
+
+        With the C kernels the driving state is interpolated in time inside
+        the kernel, at the zone columns only; otherwise this is relax_with.
+        CAM stage S5d: at 3 km the full-domain relaxation and interpolation
+        took 0.6 s of a 3.7 s step, for a zone that is 14 % of the grid.
+        """
+        c = self.core
+        if c._ck is None:
+            return self.relax_with(relax, driver.at(t))
+        A, B, wa, wb = driver.bracket(t)
+        if not all(k in A for k in ("u", "v", "theta", "pi")):
+            return self.relax_with(relax, driver.at(t))
+        C = np.ascontiguousarray
+        a2 = np.asarray(relax.alpha2d, dtype=float)
+        if self.relax_dt_ref and self._last_dt:
+            a2 = 1.0 - (1.0 - a2) ** (self._last_dt / self.relax_dt_ref)
+        a2 = C(a2)
+        if not hasattr(self, "_zone_cols"):
+            z = np.asarray(relax.alpha2d) > 0
+            zd = z.copy()                      # dilate by one cell (U, V neighbours of mu)
+            zd[1:] |= z[:-1]; zd[:-1] |= z[1:]; zd[:, 1:] |= z[:, :-1]; zd[:, :-1] |= z[:, 1:]
+            self._zone_cols = np.ascontiguousarray(np.flatnonzero(zd), dtype=np.int32)
+            self._terrain_c = C(np.asarray(self.h.terrain, dtype=float))
+            self._frame_c = {}
+        def cc(state, key):
+            k = (id(state), key)
+            arr = self._frame_c.get(k)
+            if arr is None:
+                arr = self._frame_c[k] = C(np.asarray(state[key], dtype=float))
+                if len(self._frame_c) > 16:     # keep the two current frames' arrays
+                    for old in list(self._frame_c)[:-8]:
+                        self._frame_c.pop(old, None)
+            return arr
+        ck = c._ck
+        mu_old = C(c.mu)
+        mu_new = mu_old.copy()
+        ck.relax_mu(self._zone_cols, a2, mu_old, wa, wb, cc(A, "pi"), cc(B, "pi"), mu_new)
+        c.U, c.V, c.Th, c.W, c.phi = (C(x) for x in (c.U, c.V, c.Th, c.W, c.phi))
+        ck.relax_col(self._zone_cols, c._idx, c.p_top, P0, KAPPA, RD, G, c._cref()["sf"],
+                     c._cref()["ds"], self._terrain_c, a2, mu_old, mu_new, wa, wb,
+                     cc(A, "u"), cc(B, "u"), cc(A, "v"), cc(B, "v"), cc(A, "theta"), cc(B, "theta"),
+                     c.U, c.V, c.Th, c.W, c.phi)
+        c.mu = mu_new
+
     def step(self, dt):
-        self.core.step(dt)
+        c = self.core
+        if self.physics_every == "step":
+            held = self._physics(c.mu, c.U, c.V, c.W, c.Th, c.phi)
+            c.extra_tendency = lambda *state: held
+            try:
+                c.step(dt)
+            finally:
+                c.extra_tendency = self._physics
+        else:
+            c.step(dt)
         self._last_dt = float(dt)
         hy = self.h
         if hy.convection:
-            from convection import dry_convective_adjustment_pav
-            th, u, v, info = dry_convective_adjustment_pav(self.theta, self.u, self.v, self.core.mu,
-                                                           self.lev, mix_momentum=hy.conv_mix_momentum)
             c = self.core
-            c.Th = th * c.mu[None]
-            c.U = u * c.h_to_u(c.mu)[None]
-            c.V = v * c.h_to_v(c.mu)[None]
+            if c._ck is not None:
+                # CAM stage S5e: the same PAV adjustment in one compiled pass,
+                # in place, with the same theta/u/v round trip as below.
+                if not hasattr(self, "_dsig_c"):
+                    self._dsig_c = np.ascontiguousarray(self.lev.dsigma, dtype=float)
+                c._ck.pav_col(c._xm1, c._ym1, 1e-10, hy.conv_mix_momentum, self._dsig_c,
+                              c.mu, c.U, c.V, c.Th)
+            else:
+                from convection import dry_convective_adjustment_pav
+                th, u, v, info = dry_convective_adjustment_pav(self.theta, self.u, self.v, c.mu,
+                                                               self.lev, mix_momentum=hy.conv_mix_momentum)
+                c.Th = th * c.mu[None]
+                c.U = u * c.h_to_u(c.mu)[None]
+                c.V = v * c.h_to_v(c.mu)[None]
         self.time += dt
         self.step_count += 1
 
+    C_SOUND = 350.0        # m/s, an upper bound for the horizontal sound speed
+    ACOUSTIC_COURANT = 0.5 # per acoustic substep (forward-backward, two dimensions)
+
     def max_dt(self, safety=0.7):
-        umax = float(max(np.abs(self.u).max(), np.abs(self.v).max(), 10.0))
-        return min(self.dt_max, safety * min(self.grid.dx, self.grid.dy) / umax)
+        """Large step: the advective limit, the 60 s cap, and (CAM stage S5)
+        the horizontal acoustic limit of the substeps, ns * 0.5 dx / c_s.
+
+        At 12 km the acoustic limit is 103 s and never binds. At 3 km it is
+        26 s; without it the advective limit allowed ~50 s, i.e. a substep
+        Courant number near 1 for sound.
+        """
+        c = self.core
+        if c._ck is not None:
+            au, av = c._ck.uv_maxabs(c._xm1, c._ym1, c.mu, c.U, c.V)   # S5e, exact
+            umax = float(max(au, av, 10.0))
+        else:
+            umax = float(max(np.abs(self.u).max(), np.abs(self.v).max(), 10.0))
+        d = min(self.grid.dx, self.grid.dy)
+        acoustic = self.core.ns * self.ACOUSTIC_COURANT * d / self.C_SOUND
+        return min(self.dt_max, safety * d / umax, acoustic)
 
     def sigma_dot(self):
         c = self.core

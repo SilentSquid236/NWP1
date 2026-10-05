@@ -125,6 +125,19 @@ class BoundaryDriver:
         a, b = self.states[j - 1], self.states[j]
         return {k: (1.0 - w) * a[k] + w * b[k] for k in a if k in b}
 
+    def bracket(self, t):
+        """(state_a, state_b, w_a, w_b) with at(t) == w_a*a + w_b*b, without
+        building the interpolated arrays (the C relaxation does it in the
+        relaxation zone only; CAM stage S5d)."""
+        if len(self.times) == 1 or t <= self.times[0]:
+            return self.states[0], self.states[0], 1.0, 0.0
+        if t >= self.times[-1]:
+            return self.states[-1], self.states[-1], 1.0, 0.0
+        j = int(np.searchsorted(self.times, t))
+        t0, t1 = self.times[j - 1], self.times[j]
+        w = (t - t0) / (t1 - t0)
+        return self.states[j - 1], self.states[j], 1.0 - w, w
+
     @property
     def span_hours(self):
         return (self.times[-1] - self.times[0]) / 3600.0

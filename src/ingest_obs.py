@@ -98,24 +98,41 @@ def previous_run(cycle):
 
 
 def score_withheld(feats, terrain, obs, domain):
-    """The analysis at the withheld ASOS stations: its only honest score."""
-    Tsfc = build.value_at_height(feats[0].astype(float), feats[4].astype(float),
-                                 terrain + 2.0, "TMP")
-    err = []
+    """The analysis at the withheld ASOS stations: its only honest score.
+
+    Temperature at 2 m (lapse-corrected to the station height), and since
+    2026-10-03 also the 10 m wind components (to compare the 3 km and 12 km
+    analyses; CAM stage S5).
+    """
+    Z = feats[4].astype(float)
+    Tsfc = build.value_at_height(feats[0].astype(float), Z, terrain + 2.0, "TMP")
+    Usfc = build.value_at_height(feats[2].astype(float), Z, terrain + 10.0, "UGRD")
+    Vsfc = build.value_at_height(feats[3].astype(float), Z, terrain + 10.0, "VGRD")
+    err = {"TMP": [], "UGRD": [], "VGRD": []}
     for o in obs:
-        if (o.variable != "TMP" or not build.is_withheld(o.station, o.source)
+        if (o.variable not in err or not build.is_withheld(o.station, o.source)
+                or o.pressure is not None
                 or o.elevation is None or not sources.in_box(o.lat, o.lon, domain)):
             continue
-        tg = float(geo.bilinear(Tsfc, o.lat, o.lon, domain))
-        zg = float(geo.bilinear(terrain, o.lat, o.lon, domain))
-        if np.isfinite(tg):
-            err.append(tg - build.LAPSE * (o.elevation - zg) - o.value)
-    err = np.asarray(err)
-    if err.size == 0:
+        fld = {"TMP": Tsfc, "UGRD": Usfc, "VGRD": Vsfc}[o.variable]
+        g = float(geo.bilinear(fld, o.lat, o.lon, domain))
+        if not np.isfinite(g):
+            continue
+        if o.variable == "TMP":
+            zg = float(geo.bilinear(terrain, o.lat, o.lon, domain))
+            g = g - build.LAPSE * (o.elevation - zg)
+        err[o.variable].append(g - o.value)
+    e = np.asarray(err["TMP"])
+    if e.size == 0:
         return {"n": 0}
-    return {"n": int(err.size), "rmse_K": float(np.sqrt(np.mean(err ** 2))),
-            "bias_K": float(err.mean())}
-
+    out = {"n": int(e.size), "rmse_K": float(np.sqrt(np.mean(e ** 2))), "bias_K": float(e.mean())}
+    for v, key in (("UGRD", "u"), ("VGRD", "v")):
+        ev = np.asarray(err[v])
+        if ev.size:
+            out[f"{key}_n"] = int(ev.size)
+            out[f"{key}_rmse"] = float(np.sqrt(np.mean(ev ** 2)))
+            out[f"{key}_bias"] = float(ev.mean())
+    return out
 
 def main():
     p = argparse.ArgumentParser(description=__doc__,
@@ -127,6 +144,25 @@ def main():
     p.add_argument("--spacing-km", type=float, default=12.0)
     p.add_argument("--no-previous", action="store_true",
                    help="ignore the previous run (cold start)")
+    # CAM stage S5: the 3 km analysis. It is written to its own tree, built
+    # from the observations the 12 km cycle archived, and starts from the
+    # 12 km analysis of the same cycle.
+    p.add_argument("--out-root", default=None,
+                   help="tensor root for this analysis (default config.TENSOR_DIR); "
+                        "the 3 km analyses go to a separate tree")
+    p.add_argument("--raw-from", default=None,
+                   help="with --from-raw: read the archived payloads from this run "
+                        "directory (e.g. the 12 km run of the same cycle)")
+    p.add_argument("--background-analysis", default=None,
+                   help="first guess = this analysis (obs_analysis_f00.npz of the same "
+                        "domain, any grid), regridded to this grid")
+    p.add_argument("--gapfill", action="store_true",
+                   help="terrain- and coast-aware surface analysis with a third, "
+                        "shorter Barnes pass (fills the gaps between stations; S5)")
+    p.add_argument("--gapfill-h", type=float, default=300.0,
+                   help="height scale (m) of the elevation weighting (default 300)")
+    p.add_argument("--gapfill-coast", type=float, default=0.5,
+                   help="weight factor between land and water points (default 0.5)")
     p.add_argument("--max-slope", type=float, default=0.0086,
                    help="smooth terrain to at most this slope (P-56); "
                         "0 disables")
@@ -148,7 +184,7 @@ def main():
         p.error(f"{cycle:%Y-%m-%d %H}Z is in the future")
 
     t0 = time.time()
-    out = run_dir_for(cycle)
+    out = (Path(args.out_root) / f"obs_{cycle:%Y%m%d_%H}") if args.out_root else run_dir_for(cycle)
     out.mkdir(parents=True, exist_ok=True)
     domain = config.DOMAIN
     box = sources.analysis_box(domain)
@@ -158,7 +194,9 @@ def main():
     print(f"  cycle          : {cycle:%Y-%m-%d %H}Z  (observations at or before it only)")
     print(f"  output         : {out}\n")
 
-    raw_dir = out / "observations"
+    raw_dir = (Path(args.raw_from) / "observations") if args.raw_from else out / "observations"
+    if args.raw_from and not args.from_raw:
+        p.error("--raw-from needs --from-raw")
     if args.from_raw:
         raw = load_raw(raw_dir)
         if not raw:
@@ -184,6 +222,7 @@ def main():
 
     ny, nx = geo.grid_shape(domain, args.spacing_km * 1000.0)
     terrain, tsrc = geo.load_terrain(domain, ny, nx, config.DATA_ROOT / "static")
+    land = terrain > 0.0                  # from the unsmoothed ETOPO (P-65)
     raw_max = terrain.max()
     if args.max_slope > 0:
         terrain, n_pass, slope = geo.limit_slope(terrain, domain, args.max_slope)
@@ -194,16 +233,33 @@ def main():
     print(f"  terrain        : {terrain.min():.0f}-{terrain.max():.0f} m on "
           f"{ny}x{nx} ({tsrc}){smooth_msg}")
 
-    prev, prev_rh, prev_an, prev_msg = (None, None, None, "cold start requested") \
-        if args.no_previous else previous_run(cycle)
+    background = None
+    if args.background_analysis:
+        zb = np.load(args.background_analysis, allow_pickle=False)
+        fb = build.regrid_features(zb["features"], domain, ny, nx)
+        background = (build.first_guess_from_analysis(fb),
+                      f"analysis:{args.background_analysis} regridded "
+                      f"{zb['features'].shape[-2]}x{zb['features'].shape[-1]} -> {ny}x{nx}")
+        prev, prev_rh, prev_an, prev_msg = None, None, None, "not used (--background-analysis)"
+    else:
+        prev, prev_rh, prev_an, prev_msg = (None, None, None, "cold start requested") \
+            if args.no_previous else previous_run(cycle)
     print(f"  previous run   : {prev_msg}")
+    aware = None
+    if args.gapfill:
+        aware = {"H_m": args.gapfill_h, "coast_factor": args.gapfill_coast, "passes": 3,
+                 "land": land}
+        print(f"  surface        : gap-filling Barnes (3 passes, H {args.gapfill_h:g} m, "
+              f"coast factor {args.gapfill_coast:g})")
 
     try:
         feats, meta = build.build_analysis(cycle, kept, terrain, domain,
                                            config.PRESSURE_LEVELS,
                                            previous_forecast=prev,
                                            previous_rh=prev_rh,
-                                           previous_analysis=prev_an)
+                                           previous_analysis=prev_an,
+                                           background=background,
+                                           surface_aware=aware)
     except ValueError as e:
         print(f"\n  ANALYSIS FAILED: {e}")
         json.dump({"cycle": cycle.isoformat(), "sources": table, "qc": qc,
