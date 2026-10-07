@@ -74,8 +74,15 @@ import fetchers
 
 # Networks covering the Northeast domain. ASOS only: automated, hourly,
 # quality-controlled at source, and dense enough to score a 12 km grid.
+#
+# Widened 2026-09-22 to every state and province the domain touches: the old
+# list stopped at Pennsylvania, so the southern and western thirds of the
+# domain (DE, MD, VA, WV, OH) and all of Canada were never scored. Stations
+# outside the domain are dropped by the operator, not by this list.
 NORTHEAST_NETWORKS = ["ME_ASOS", "NH_ASOS", "VT_ASOS", "MA_ASOS", "RI_ASOS",
-                      "CT_ASOS", "NY_ASOS", "NJ_ASOS", "PA_ASOS"]
+                      "CT_ASOS", "NY_ASOS", "NJ_ASOS", "PA_ASOS", "DE_ASOS",
+                      "MD_ASOS", "VA_ASOS", "WV_ASOS", "OH_ASOS",
+                      "CA_ON_ASOS", "CA_QC_ASOS", "CA_NB_ASOS", "CA_NS_ASOS"]
 
 # What we verify, and against which model field.
 #
@@ -166,7 +173,7 @@ def build_interpolator(fc, snapshot):
 # ---------------------------------------------------------------------------
 
 def match_snapshot(fc, snapshot, obs, valid_time, lead_hours,
-                   window_min=30):
+                   window_min=30, wind_operator="log10m", surface_operator="standard"):
     """
     Pair one forecast snapshot with the observations valid near it.
 
@@ -178,6 +185,12 @@ def match_snapshot(fc, snapshot, obs, valid_time, lead_hours,
     theta = fc["theta"][snapshot]
     u = fc["u"][snapshot]
     v = fc["v"][snapshot]
+    tg = None
+    if surface_operator == "similarity":
+        if "tg" not in fc:
+            raise ValueError("--surface-operator similarity needs a forecast run with "
+                             "--land-surface (no ground temperature 'tg' in the file)")
+        tg = fc["tg"][snapshot]
 
     matches = []
     skipped = {}
@@ -199,15 +212,36 @@ def match_snapshot(fc, snapshot, obs, valid_time, lead_hours,
             # Surface temperature goes through the elevation correction; an
             # upper-air sounding does not, because it already carries its own
             # pressure.
-            if o.pressure is None:
+            if o.pressure is None and tg is not None:
+                value, info = op.station_temperature_similarity(
+                    theta, u, v, tg, o.lat, o.lon, getattr(o, "elevation", None))
+            elif o.pressure is None:
                 value, info = op.station_temperature(
                     theta, o.lat, o.lon, getattr(o, "elevation", None))
             else:
                 value = op.temperature(theta, o.lat, o.lon, o.pressure)
-        elif o.variable == "UGRD":
-            value = op.at_observation(u, o.lat, o.lon, o.pressure)
-        elif o.variable == "VGRD":
-            value = op.at_observation(v, o.lat, o.lon, o.pressure)
+        elif o.variable in ("UGRD", "VGRD"):
+            value = op.at_observation(u if o.variable == "UGRD" else v,
+                                      o.lat, o.lon, o.pressure)
+            # P-68: a 10 m anemometer against the lowest level (~300 m above
+            # the ground) needs a reduction, or every wind score is mostly
+            # the speed ratio. "lowest" keeps the old operator for comparison.
+            if value is not None and o.pressure is None and tg is not None:
+                d = op.surface_similarity(theta, u, v, tg, o.lat, o.lon)
+                if d is not None:
+                    info = {"wind_operator": "similarity", "wind_factor": d["wind_factor"],
+                            "zeta": d["zeta"], "Ri_bulk": d["Ri_bulk"],
+                            "model_level_agl_m": d["model_level_agl_m"],
+                            "forecast_lowest_level": float(value)}
+                    value = value * d["wind_factor"]
+            elif (value is not None and o.pressure is None
+                    and wind_operator == "log10m"):
+                f, agl = op.wind_10m_factor(theta, o.lat, o.lon)
+                if f is not None:
+                    info = {"wind_operator": "log10m", "wind_factor": f,
+                            "model_level_agl_m": agl,
+                            "forecast_lowest_level": float(value)}
+                    value = value * f
         else:
             skip(f"variable not verified: {o.variable}")
             continue
@@ -242,10 +276,30 @@ def match_snapshot(fc, snapshot, obs, valid_time, lead_hours,
 # Driver
 # ---------------------------------------------------------------------------
 
+def resolve_surface_operator(fc):
+    """
+    The 'auto' surface operator (default since 2026-10-03).
+
+    Similarity needs the model's ground temperature, so a forecast run with the
+    land surface is scored with it. Persistence is NOT, even when it carries a
+    held ground temperature: holding the cycle-time stability all day reduces
+    its daytime wind as if it were still night (the 'psim' reference, test AK),
+    which is not a fair do-nothing forecast. Persistence keeps the standard
+    operator, as in every comparison since test AD.
+    """
+    stopped = str(np.asarray(fc["stopped"]).item()) if "stopped" in fc else ""
+    return "similarity" if ("tg" in fc and stopped != "persistence") else "standard"
+
+
 def verify(forecast_path, archive_root, run_time=None, window_min=30,
-           report_only=False, networks=None, verbose=True):
+           report_only=False, networks=None, verbose=True,
+           wind_operator="log10m", surface_operator="auto"):
     fc = load_forecast(forecast_path)
     times_s = np.asarray(fc["times_s"], dtype=float)
+    if surface_operator == "auto":
+        surface_operator = resolve_surface_operator(fc)
+        if verbose:
+            print(f"  surface op.    : {surface_operator} (auto)")
 
     run_time = run_time or datetime.now(timezone.utc).replace(
         minute=0, second=0, microsecond=0, tzinfo=None)
@@ -304,7 +358,9 @@ def verify(forecast_path, archive_root, run_time=None, window_min=30,
     all_matches, all_skips = [], {}
     for i, vt in enumerate(valid_times):
         lead = float(times_s[i]) / 3600.0
-        m, sk = match_snapshot(fc, i, kept, vt, lead, window_min)
+        m, sk = match_snapshot(fc, i, kept, vt, lead, window_min,
+                               wind_operator=wind_operator,
+                               surface_operator=surface_operator)
         m = [r for r in m
              if (r["valid_time"], r["station"], r["variable"]) not in seen]
         all_matches.extend(m)
@@ -326,6 +382,8 @@ def verify(forecast_path, archive_root, run_time=None, window_min=30,
             "qc": qc_info,
             "n_matches": len(all_matches),
             "skipped": all_skips,
+            "wind_operator": wind_operator,
+            "surface_operator": surface_operator,
             "written": datetime.now(timezone.utc).isoformat(),
         }, f, indent=2)
 
@@ -355,6 +413,20 @@ def main():
                    help="Match observations within this many minutes")
     p.add_argument("--report-only", action="store_true",
                    help="Use cached observations; touch no network.")
+    p.add_argument("--wind-operator", choices=("lowest", "log10m"), default="log10m",
+                   help="Surface wind: reduced to 10 m with the model's "
+                        "neutral log law (the default since 2026-10-02, "
+                        "P-68), or the lowest model level as it is (the "
+                        "old default; scores before 2026-10-02 used it)")
+    p.add_argument("--surface-operator", choices=("auto", "standard", "similarity"),
+                   default="auto",
+                   help="standard: 2 m temperature from the lowest level by a "
+                        "standard lapse rate, wind by --wind-operator. "
+                        "similarity: both from Monin-Obukhov similarity between "
+                        "the model's ground temperature and the lowest level "
+                        "(needs a --land-surface forecast; test AK). auto (default "
+                        "since 2026-10-03): similarity when the forecast carries a "
+                        "ground temperature and is not persistence, else standard")
     p.add_argument("--summary", action="store_true",
                    help="Print scores for the whole archive and exit.")
     args = p.parse_args()
@@ -392,7 +464,9 @@ def main():
     print(config.describe())
     matches, paths = verify(args.forecast, root, run_time=run_time,
                             window_min=args.window_min,
-                            report_only=args.report_only)
+                            report_only=args.report_only,
+                            wind_operator=args.wind_operator,
+                            surface_operator=args.surface_operator)
 
     if matches:
         print()

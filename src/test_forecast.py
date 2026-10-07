@@ -34,7 +34,7 @@ from primitive_sigma import PrimitiveSigma
 from boundaries import BoundaryDriver
 from forecast import (hrrr_channels, hrrr_to_sigma_state, load_terrain,
                       build_grid, Relaxation3D, run_forecast,
-                      state_to_boundary, load_state)
+                      state_to_boundary, load_state, stabilise_frame)
 
 results = []
 
@@ -330,6 +330,176 @@ def test_npz_roundtrip():
                f"surface pressure absent (derived from heights instead)")
 
 
+def test_final_output_time_is_written():
+    """A 24 h run with 15-min output must end with a 24.00 h snapshot.
+
+    Regression for 2026-09-26: model.time is a sum of 5040 float steps and ends
+    a few ns short of 24 h, so the last target was never reached and every run
+    lost its final snapshot (95 of 96, ending at 23.75 h).
+    """
+    class Stub:
+        def __init__(self):
+            self.u = np.zeros((2, 4, 4)); self.v = self.u.copy()
+            self.theta = self.u + 300.0; self.pi = np.full((4, 4), 8e4)
+            self.time = 0.0
+        def max_dt(self): return 17.1
+        def step(self, dt): self.time += dt
+        def sigma_dot(self): return np.zeros((3, 4, 4))
+
+    class NoRelax:
+        def apply(self, model, ext): pass
+
+    class NoDriver:
+        def at(self, t): return {}
+
+    snaps = run_forecast(Stub(), NoDriver(), NoRelax(), 24 * 3600.0,
+                         output_every=900.0, progress=False)
+    last = snaps[-1][0] / 3600.0
+    ok = len(snaps) == 96 and abs(last - 24.0) < 1e-6
+    report("the final output time is written", ok,
+           f"{len(snaps)} snapshots, last at {last:.6f} h")
+
+
+def test_output_times_are_on_the_hour():
+    """
+    P-64. With a stable step of 17.13 s, hourly snapshots used to land one
+    step past the hour (6 h + 7.8 s), and the next cycle's ingest, which asks
+    for 6 h to within 3.6 s, never found its first guess. Every snapshot must
+    now be stamped exactly on its target, with the step no longer than the
+    stable one.
+    """
+    class Stub:
+        def __init__(self):
+            self.u = np.zeros((2, 4, 4)); self.v = self.u.copy()
+            self.theta = self.u + 300.0; self.pi = np.full((4, 4), 8e4)
+            self.time = 0.0; self.dts = []
+        def max_dt(self): return 17.13
+        def step(self, dt): self.time += dt; self.dts.append(dt)
+        def sigma_dot(self): return np.zeros((3, 4, 4))
+
+    class NoRelax:
+        def apply(self, model, ext): pass
+
+    class NoDriver:
+        def at(self, t): return {}
+
+    m = Stub()
+    snaps = run_forecast(m, NoDriver(), NoRelax(), 24 * 3600.0,
+                         output_every=3600.0, progress=False)
+    times = np.array([s[0] for s in snaps])
+    err = float(np.abs(times - 3600.0 * np.arange(1, 25)).max())
+    ok = len(snaps) == 24 and err == 0.0 and max(m.dts) <= 17.13
+    report("hourly snapshots are stamped exactly on the hour", ok,
+           f"{len(snaps)} snapshots, max offset {err:.1e} s, step {max(m.dts):.4f} s "
+           f"(stable limit 17.13 s), 6 h snapshot at {times[5]:.3f} s")
+
+# ---------------------------------------------------------------------------
+def _superadiabatic_edge_frame():
+    """A stable synthetic state, plus one with a heated surface layer at the edges."""
+    terrain = synthetic_terrain()
+    pi, u, v, th = hrrr_to_sigma_state(synthetic_hrrr(), LEV, terrain)
+    hot = th.copy()
+    edge = np.zeros((NY, NX), bool)
+    edge[:6, :] = edge[-6:, :] = True
+    edge[:, :6] = edge[:, -6:] = True
+    hot[-1][edge] += 4.0          # index -1 is the lowest level
+    hot[-2][edge] += 2.0
+    return pi, u, v, th, hot
+
+
+def test_stable_frame_is_unchanged():
+    """A frame with no instability must come back bit-identical (the jet case)."""
+    pi, u, v, th = hrrr_to_sigma_state(synthetic_hrrr(), LEV, synthetic_terrain())
+    th2, u2, v2, info = stabilise_frame(th, u, v, pi, LEV)
+    ok = (info["unstable_before"] == 0 and info["sweeps"] == 0
+          and np.array_equal(th2, th) and np.array_equal(u2, u)
+          and np.array_equal(v2, v))
+    report("a stable boundary frame is left bit-identical", ok,
+           f"unstable before {info['unstable_before']:.1e}, sweeps {info['sweeps']}")
+
+
+def test_relaxation_toward_stabilised_frame_stays_stable():
+    """
+    P-63. Relaxing a stable model state toward an UNSTABLE frame re-creates
+    instability at the edges on every step; toward the stabilised frame it
+    cannot, because a weighted mean of two stable columns is stable. The
+    frame adjustment must also conserve each column's mass-weighted theta.
+    """
+    from convection import unstable_fraction
+    gr = build_grid(synthetic_hrrr(), LEVELS)
+    pi, u, v, th, hot = _superadiabatic_edge_frame()
+    fixed, fu, fv, info = stabilise_frame(hot, u, v, pi, LEV)
+
+    dm = np.asarray(LEV.dsigma).reshape(-1, 1, 1) * pi[None]
+    drift = np.abs((dm * fixed).sum(0) - (dm * hot).sum(0)).max() / (dm * hot).sum(0).max()
+
+    # The P-63 cycle: the model's own adjustment has just mixed the edge
+    # columns to neutral (`fixed`), then one relaxation step pulls them
+    # toward the frame. Also start from the plain stable state (`th`): a
+    # weighted mean of two stable columns must stay stable.
+    relax = Relaxation3D(gr, width=8, alpha_max=0.1)
+    out = {}
+    for name, start, frame in (("raw", fixed, hot), ("stabilised", fixed, fixed),
+                               ("stabilised from stable", th, fixed)):
+        m = PrimitiveSigma(gr, LEV, terrain=synthetic_terrain())
+        m.pi, m.u, m.v, m.theta = pi.copy(), u.copy(), v.copy(), start.copy()
+        relax.apply(m, state_to_boundary(u, v, frame, pi))
+        out[name] = unstable_fraction(m.theta)
+    ok = (info["unstable_before"] > 0 and info["unstable_after"] == 0
+          and out["raw"] > 0 and out["stabilised"] == 0
+          and out["stabilised from stable"] == 0 and drift < 1e-12)
+    report("relaxing toward the stabilised frame leaves the edges stable", ok,
+           f"frame unstable {info['unstable_before']:.2e} -> 0 in "
+           f"{info['sweeps']} sweeps; after one relaxation of the adjusted "
+           f"edge: raw frame {out['raw']:.2e}, stabilised {out['stabilised']:.1e} "
+           f"(from the stable state {out['stabilised from stable']:.1e}); "
+           f"column drift {drift:.1e}")
+
+
+def test_zone_only_frame_adjustment():
+    """
+    CAM stage S5d. stabilise_frame(columns=mask) adjusts exactly the masked
+    columns as the whole-frame adjustment would, and leaves the rest as given.
+    """
+    from sigma import SigmaLevels
+    lev = SigmaLevels(20)
+    rng = np.random.default_rng(0)
+    th = 290 + 40 * (1 - lev.sigma)[:, None, None] + rng.normal(0, 2, (20, 12, 14))
+    u = rng.normal(0, 5, th.shape); v = rng.normal(0, 5, th.shape)
+    pi = np.full((12, 14), 8e4)
+    a = stabilise_frame(th, u, v, pi, lev)
+    m = np.zeros((12, 14), bool); m[:3] = True; m[:, -2:] = True
+    b = stabilise_frame(th, u, v, pi, lev, columns=m)
+    d_in = max(float(np.abs(x[:, m] - y[:, m]).max()) for x, y in zip(a[:3], b[:3]))
+    d_out = max(float(np.abs(x[:, ~m] - y[:, ~m]).max()) for x, y in zip((th, u, v), b[:3]))
+    report("zone-only frame adjustment equals the full one in the zone, untouched outside",
+           d_in == 0.0 and d_out == 0.0 and a[3]["unstable_before"] > 0,
+           f"zone difference {d_in:.1e}, outside change {d_out:.1e}")
+
+
+def test_large_grid_output_is_float32_and_readable():
+    """S5e: grids above forecast.LARGE_GRID columns write float32 at zlib 1;
+    small grids keep float64 and np.savez_compressed; the file loads as before."""
+    import forecast as F
+    from types import SimpleNamespace as NS
+    small = F._output_mode(NS(output_dtype="auto", output_level=None), (40, 97, 110))
+    large = F._output_mode(NS(output_dtype="auto", output_level=None), (40, 389, 439))
+    forced = F._output_mode(NS(output_dtype="f64", output_level=0), (40, 389, 439))
+    rng = np.random.default_rng(1)
+    th = 300 + rng.normal(0, 5, (3, 4, 5, 6))
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "f.npz"
+        F._savez_level(path, 1, theta=th.astype(np.float32), lat=None, source=np.array("x"))
+        with np.load(path, allow_pickle=True) as z:
+            back, src = z["theta"], str(z["source"])
+        ok_read = back.dtype == np.float32 and float(np.abs(back - th).max()) < 1e-4 \
+            and src == "x"
+    ok = (small == (np.float64, None) and large == (np.float32, 1)
+          and forced == (np.float64, 0) and ok_read)
+    report("3 km output: float32 + zlib 1 above LARGE_GRID; 12 km unchanged; file reads back",
+           ok, f"small {small}, large {large}, forced {forced}, read ok {ok_read}")
+
+
 if __name__ == "__main__":
     print("\nForecast driver integration\n" + "=" * 62)
     for fn in (test_channels_require_height,
@@ -342,7 +512,13 @@ if __name__ == "__main__":
                test_relaxation_drives_surface_pressure,
                test_forecast_runs_and_stays_finite,
                test_boundaries_hold_edges_to_driver,
-               test_npz_roundtrip):
+               test_npz_roundtrip,
+               test_final_output_time_is_written,
+               test_output_times_are_on_the_hour,
+               test_stable_frame_is_unchanged,
+               test_relaxation_toward_stabilised_frame_stays_stable,
+               test_zone_only_frame_adjustment,
+               test_large_grid_output_is_float32_and_readable):
         try:
             fn()
         except Exception as e:

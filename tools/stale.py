@@ -44,8 +44,10 @@ HOW THE DATE OF A FILE IS DECIDED
 git, when it is available: the commit date of the last commit that touched the
 file. That is the honest answer and it is what to use.
 
-Otherwise the filesystem mtime, which is all the server has -- git is not
-installed there and cannot be. MTIMES ARE MUCH WEAKER, and the weakness runs
+Otherwise the filesystem mtime, which is all a copy made by tools/pull.sh
+has (it carries no .git). git reached the server on 2026-09-22; once the
+server copy is a git checkout (skills/nwp-sync) this fallback is no longer
+needed there. MTIMES ARE MUCH WEAKER, and the weakness runs
 one way: a fresh copy stamps every file at once, so everything looks as if it
 changed today and every measurement older than the grace period is reported.
 Measured on this repository 2026-09-10, immediately after a clone: 0 hits from

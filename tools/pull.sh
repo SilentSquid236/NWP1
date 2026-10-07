@@ -8,9 +8,12 @@
 #
 # WHY CURL AND NOT GIT
 #
-# git is not installed on the server and cannot be (no sudo, and the admin
-# policy forbids installs). GitHub serves any branch as a tarball over plain
-# HTTPS, which needs nothing but curl and tar.
+# git was not on the server when this was written, and could not be
+# installed (no sudo, and the admin policy forbids installs). It has been
+# there since 2026-09-22, so `git pull` is now the normal route
+# (skills/nwp-sync/SKILL.md) and this script is the fallback. GitHub serves
+# any branch as a tarball over plain HTTPS, which needs nothing but curl and
+# tar.
 #
 # WHAT THIS GETS RIGHT THAT A BARE curl | tar DOES NOT
 #

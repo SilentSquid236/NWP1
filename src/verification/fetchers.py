@@ -168,8 +168,13 @@ def asos_url(networks, start, end, stations=None):
     """
     params = [("data", "tmpf"), ("data", "dwpf"), ("data", "relh"),
               ("data", "drct"), ("data", "sknt"),
-              ("year1", start.year), ("month1", start.month), ("day1", start.day),
-              ("year2", end.year), ("month2", end.month), ("day2", end.day),
+              # Exact timestamps, as src/analysis/sources.py sends them. Until
+              # 2026-09-26 this sent only year/month/day, and every
+              # verification window ended at 00Z of the end DATE: a 24 h
+              # forecast crossing midnight lost every hour after 00Z (test X:
+              # scores stopped at 18Z + 6.25 h).
+              ("sts", start.strftime("%Y-%m-%dT%H:%MZ")),
+              ("ets", end.strftime("%Y-%m-%dT%H:%MZ")),
               ("tz", "UTC"), ("format", "onlycomma"), ("latlon", "yes"),
               ("elev", "yes"), ("missing", "M"), ("trace", "T"),
               ("direct", "no"), ("report_type", "3")]
@@ -292,7 +297,7 @@ def parse_raob_csv(text, station_meta=None, source="raob"):
         add("TMP", c_to_k(tmpc) if tmpc is not None else None)
         add("HGT", _num(row.get("height_m")))
 
-        # RH from temperature and dewpoint (Magnus formula).
+        # RH from temperature and dewpoint (Magnus form; Alduchov and Eskridge 1996).
         dwpc = _num(row.get("dwpc"))
         if tmpc is not None and dwpc is not None:
             add("RH", rh_from_dewpoint(tmpc, dwpc))
@@ -307,7 +312,10 @@ def parse_raob_csv(text, station_meta=None, source="raob"):
 
 
 def rh_from_dewpoint(t_c, td_c):
-    """Relative humidity (%) from temperature and dewpoint in Celsius (Magnus)."""
+    """Relative humidity (%) from temperature and dewpoint in Celsius.
+
+    Magnus form with the constants of Alduchov and Eskridge (1996).
+    """
     a, b = 17.625, 243.04
     num = np.exp(a * td_c / (b + td_c))
     den = np.exp(a * t_c / (b + t_c))

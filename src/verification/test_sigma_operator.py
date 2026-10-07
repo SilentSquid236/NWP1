@@ -191,6 +191,26 @@ def test_correction_size_is_recorded():
            f"{info.get('elev_correction_K',0):+.2f} K")
 
 
+def test_wind_10m_factor_is_the_model_log_law():
+    """
+    P-68. The 10 m reduction is ln(10/z0)/ln(z1/z0) with z1 the lowest level's
+    height above the MODEL ground, so it must not change with terrain height,
+    and it must match the model's own neutral drag profile.
+    """
+    out = []
+    for h in (0.0, 800.0):
+        gr, lev, op, terrain, pi = setup(terrain_height=h)
+        th, T = theta_field(lev, pi)
+        lat, lon = centre()
+        f, agl = op.wind_10m_factor(th, lat, lon)
+        out.append((f, agl, np.log(10.0 / 0.1) / np.log(agl / 0.1)))
+    (f0, a0, e0), (f1, a1, e1) = out
+    ok = (abs(f0 - e0) < 1e-12 and abs(f1 - e1) < 1e-12 and 150 < a0 < 450
+          and 0.5 < f0 < 0.7 and abs(a1 - a0) / a0 < 0.15)
+    report("10 m wind factor is the model's neutral log law above the model ground", ok,
+           f"flat: z1 {a0:.0f} m above ground, factor {f0:.3f}; 800 m terrain: z1 {a1:.0f} m, factor {f1:.3f}")
+
+
 if __name__ == "__main__":
     print("\nSigma observation operator\n" + "=" * 66)
     for fn in (test_surface_observation_uses_the_bottom,
@@ -199,7 +219,8 @@ if __name__ == "__main__":
                test_out_of_range_pressure_returns_none,
                test_outside_domain_returns_none,
                test_elevation_correction_has_the_right_sign,
-               test_correction_size_is_recorded):
+               test_correction_size_is_recorded,
+               test_wind_10m_factor_is_the_model_log_law):
         try:
             fn()
         except Exception as e:

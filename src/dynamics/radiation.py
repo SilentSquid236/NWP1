@@ -31,7 +31,7 @@ the upward-radiating solution satisfies, for each horizontal wavenumber k:
 
     w_hat(k) = (|k| / N) phi_hat'(k)
 
-(Klemp & Durran 1983; Bougeault 1983 for the hydrostatic case.) phi' is the
+(Klemp and Durran 1983; Bougeault 1983 for the hydrostatic case.) phi' is the
 geopotential PERTURBATION -- deviation from the horizontal mean -- so k = 0 is
 excluded automatically and the mean state is untouched. |k| = 0 gives no flux,
 which is correct: a horizontally uniform column has nothing to radiate.

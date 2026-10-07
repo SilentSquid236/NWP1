@@ -28,7 +28,7 @@ advection and Coriolis terms do not cancel exactly.
 The continuity equation is FLUX form in both cases, so mass is conserved to
 machine precision -- it telescopes over the periodic domain.
 
-Time integration is the three-stage Runge-Kutta of Wicker & Skamarock (2002),
+Time integration is the three-stage Runge-Kutta of Wicker and Skamarock (2002),
 the scheme WRF uses. It is stable for the CFL numbers we need and damps the
 computational mode that plagues leapfrog.
 """
@@ -166,7 +166,7 @@ class ShallowWaterModel:
     # --- time stepping -----------------------------------------------------
 
     def step(self, dt):
-        """One RK3 step (Wicker & Skamarock 2002)."""
+        """One RK3 step (Wicker and Skamarock 2002)."""
         u0, v0, h0 = self.u, self.v, self.h
 
         du, dv, dh = self.tendencies(u0, v0, h0)

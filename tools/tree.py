@@ -18,6 +18,8 @@ SKIP_EXT = {".pyc", ".npy", ".npz", ".log"}
 
 NOTES = {
     # --- top level ---------------------------------------------------------
+    "CLAUDE.md": "READ FIRST -- brief for a fresh session: constraints, method, state",
+    "CLAUDE_SCIENCE.md": "how to bring the project into Claude Science",
     "config.py": "domain, channels, pressure levels, env-driven paths",
     "resources.py": "CPU governor: 50% ceiling, adapts to other users' load",
     "netpolicy.py": "token-bucket rate limiter, download cache, polite fetcher",
@@ -48,7 +50,15 @@ NOTES = {
     "src/dynamics/subgrid.py": "hyperdiffusion, SPPT, Helmholtz balancing (7/7)",
     "src/dynamics/turbulence.py": "Richardson-number vertical mixing",
     "src/dynamics/surface.py": "bulk aerodynamic drag, log law, Louis stability",
-    "src/dynamics/convection.py": "dry convective adjustment (post-step, conservative)",
+    "src/dynamics/convection.py": "dry convective adjustment: PAV (default) and the old sweep scheme",
+    "src/dynamics/diurnal.py": "prescribed diurnal surface heat flux from solar elevation (P-59, optional)",
+    "src/dynamics/test_advection.py": "tests: order, extrema and 2-dx damping of the horizontal advection schemes",
+    "src/dynamics/nh2d.py": "2-D compressible non-hydrostatic core (x-z, height coordinate), split-explicit RK3; CAM stage S1a",
+    "src/dynamics/test_nh2d.py": "tests: tridiagonal solve, sound speed, Straka density current at 200 m, acoustic-step independence",
+    "src/dynamics/nh2d_mass.py": "2-D non-hydrostatic core in the Laprise mass coordinate with terrain; CAM stage S1b",
+    "src/dynamics/test_nh2d_mass.py": "tests: rest over a 1000 m bell, linear mountain wave vs analytic, density current, mass conservation",
+    "src/dynamics/land_surface.py": "force-restore ground temperature with a clear-sky surface energy budget; Louis stability (P-59 step 2, --land-surface)",
+    "src/dynamics/test_land_surface.py": "tests: force-restore ground, Louis functions, night/day columns, coupling",
     "src/dynamics/radiation.py": "radiative upper boundary: wave flux through the lid",
     "src/dynamics/radiation_probe.py": "where a reflected wave shows up, rigid vs radiative",
     "src/dynamics/radiation_vs_sponge.py": "development and terrain survival, both boundaries",
@@ -95,12 +105,39 @@ NOTES = {
     "src/dynamics/visualize_instability.py": "cross-sections and growth curves",
     "src/dynamics/instability_cross_section.png": "figure: w and theta' through the mountain",
     "src/dynamics/instability_growth.png": "figure: max|u| against forecast hour",
+    "docs/diurnal_heating_skill.png": "pooled 2 m temperature RMSE and bias: persistence, dry model, dry model + surface heating (tests AD, AH)",
+    "docs/nh2d_density_current.png": "S1a core: the Straka et al. (1993) density current at 900 s on a 100 m grid",
+    "docs/nh2d_mass_mountain_wave.png": "S1b core: linear mountain wave, model against the analytic solution",
+    "src/dynamics/nh3d.py": "3-D non-hydrostatic mass-coordinate core (NH3D) and its forecast adapter (NHModel, --core nh); CAM stage S2",
+    "src/dynamics/test_nh3d.py": "tests: rest over terrain, inertial oscillation, x/y symmetry, relaxation per unit time, 2500 m rest test",
+    "docs/nh3d_terrain_rest.png": "S2 core: isothermal atmosphere at rest over 2500 m, no growth in 24 h",
+    "tools/bench_nh3d.py": "S3a: cost of the NH core on sized grids (seconds per step, ns per cell-step, profile)",
+    "tools/bench_stencil.py": "S3b: one core-like stencil in NumPy, torch and C/OpenMP (gcc + ctypes)",
+    "docs/s3_backend_cost.png": "S3: stencil cost by back end and projected 3 km wall clock",
+    "docs/COMPUTE_LEDGER.md": "machine time used: how it is counted, totals by phase",
+    "docs/COMPUTE_LEDGER.csv": "one row per server job (run hours, threads, core-hours upper bound)",
+    "tools/cam_cycle.sh": "S5: the 12 km cycle, then the 3 km analysis and nested NH forecast, in one budget",
+    "tools/cam_compare.py": "CAM S5g: paired comparison of verification archives by lead, day/night and terrain relief class (CSV + tables)",
+    "tools/plot_cam_skill.py": "CAM S5g: figure of 2 m T, 10 m u and v RMSE by lead for the 3 km and 12 km arms",
+    "tools/plot_cam_land.py": "CAM S6c: figure of 2 m T, 10 m u and v RMSE by lead and day/night 2 m T bias, 3 km with land surface vs 12 km",
+    "docs/cam_land_skill.png": "test S6c: 3 km CAM with the land surface vs 12 km NH and production over 20 cycles (paired matches)",
+    "docs/cam_skill_by_lead.png": "test S5g: 3 km vs 12 km RMSE by lead over 20 cycles (paired matches)",
+    "tools/nest_check.py": "S5: 3 km nested forecast against its interpolated 12 km driver, by edge band",
+    "src/nest.py": "S5: 12 km forecast -> 3 km boundary frames (bilinear by staggering, hydrostatic terrain shift, ln p)",
+    "src/test_nest.py": "tests: regridding exact for linear fields, identity, hydrostatic over a hill",
+    "src/analysis/test_barnes_aware.py": "tests: terrain- and coast-aware Barnes (S5 gap-filling)",
+    "src/dynamics/nh3d_kernels.c": "S4: the NH core's dynamics as C/OpenMP kernels (acoustic substeps, tendencies, set-up), transcribed from nh3d.py",
+    "src/dynamics/cnh.py": "S4: builds nh3d_kernels.c with gcc at first use (cached) and binds it with ctypes",
+    "src/dynamics/test_nh3d_c.py": "tests: C kernels against the NumPy core (tendencies, full steps, both edge modes, threads, dtype guard)",
+    "docs/am_skill_by_lead.png": "pooled RMSE by lead: persistence, dry model, land surface, and the AM candidate (test AM)",
 
     # --- verification / postproc -------------------------------------------
     "src/verification/observations.py": "ASOS / mesonet / raob record types and QC",
     "src/verification/fetchers.py": "IEM and MRMS clients (observations only, never HRRR)",
     "src/verification/obs_operator.py": "model state -> observation space (pressure levels)",
     "src/verification/sigma_operator.py": "observation operator for a sigma forecast",
+    "src/verification/surface_similarity.py": "Monin-Obukhov 10 m wind and 2 m temperature from the ground temperature (--surface-operator similarity)",
+    "src/verification/test_surface_similarity.py": "tests: similarity diagnostics and the operator methods",
     "src/verification/scoring.py": "bias, RMSE, skill scores",
     "src/postproc/bias_correction.py": "Kalman-filter bias correction, MOS (7/7)",
 
@@ -109,10 +146,13 @@ NOTES = {
     "docs/METHODOLOGY.md": "how claims are established in this project",
     "docs/AI_COLLABORATION.md": "defect taxonomy A-F for the AI-to-build study",
     "docs/PROMPT_LOG.md": "every human prompt, classified -- the study's input record",
+    "docs/TOKEN_COST.md": "what the project costs -- billed vs API-equivalent",
     "docs/PROBLEMS.md": "problem register: what is wrong, what fixed it, what ruled it out",
+    "docs/REFERENCES.md": "outside work used, in AMS format, and where each is used",
     "docs/CAPABILITIES.md": "what the model can and cannot do, stated up front",
     "docs/STABILITY.md": "the stability investigation  [conclusion superseded]",
     "docs/DATA_ASSIMILATION.md": "observation ingest and analysis design",
+    "docs/CAM_DESIGN.md": "draft design and staged roadmap toward a convection-allowing model (for review)",
     "docs/POSTPROCESSING.md": "neural post-processing design",
     "docs/STRUCTURE.md": "this file, generated by tools/tree.py",
     "docs/LEARNING_LOG.md": "lessons, and the later moments where each one fired again",
@@ -123,14 +163,66 @@ NOTES = {
     "tools/newlog.py": "append a dated research-log entry from the template",
     "tools/tree.py": "generates docs/STRUCTURE.md",
     "tools/problem.py": "adds to and audits docs/PROBLEMS.md",
-    "tools/daily.sh": "one day of the archive from cron: ingest, forecast, verify",
+    "tools/daily.sh": "one forecast cycle from cron (obs -> analysis -> forecast); `verify` mode scores closed windows",
+    "tools/bench_threads.py": "numpy vs torch thread scaling on model-sized arrays, before any port",
+    "src/ingest_obs.py": "one cycle's initial state from observations at or before the cycle time",
+    "src/make_maps.py": "renders a run's product maps and its HTML viewer (<rundir>/maps/index.html)",
+    "src/maps/__init__.py": "forecast maps package",
+    "src/maps/geography.py": "Lambert conformal projection in NumPy; Natural Earth state/coast lines, fetched once and cached",
+    "src/maps/derive.py": "map diagnostics from the sigma state or the analysis: heights, pressure levels, MSLP, vorticity",
+    "src/maps/render.py": "the product maps (surface, upper air, analysis with reports, forecast-minus-observed)",
+    "src/maps/viewer.py": "self-contained Pivotal-style HTML viewer: hover readout, click-for-sounding (skew-T, hodograph)",
+    "src/maps/test_maps.py": "map tests: projection, clipping, standard-atmosphere diagnostics, rendering, viewer",
+    "tools/fetch_boundaries.py": "fetches the Natural Earth lines ahead of time, or writes the bundled copy",
+    "src/dynamics/backend.py": "array backends for the core: NumPy (default) or PyTorch (multi-threaded CPU, float64)",
+    "src/dynamics/backend_reference.py": "the realistic reference integration used to compare backends",
+    "src/dynamics/test_backend.py": "backend tests: torch reproduces numpy to round-off; no cache leakage",
+    "tools/mode_structure.py": "where the fastest-growing mode lives (difference of two round-off-different runs) and the initial stability there",
+    "tools/mode_budget.py": "which tendency term feeds a growing mode (kinetic-energy budget of the round-off difference)",
+    "tools/check_refs.py": "every author-year citation has an AMS-format entry in docs/REFERENCES.md",
+    "src/dynamics/test_div_damping.py": "divergence damping: rotational flow untouched, 2dx decay rate, torch = numpy, default bit-identical",
+    "tools/score_by_lead.py": "verification RMSE and bias by variable and forecast hour, two archives side by side",
+    "tools/convection_check.py": "where a state is statically unstable and how many adjustment sweeps it needs",
+    "tools/aj_diag.py": "test AJ: model wind against the analysis valid at the same time, by region and level (server paths)",
+    "tools/aj_cmp.py": "test AJ2: lowest-level wind excess over the analysis for forecast variants (server paths)",
+    "tools/locate28.py": "where the 28 Sep divergences start: fastest wind, level and place by hour (P-67; server paths)",
+    "tools/bench_cam.py": "time the core's tendency call on 12 km and 3 km arrays at several thread counts (CAM stage S3 groundwork)",
+    "tools/budget28.py": "P-67 momentum-tendency budget at the 28 Sep hot spot from saved hourly states (server paths)",
+    "tools/lead_scores.py": "pooled per-lead 2 m T and 10 m wind bias/RMSE for several archives to CSV (test AM figure; server paths)",
+    "tools/phase_scores.py": "surface scores split by time of day: 2 m T bias/RMSE, 10 m wind ratio/RMSE (tests AJ, AK)",
+    "tools/ad_aggregate.py": "pool verification archives over cycles: per-lead bias/RMSE, A against B (tests AD, AE20, AH, AI)",
+    "tools/ae_analysis.py": "per-case heating scores: RMSE, bias swing, persistence wins, interior daytime wind (test AE)",
+    "tools/compare_forecasts.py": "hour-by-hour difference between two forecast files (e.g. numpy vs torch)",
+    "tools/check_backend.py": "on a new machine: torch vs numpy speed and agreement at several thread counts",
+    "src/verify_pending.py": "verifies every archived forecast whose window has closed, once",
+    "src/analysis/sources.py": "one adapter per observation source; missing sources skipped and logged",
+    "src/analysis/build.py": "first guess, sounding superobs, Barnes increments, hydrostatic heights",
+    "src/analysis/barnes.py": "successive-correction analysis of increments against a first guess",
+    "src/analysis/geo.py": "the forecast's grid, bilinear sampling, ETOPO terrain via ERDDAP",
+    "src/analysis/probe_obs_blowup.py": "P-56: where the first observation-built forecast dies",
+    "src/analysis/probe_terrain_b.py": "P-56 test B: same observations over HRRR terrain (diagnostic only)",
+    "src/analysis/testdata/asos_2026092112_sample.csv": "live IEM ASOS payload, every 10th row",
+    "src/analysis/testdata/ndbc_41025_5day_sample.txt": "live NDBC 5-day file, head",
+    "src/analysis/testdata/ndbc_active_sample.xml": "live NDBC station list, 25 stations",
+    "src/analysis/testdata/raob_KIAD_2026092112.csv": "live IEM sounding, Sterling VA",
+    "src/analysis/testdata/raob_KOKX_2026092112.csv": "live IEM sounding, Upton NY",
+    "src/analysis/testdata/raob_network.geojson": "live IEM RAOB station table, analysis box",
     "tools/checklayout.py": "checks for src/src nesting, missing and duplicate modules",
     "tools/pull.sh": "update from GitHub over curl -- no git needed on the server",
+    "tools/locate_growth.py": "where a saved forecast starts to run away: largest change per snapshot, edge distance",
     "tools/manifest.py": "writes and checks docs/MANIFEST.txt, file by file",
+    "tools/tokens.py": "token ledger: billed cost vs API-equivalent shadow price",
     "tools/stale.py": "flags measurements whose file moved after the number was taken",
+    "tools/apply_sync.py": "applies a sync archive safely -- no nesting, never touches data/",
+    "docs/token_ledger.csv": "per-session token counts; measured and estimated kept apart",
+
+    "skills/nwp-debug/SKILL.md": "skill: diagnose before patching",
+    "skills/nwp-record-session/SKILL.md": "skill: research log, register, prompts, tokens",
+    "skills/nwp-sync/SKILL.md": "skill: patch route, pull.sh, apply_sync",
 }
 
 DIR_NOTES = {
+    "skills": "recurring procedures as SKILL.md -- how habits survive a new session",
     "src/dynamics": "the model itself",
     "src/verification": "observations and scoring -- never model output",
     "src/postproc": "learned correction of a finished forecast",
@@ -238,15 +330,23 @@ that was is not recoverable, which is the whole argument for the column.
 | `test_subgrid.py` | hyperdiffusion, SPPT, balancing | 7/7 | 2026-09-12 |
 | `test_surface.py` | drag, log law, Ekman spiral | 6/6 | 2026-09-12 |
 | `test_initialization.py` | spectral filter, noise threshold | 5/5 | 2026-09-12 |
-| `test_convection.py` | dry convective adjustment | 5/5 | 2026-09-12 |
+| `test_convection.py` | dry convective adjustment, PAV | 12/12 | 2026-10-01 |
+| `test_diurnal.py` | diurnal surface heat flux | 5/5 | 2026-10-01 |
+| `test_advection.py` | horizontal advection schemes (centred2, upwind3) | 4/4 | 2026-10-02 |
+| `test_nh2d.py` | 2-D non-hydrostatic core (S1a) | 4/4 | 2026-10-02 |
+| `test_nh2d_mass.py` | mass-coordinate non-hydrostatic core (S1b) | 3/3 | 2026-10-02 |
+| `test_nh3d.py` | 3-D non-hydrostatic core and forecast adapter (S2) | 5/5 | 2026-10-02 |
+| `test_nh3d_c.py` | C kernels of the NH core against NumPy (S4; needs gcc, else SKIPPED) | 6/6 (server) | 2026-10-03 |
+| `test_land_surface.py` | force-restore ground temperature and its coupling | 8/8 | 2026-10-02 |
 | `test_interpolate.py` | pressure -> sigma conversion | 8/8 | — |
 | `test_radiation.py` | radiative upper boundary | 7/7 | 2026-09-12 |
 | `test_primitive_sigma.py` | the 3D core | 7/7 | 2026-09-12 |
 | `test_primitive3d.py` | superseded pressure core | 8/8 | — |
-| `test_forecast.py` | end-to-end driver | 11/11 | — |
+| `test_forecast.py` | end-to-end driver | 15/15 | 2026-10-01 |
 | `test_hrrr_search.py` | GRIB interface | 6/6 | — |
-| `test_verification.py` | observation handling | 9/9 | 2026-09-10 |
-| `test_sigma_operator.py` | sigma observation operator | 7/7 | — |
+| `test_verification.py` | observation handling | 10/10 | 2026-10-01 |
+| `test_sigma_operator.py` | sigma observation operator | 8/8 | 2026-10-01 |
+| `test_surface_similarity.py` | surface-layer similarity diagnostics | 6/6 | 2026-10-02 |
 | `test_verify.py` | verification archiver | 7/7 | — |
 | `test_fetchers.py` | IEM / MRMS clients | 9/9 | 2026-09-10 |
 | `test_bias_correction.py` | post-processing | 7/7 | — |
@@ -287,7 +387,7 @@ def main():
     body = "\n".join(walk(root))
     out = HEADER + "NWP_Deployment_Package/\n" + body + "\n" + FOOTER
     path = os.path.join(root, "docs", "STRUCTURE.md")
-    with open(path, "w", encoding="utf-8") as f:
+    with open(path, "w", encoding="utf-8", newline="\n") as f:  # LF on Windows too
         f.write(out)
     print(out)
     # Count the tree, not the header sentence that explains the marker --

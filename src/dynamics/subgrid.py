@@ -20,7 +20,7 @@ SPPT, SKEB) because a single deterministic integration is systematically
 overconfident: it produces one trajectory when the atmosphere admits a
 distribution of them.
 
-The perturbations here are SPPT-style: tendencies are multiplied by (1 + r),
+The perturbations here are SPPT-style (Buizza et al. 1999): tendencies are multiplied by (1 + r),
 where r is a random field that is SMOOTH in space and CORRELATED in time.
 Both properties matter. White noise would be scrubbed out by diffusion and
 would inject grid-scale energy; a field that changes discontinuously each
@@ -70,6 +70,32 @@ def recommended_hyper_coeff(grid, damping_time=3 * 3600.0):
     4dx are damped ~16x more slowly, at 8dx ~256x, and so on.
     """
     return 1.0 / (damping_time * discrete_biharmonic_eigenvalue(grid))
+
+
+def divergence_damping(u, v, grid, nu):
+    """
+    Divergence damping (Skamarock and Klemp 1992): du = nu d(D)/dx,
+    dv = nu d(D)/dy, with D the horizontal velocity divergence on each level.
+
+    It acts only on the divergent part of the wind, so a non-divergent flow
+    gets exactly zero tendency. A 1D 2dx wave decays at 4 nu / dx^2, a 3dx wave
+    at 3 nu / dx^2, and a wave of n dx at (2 sin(pi/n))^2 nu / dx^2. Grid-scale
+    gravity-wave noise is removed while balanced, mostly rotational flow is
+    untouched. P-60 is a divergent 2-3dx mode, which is why this is tried there.
+
+    C-grid: u[j, i] sits on the western face of cell i and v[j, i] on the
+    southern face of cell j, so D at cell centres is a forward difference and
+    its gradient back on the faces a backward one. Backend-neutral.
+    """
+    D = grid.dx_forward(u) + grid.dy_forward(v)
+    return nu * grid.dx_backward(D), nu * grid.dy_backward(D)
+
+
+def divergence_damping_stability_dt(grid, nu, safety=0.4):
+    """Explicit limit for the damping: nu * (4/dx^2 + 4/dy^2) * dt <= 2.5 (RK3)."""
+    if nu <= 0:
+        return np.inf
+    return safety * 2.5 / (nu * (4.0 / grid.dx ** 2 + 4.0 / grid.dy ** 2))
 
 
 def hyper_stability_dt(grid, coeff, safety=0.5):

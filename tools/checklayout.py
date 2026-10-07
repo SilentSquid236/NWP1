@@ -40,7 +40,7 @@ REQUIRED = [
     "src/verification/obs_operator.py", "src/verification/sigma_operator.py",
     "src/verification/scoring.py",
     "src/postproc/bias_correction.py",
-    "docs/PROBLEMS.md", "docs/RESEARCH_LOG.md",
+    "docs/PROBLEMS.md", "docs/RESEARCH_LOG.md", "docs/REFERENCES.md",
     "tools/tree.py", "tools/problem.py", "tools/daily.sh",
 ]
 
