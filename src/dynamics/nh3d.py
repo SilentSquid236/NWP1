@@ -137,6 +137,13 @@ class NH3D:
         self.phi = self.phib.copy()
         self.time = 0.0
         self.extra_tendency = None       # callable(state) -> dict of additions (physics hook)
+        # MOISTURE (CAM stage S7; moisture.py). Q = mu q for the species in
+        # q_names, stacked (nq, nz, ny, nx); None for a dry run. Theta is then
+        # mu theta_rho (moisture.py explains why the dry solver is unchanged).
+        self.Q = None
+        self.q_names = ()
+        self._flux_avg = None
+        self._extra_last = None
 
     # --- grid helpers (axis 1 = x, 0 = y in CGrid convention) -------------
     def _sh(self, a, n, axis):
@@ -299,8 +306,9 @@ class NH3D:
         Fphi[-1] = 0.0
         FW[-1] = 0.0
         F = [dmu, FU, FV, FW, FTh, Fphi]
+        self._extra_last = None
         if self.extra_tendency is not None:
-            extra = self.extra_tendency(mu, U, V, W, Th, phi)
+            extra = self._extra_last = self.extra_tendency(mu, U, V, W, Th, phi)
             for i, key in enumerate(("mu", "U", "V", "W", "Th", "phi")):
                 if key in extra:
                     F[i] = F[i] + extra[key]
@@ -338,6 +346,9 @@ class NH3D:
         def pdd(T2, f2):
             return Qc * T2 - E * (f2[:-1] - f2[1:])
         p_old = pdd(T2, f2)
+        moist = self.Q is not None
+        if moist:
+            Usum, Vsum = np.zeros_like(U2), np.zeros_like(V2)
         for _ in range(nsteps):
             p2 = pdd(T2, f2)
             pd = p2 + self.div_damp * (p2 - p_old)
@@ -345,6 +356,8 @@ class NH3D:
             f2m = 0.5 * (f2[:-1] + f2[1:])
             U2 = U2 + dtau * (FU - (mu_u[None] * al_u * self.ddx_u(pd) + mu_u[None] * self.ddx_u(f2m)))
             V2 = V2 + dtau * (FV - (mu_v[None] * al_v * self.ddy_v(pd) + mu_v[None] * self.ddy_v(f2m)))
+            if moist:
+                Usum += U2; Vsum += V2
             divV = self.div_h(U2, V2)
             dmu2 = -(divV * self.ds[:, None, None]).sum(axis=0)
             m2 = m2 + dtau * (dmuF + dmu2)
@@ -372,6 +385,8 @@ class NH3D:
             W2 = np.zeros_like(W2); W2[:-1] = Wn
             f2 = Phi + Bv[None] * W2
             f2[-1] = 0.0
+        if moist:
+            self._flux_avg = (Us + Usum / nsteps, Vs + Vsum / nsteps)
         return (mus + m2, Us + U2, Vs + V2, Ws + W2, Ths + T2, phis + f2)
 
     def _tendencies_c(self, mu, U, V, W, Th, phi):
@@ -393,8 +408,9 @@ class NH3D:
         ck.td_tw(self._idx, gr.dx, gr.dy, G, ref["ds"], ref["dsw"], ref["sh"], mu, U, V, wk,
                  phi, FTh, FW, Fphi)
         F = [wk["dmu"].copy(), FU, FV, FW, FTh, Fphi]
+        self._extra_last = None
         if self.extra_tendency is not None:
-            extra = self.extra_tendency(mu, U, V, W, Th, phi)
+            extra = self._extra_last = self.extra_tendency(mu, U, V, W, Th, phi)
             for i, key in enumerate(("mu", "U", "V", "W", "Th", "phi")):
                 if key in extra:
                     e = extra[key]
@@ -447,10 +463,21 @@ class NH3D:
                     dmuF, FTh, Fphi, FW, o["thw"], o["thu"], o["thv"], Qc, E,
                     o["dphidx"], o["dphidy"], o["dphi_ds"], mus, o["Bv"],
                     o["lower"], o["diag"], o["upper"])
+        moist = self.Q is not None
+        if moist:
+            Usum, Vsum = self._work("a_Usum", nz), self._work("a_Vsum", nz)
+            ck.fill_zero(Usum); ck.fill_zero(Vsum)
         for _ in range(nsteps):
             ck.ac_pd(Qc, T2, E, f2, o["p_old"], self.div_damp, pd)
             ck.ac_uv(*args_uv, pd, f2, U2, V2)
+            if moist:
+                ck.add_into(Usum, U2, Usum); ck.add_into(Vsum, V2, Vsum)
             ck.ac_col(*args_col, pd, U2, V2, m2, T2, W2, f2)
+        if moist:
+            # mean mass fluxes over the substeps (S7): Us + mean(U2)
+            Ua, Va = np.empty_like(Usum), np.empty_like(Vsum)
+            ck.scale_add(1.0 / nsteps, Usum, Us, Ua); ck.scale_add(1.0 / nsteps, Vsum, Vs, Va)
+            self._flux_avg = (Ua, Va)
         out = []
         for x, d in zip(Xs, (m2, U2, V2, W2, T2, f2)):
             r = np.empty_like(x)
@@ -463,15 +490,87 @@ class NH3D:
         o[1:-1] = 0.5 * (th[1:] + th[:-1]); o[0] = th[0]; o[-1] = th[-1]
         return o
 
+    # --- moisture transport (CAM stage S7) ----------------------------------
+    def _adv_q(self, q, U, V):
+        """Flux-form tendencies of mu q (nq, nz, ny, nx) for the mixing ratios
+        q, with the face mass fluxes U, V and the Omega they imply: the
+        third-order fluxes Theta uses (_flux3 across, _vface3 up and down).
+        With U, V the substep-mean fluxes, a uniform q stays uniform exactly."""
+        if self._ck is not None and hasattr(self._ck, "adv_q"):
+            out = np.empty_like(q)
+            ref = self._cref()
+            self._ck.adv_q(self._idx, self.grid.dx, self.grid.dy, ref["ds"],
+                           np.ascontiguousarray(U), np.ascontiguousarray(V),
+                           np.ascontiguousarray(q), out, self._work("q_om", self.nz + 1),
+                           self._work("q_fx", self.nz), self._work("q_fy", self.nz))
+            return out
+        gr = self.grid
+        divV = self.div_h(U, V)
+        dmu = -(divV * self.ds[:, None, None]).sum(axis=0)
+        Om = self.omega(divV, dmu)
+        out = np.empty_like(q)
+        for i in range(q.shape[0]):
+            qi = q[i]
+            fx, fy = self._flux3(U, qi, 1), self._flux3(V, qi, 0)
+            Fz = Om * self._vface3(qi, Om)
+            out[i] = (-((self._sh(fx, 1, 1) - fx) / gr.dx + (self._sh(fy, 1, 0) - fy) / gr.dy)
+                      - (Fz[1:] - Fz[:-1]) / self.ds[:, None, None])
+        return out
+
+    def _q_stage(self, Q0, Qs, mus, dts):
+        """One RK stage for Q: Q0 + dts * (advection with the substep-mean
+        fluxes of this stage, of q at the stage start, plus physics)."""
+        Ua, Va = self._flux_avg
+        extra = self._extra_last
+        eq = extra.get("Q") if extra is not None else None
+        if self._ck is not None and hasattr(self._ck, "q_stage"):
+            C = np.ascontiguousarray
+            nq = Q0.shape[0]
+            shp = (nq, self.nz, self.ny, self.nx)
+            wk = {}
+            for k in ("q_w", "q_f"):
+                a = self._wk.get(k)
+                if a is None or a.shape != shp:
+                    a = self._wk[k] = np.empty(shp)
+                wk[k] = a
+            out = np.empty(shp)
+            self._ck.q_stage(self._idx, self.grid.dx, self.grid.dy, self._cref()["ds"], C(Ua), C(Va),
+                             C(Q0), C(Qs), C(mus), None if eq is None else C(eq), dts, out,
+                             wk["q_w"], wk["q_f"], self._work("q_om", self.nz + 1),
+                             self._work("q_fx", self.nz), self._work("q_fy", self.nz))
+            return out
+        FQ = self._adv_q(Qs / mus[None, None], Ua, Va)
+        if eq is not None:
+            FQ += eq
+        return Q0 + dts * FQ
+
     def step(self, dt):
         X0 = (self.mu, self.U, self.V, self.W, self.Th, self.phi)
         Xs = X0
+        Q0 = Qs = self.Q
         dtau = dt / self.ns
         for n in (self.ns // 3, self.ns // 2, self.ns):
             F = self.tendencies(*Xs)
-            Xs = self._acoustic(X0, Xs, F, n, dtau)
+            Xn = self._acoustic(X0, Xs, F, n, dtau)
+            if Q0 is not None:
+                Qs = self._q_stage(Q0, Qs, Xs[0], n * dtau)
+            Xs = Xn
         self.mu, self.U, self.V, self.W, self.Th, self.phi = Xs
+        if Q0 is not None:
+            self.Q = Qs
         self.time += dt
+
+
+
+def _thermo_weights(a2, a2n, tw):
+    """theta/q relaxation weights (P-79): a2 (dynamics) where no narrow zone is
+    set; the narrow weights a2n; or per level (1 - tw[k]) a2 + tw[k] a2n."""
+    if a2n is None:
+        return a2[None]
+    if tw is None:
+        return a2n[None]
+    w = np.asarray(tw, dtype=float)[:, None, None]
+    return (1.0 - w) * a2[None] + w * a2n[None]
 
 
 class NHModel:
@@ -487,7 +586,8 @@ class NHModel:
     - the pool-adjacent-violators adjustment after each step;
     - the same top sponge on u and v, and a Rayleigh damping of w in the
       sponge levels.
-    Prescribed heating and the land surface are not wired in yet.
+    - the force-restore land surface after each step (CAM stage S6), as in
+      the hydrostatic core; prescribed heating is not wired in.
     """
 
     def __init__(self, hydro, theta_ref=None, ns=6, dt_max=60.0, div_damp=0.1,
@@ -509,6 +609,7 @@ class NHModel:
         self.dt_max = float(dt_max)
         self.land_surface = None
         self.surface_heating = None
+        self.warm_rain = True        # S7: False = saturation adjustment only
         self._u_ref = self._v_ref = None
         self.time = 0.0
         self.step_count = 0
@@ -535,6 +636,16 @@ class NHModel:
     def surface_pressure(self):
         return self.lev.p_top + self.core.mu
 
+    # The surface temperature the drag sees lives on the hydrostatic model the
+    # physics settings come from (hy.theta_surface); forecast.py sets it here.
+    @property
+    def theta_surface(self):
+        return getattr(self.h, "theta_surface", None)
+
+    @theta_surface.setter
+    def theta_surface(self, value):
+        self.h.theta_surface = value
+
     @property
     def u(self):
         return self.core.U / self.core.h_to_u(self.core.mu)[None]
@@ -545,17 +656,72 @@ class NHModel:
 
     @property
     def theta(self):
+        """Potential temperature (dry theta; with moisture, theta_rho / factor)."""
+        if self.core.Q is not None:
+            return self.core.Th / (self.core.mu[None] * self._rho_f())
         return self.core.Th / self.core.mu[None]
 
-    def set_state(self, u, v, theta, pi):
-        """Load a hydrostatic state; W = 0 and phi integrated hydrostatically."""
+    # --- moisture (CAM stage S7; moisture.py) -------------------------------
+    @property
+    def moist(self):
+        return self.core.Q is not None
+
+    def enable_moisture(self, q=None):
+        """Carry qv, qc, qr. q: None (all zero) or a (3, nz, ny, nx) array or a
+        dict of mixing ratios; theta is kept, so Theta becomes mu theta_rho."""
+        from moisture import NAMES
+        c = self.core
+        th = self.theta
+        c.q_names = NAMES
+        c.Q = np.zeros((len(NAMES),) + c.Th.shape)
+        if q is not None:
+            self.set_q(q)
+        c.Th = c.mu[None] * th * self._rho_f()
+        if not hasattr(self, "rain"):
+            self.rain = np.zeros(c.mu.shape)          # mm since the start
+            self.rain_step = np.zeros(c.mu.shape)     # mm in the last step
+            self.q_lost = 0.0                         # kg/m^2 summed over the grid (hole filling)
+
+    def set_q(self, q):
+        """Set the mixing ratios (Theta is not touched)."""
+        from moisture import NAMES
+        c = self.core
+        if isinstance(q, dict):
+            q = np.stack([np.asarray(q[k], dtype=float) if k in q else np.zeros(c.Th.shape)
+                          for k in NAMES])
+        c.Q = np.maximum(np.asarray(q, dtype=float), 0.0) * c.mu[None, None]
+
+    def q(self, name=None):
+        """Mixing ratios (kg/kg): all stacked, or one by name."""
+        c = self.core
+        if c.Q is None:
+            return None
+        if name is None:
+            return c.Q / c.mu[None, None]
+        return c.Q[c.q_names.index(name)] / c.mu[None]
+
+    def _rho_f(self, q=None):
+        from moisture import rho_factor
+        q = self.q() if q is None else q
+        return rho_factor(q[0], q[1], q[2])
+
+    def set_state(self, u, v, theta, pi, q=None):
+        """Load a hydrostatic state; W = 0 and phi integrated hydrostatically.
+        q (S7): mixing ratios (dict or stacked); moisture on if given."""
         c = self.core
         c.mu = np.array(pi, dtype=float, copy=True)
         c.U = np.asarray(u, dtype=float) * c.h_to_u(c.mu)[None]
         c.V = np.asarray(v, dtype=float) * c.h_to_v(c.mu)[None]
-        c.Th = np.asarray(theta, dtype=float) * c.mu[None]
+        th = np.asarray(theta, dtype=float)
+        if q is not None and c.Q is None:
+            c.Q = np.zeros((3,) + c.Th.shape)
+            self.enable_moisture(q)
+        elif q is not None:
+            self.set_q(q)
+        thr = th * self._rho_f() if c.Q is not None else th
+        c.Th = thr * c.mu[None]
         c.W = np.zeros_like(c.W)
-        c.phi = self.hydrostatic_phi(c.mu, np.asarray(theta, dtype=float))
+        c.phi = self.hydrostatic_phi(c.mu, thr)
         self._u_ref, self._v_ref = np.array(u, copy=True), np.array(v, copy=True)
 
     def hydrostatic_phi(self, mu, theta):
@@ -572,23 +738,55 @@ class NHModel:
         """Davies relaxation of the NH state toward the driving (hydrostatic) frame."""
         c = self.core
         a2 = np.asarray(relax.alpha2d, dtype=float)
+        # P-79 / E6: temperature and moisture may have their own (narrower)
+        # zone; u, v, pi, phi and w use alpha2d
+        a2n = getattr(relax, "alpha2d_thermo", None)
+        tw = getattr(relax, "thermo_levels", None)
+        a2n = None if a2n is None else np.asarray(a2n, dtype=float)
         if self.relax_dt_ref and self._last_dt:
-            a2 = 1.0 - (1.0 - a2) ** (self._last_dt / self.relax_dt_ref)
+            x = self._last_dt / self.relax_dt_ref
+            a2 = 1.0 - (1.0 - a2) ** x
+            if a2n is not None:
+                a2n = 1.0 - (1.0 - a2n) ** x
         a3 = a2[None]
-        u, v, th = self.u, self.v, self.theta
+        a3t = _thermo_weights(a2, a2n, tw)
+        # With moisture (S7) the relaxed temperature is theta_rho (the core's
+        # own variable), toward the frame's theta times the frame's factor
+        # (the model's own where the frame has no moisture), and q is relaxed
+        # toward the frame's q where it has them.
+        u, v, th = self.u, self.v, c.Th / c.mu[None]
+        q = self.q() if c.Q is not None else None
+        if q is not None:
+            from moisture import NAMES
+            q_ext = np.stack([np.asarray(ext[k], dtype=float) if k in ext else q[i]
+                              for i, k in enumerate(NAMES)])
         if "u" in ext:
             u = u + a3 * (np.asarray(ext["u"]) - u)
         if "v" in ext:
             v = v + a3 * (np.asarray(ext["v"]) - v)
         if "theta" in ext:
-            th = th + a3 * (np.asarray(ext["theta"]) - th)
+            th_e = np.asarray(ext["theta"])
+            if q is not None:
+                th_e = th_e * self._rho_f(q_ext)
+            th = th + a3t * (th_e - th)
+        if q is not None:
+            q = q + a3t[None] * (q_ext - q)
         mu = c.mu
         if "pi" in ext:
-            mu = mu + a2 * (np.asarray(ext["pi"]) - mu)
+            # P-76: "full" (point by point), "mean" (zone mean only) or "none"
+            mode = getattr(relax, "pi_mode", "full")
+            pe = np.asarray(ext["pi"])
+            tgt = pe if mode == "full" else None
+            if mode == "mean":       # weights a2 (per unit time), as relax_with_driver
+                tgt = mu + float((a2 * (pe - mu)).sum() / a2.sum())
+            if tgt is not None:
+                mu = mu + a2 * (tgt - mu)
         c.mu = mu
         c.U = u * c.h_to_u(mu)[None]
         c.V = v * c.h_to_v(mu)[None]
         c.Th = th * mu[None]
+        if q is not None:
+            c.Q = q * mu[None, None]
         # geopotential toward hydrostatic balance and w toward zero in the zone
         phi_h = self.hydrostatic_phi(mu, th)
         c.phi = c.phi + a3 * (phi_h - c.phi)
@@ -598,29 +796,48 @@ class NHModel:
     def _physics(self, mu, U, V, W, Th, phi):
         self.physics_calls += 1
         c, hy = self.core, self.h
-        if c._ck is not None and getattr(hy, "theta_surface", None) is None:
+        ts = getattr(hy, "theta_surface", None)
+        if c._ck is not None and (ts is None or self.land_surface is not None):
+            # with a surface temperature the C drag uses Louis stability (S6),
+            # which is what the NumPy path below uses when the land surface is on
             return self._physics_c(mu, U, V, W, Th, phi)
         from surface import surface_drag
         from turbulence import vertical_mixing
         c, hy = self.core, self.h
         mu_u, mu_v = c.h_to_u(mu), c.h_to_v(mu)
         u, v, th = U / mu_u[None], V / mu_v[None], Th / mu[None]
+        # S7: the physics sees dry theta and the mixing ratios of the step start;
+        # its theta tendency becomes a theta_rho tendency at fixed q.
+        q = f = None
+        if c.Q is not None:
+            q = c.Q / mu[None, None]       # the stage mu (= c.mu with physics once per step)
+            f = self._rho_f(q)
+            th = th / f
         FU = np.zeros_like(U); FV = np.zeros_like(V); FT = np.zeros_like(Th)
+        out = {}
         if hy.drag:
-            du, dv, info = surface_drag(u, v, th, mu, self.lev, z0=hy.z0, theta_s=hy.theta_surface)
+            du, dv, info = surface_drag(u, v, th, mu, self.lev, z0=hy.z0, theta_s=hy.theta_surface,
+                                        stability="louis" if self.land_surface is not None else "cutoff")
             FU += mu_u[None] * du
             FV += mu_v[None] * dv
         if hy.mixing:
-            mu_, mv_, mth, K = vertical_mixing(u, v, th, mu, self.lev, ri_crit=hy.ri_crit,
-                                               k_max=hy.k_max, mixing_length=hy.mixing_length)
+            r = vertical_mixing(u, v, th, mu, self.lev, ri_crit=hy.ri_crit, k_max=hy.k_max,
+                                mixing_length=hy.mixing_length,
+                                scalars=None if q is None else list(q))
+            mu_, mv_, mth, K = r[:4]
             FU += mu_u[None] * mu_
             FV += mu_v[None] * mv_
             FT += mu[None] * mth
+            if q is not None:
+                out["Q"] = mu[None, None] * np.stack(r[4])
+        if f is not None:
+            FT *= f
         if self._u_ref is not None and hy.sponge_levels > 0:
             sp = np.asarray(hy._sponge, dtype=float)
             FU -= sp * (U - mu_u[None] * self._u_ref)
             FV -= sp * (V - mu_v[None] * self._v_ref)
-        return {"U": FU, "V": FV, "Th": FT, "W": -self._wdamp * W}
+        out.update({"U": FU, "V": FV, "Th": FT, "W": -self._wdamp * W})
+        return out
 
     def _physics_c(self, mu, U, V, W, Th, phi):
         """_physics with drag and mixing in C (phys_col; same arithmetic, neutral
@@ -636,9 +853,24 @@ class NHModel:
             self._sig = C(self.lev.sigma, dtype=float)
             self._sigh = C(self.lev.sigma_half, dtype=float)
         FU, FV, FT = np.empty_like(U), np.empty_like(V), np.empty_like(Th)
+        Qm = FQ = None
+        if c.Q is not None:
+            # S7: the kernel takes Th = mu theta_rho and Qm = mu q, works on dry
+            # theta, mixes q with theta's K and returns the theta_rho tendency
+            from moisture import EPS
+            Qm = C(c.Q)
+            FQ = np.empty_like(Qm)
+        ts = getattr(hy, "theta_surface", None)
+        if ts is not None:
+            from land_surface import LOUIS_B, LOUIS_D, LOUIS_CM
+            ts = C(np.broadcast_to(np.asarray(ts, dtype=float), mu.shape), dtype=float)
+            louis = (LOUIS_B, LOUIS_D, LOUIS_CM)
+        else:
+            louis = (5.0, 5.0, 7.4)
         ck.phys_col(c._idx, self.lev.p_top, P0_, KAPPA_, RD_, G0, hy.ri_crit, hy.k_max,
                     hy.mixing_length, hy.drag, hy.mixing, self._sig, self._sigh, self._z0map,
-                    mu, U, V, Th, FU, FV, FT)
+                    mu, U, V, Th, FU, FV, FT, theta_s=ts, louis=louis, Qm=Qm, FQ=FQ,
+                    **({"eps": EPS} if Qm is not None else {}))
         FW = np.zeros_like(W)
         sp = np.asarray(hy._sponge, dtype=float)
         ks = int(np.count_nonzero(sp.reshape(-1)))       # sponge levels sit at the top
@@ -653,7 +885,10 @@ class NHModel:
             kw = self._wdamp.shape[0]
         if kw:
             FW[:kw] = -self._wdamp[:kw] * W[:kw]
-        return {"U": FU, "V": FV, "Th": FT, "W": FW}
+        out = {"U": FU, "V": FV, "Th": FT, "W": FW}
+        if FQ is not None:
+            out["Q"] = FQ
+        return out
 
     def relax_with_driver(self, relax, driver, t):
         """relax_with(relax, driver.at(t)), computed in the relaxation zone only.
@@ -671,9 +906,17 @@ class NHModel:
             return self.relax_with(relax, driver.at(t))
         C = np.ascontiguousarray
         a2 = np.asarray(relax.alpha2d, dtype=float)
+        a2n = getattr(relax, "alpha2d_thermo", None)
+        tw = getattr(relax, "thermo_levels", None)
+        a2n = None if a2n is None else np.asarray(a2n, dtype=float)
         if self.relax_dt_ref and self._last_dt:
-            a2 = 1.0 - (1.0 - a2) ** (self._last_dt / self.relax_dt_ref)
+            x = self._last_dt / self.relax_dt_ref
+            a2 = 1.0 - (1.0 - a2) ** x
+            if a2n is not None:
+                a2n = 1.0 - (1.0 - a2n) ** x
         a2 = C(a2)
+        a2n = None if a2n is None else C(a2n)
+        twc = None if (a2n is None or tw is None) else C(np.asarray(tw, dtype=float))
         if not hasattr(self, "_zone_cols"):
             z = np.asarray(relax.alpha2d) > 0
             zd = z.copy()                      # dilate by one cell (U, V neighbours of mu)
@@ -693,13 +936,72 @@ class NHModel:
         ck = c._ck
         mu_old = C(c.mu)
         mu_new = mu_old.copy()
-        ck.relax_mu(self._zone_cols, a2, mu_old, wa, wb, cc(A, "pi"), cc(B, "pi"), mu_new)
+        mode = getattr(relax, "pi_mode", "full")
+        if mode == "full":
+            ck.relax_mu(self._zone_cols, a2, mu_old, wa, wb, cc(A, "pi"), cc(B, "pi"), mu_new)
+        elif mode == "mean":
+            # P-76: only the zone's weighted mean of mu is relaxed; the target
+            # is mu + d with d the weighted mean frame-minus-model difference
+            # (the weights are the per-unit-time ones, as relax_with uses).
+            cols = self._zone_cols
+            pa, pb = cc(A, "pi").reshape(-1)[cols], cc(B, "pi").reshape(-1)[cols]
+            aw = a2.reshape(-1)[cols]
+            d = float((aw * (wa * pa + wb * pb - mu_old.reshape(-1)[cols])).sum() / aw.sum())
+            tgt = mu_old + d
+            ck.relax_mu(cols, a2, mu_old, 1.0, 0.0, tgt, tgt, mu_new)
         c.U, c.V, c.Th, c.W, c.phi = (C(x) for x in (c.U, c.V, c.Th, c.W, c.phi))
+        if c.Q is not None:
+            # S7: the kernel relaxes Th/mu = theta_rho; frames give theta_rho
+            # from their theta and q (the model's q where a frame has none).
+            if not hasattr(self, "_thr_c"):
+                self._thr_c = {}
+            tt = []
+            for S in (A, B):
+                arr = self._thr_c.get(id(S))
+                if arr is None:
+                    arr = self._thr_c[id(S)] = C(self._frame_theta_rho(S))
+                    if len(self._thr_c) > 4:
+                        self._thr_c.pop(next(iter(self._thr_c)))
+                tt.append(arr)
+            tA, tB = tt
+        else:
+            tA, tB = cc(A, "theta"), cc(B, "theta")
         ck.relax_col(self._zone_cols, c._idx, c.p_top, P0, KAPPA, RD, G, c._cref()["sf"],
                      c._cref()["ds"], self._terrain_c, a2, mu_old, mu_new, wa, wb,
-                     cc(A, "u"), cc(B, "u"), cc(A, "v"), cc(B, "v"), cc(A, "theta"), cc(B, "theta"),
-                     c.U, c.V, c.Th, c.W, c.phi)
+                     cc(A, "u"), cc(B, "u"), cc(A, "v"), cc(B, "v"), tA, tB,
+                     c.U, c.V, c.Th, c.W, c.phi,
+                     a2n=a2n, tw=twc)                  # P-79: theta and q may have their own weights
         c.mu = mu_new
+        if c.Q is not None:
+            self._relax_q_zone(a2, mu_old, mu_new, A, B, wa, wb, a2n=a2n, tw=tw)
+
+    def _frame_theta_rho(self, S):
+        from moisture import NAMES
+        q = self.q()
+        qs = [np.asarray(S[k], dtype=float) if k in S else q[i] for i, k in enumerate(NAMES)]
+        return np.asarray(S["theta"], dtype=float) * self._rho_f(qs)
+
+    def _relax_q_zone(self, a2, mu_old, mu_new, A, B, wa, wb, a2n=None, tw=None):
+        """q toward the frames' q in the zone columns; Q follows the new mu
+        there (the kernel changed mu only in the zone)."""
+        from moisture import NAMES
+        c = self.core
+        cols = self._zone_cols
+        nq = c.Q.shape[0]
+        Qf = c.Q.reshape(nq, self.lev.nz, -1)
+        mo, mn = mu_old.reshape(-1)[cols], mu_new.reshape(-1)[cols]
+        nz = self.lev.nz
+        a = a2.reshape(-1)[cols][None]
+        if a2n is not None:                    # P-79: theta's weights, per level when tw is given
+            an = a2n.reshape(-1)[cols][None]
+            a = an if tw is None else (1.0 - np.asarray(tw, float)[:, None]) * a + np.asarray(tw, float)[:, None] * an
+        for i, k in enumerate(NAMES):
+            q = Qf[i][:, cols] / mo[None]
+            if k in A and k in B:
+                e = (wa * np.asarray(A[k]).reshape(self.lev.nz, -1)[:, cols]
+                     + wb * np.asarray(B[k]).reshape(self.lev.nz, -1)[:, cols])
+                q = q + a * (e - q)
+            Qf[i][:, cols] = q * mn[None]
 
     def step(self, dt):
         c = self.core
@@ -714,6 +1016,10 @@ class NHModel:
             c.step(dt)
         self._last_dt = float(dt)
         hy = self.h
+        if self.land_surface is not None:
+            self._step_land_surface(dt)
+        if self.core.Q is not None:
+            self._step_moisture(dt)
         if hy.convection:
             c = self.core
             if c._ck is not None:
@@ -721,17 +1027,110 @@ class NHModel:
                 # in place, with the same theta/u/v round trip as below.
                 if not hasattr(self, "_dsig_c"):
                     self._dsig_c = np.ascontiguousarray(self.lev.dsigma, dtype=float)
+                if c.Q is not None:
+                    c.Q = np.ascontiguousarray(c.Q)
                 c._ck.pav_col(c._xm1, c._ym1, 1e-10, hy.conv_mix_momentum, self._dsig_c,
-                              c.mu, c.U, c.V, c.Th)
+                              c.mu, c.U, c.V, c.Th, Qm=c.Q)
             else:
                 from convection import dry_convective_adjustment_pav
-                th, u, v, info = dry_convective_adjustment_pav(self.theta, self.u, self.v, c.mu,
-                                                               self.lev, mix_momentum=hy.conv_mix_momentum)
+                # on the core's own theta (theta_rho with moisture); q mixed over
+                # the same blocks (S7, P-74)
+                q = None if c.Q is None else list(c.Q / c.mu[None, None])
+                th, u, v, info = dry_convective_adjustment_pav(c.Th / c.mu[None], self.u, self.v, c.mu,
+                                                               self.lev, mix_momentum=hy.conv_mix_momentum,
+                                                               scalars=q)
+                if q is not None:
+                    c.Q = np.stack(info["scalars"]) * c.mu[None, None]
                 c.Th = th * c.mu[None]
                 c.U = u * c.h_to_u(c.mu)[None]
                 c.V = v * c.h_to_v(c.mu)[None]
         self.time += dt
         self.step_count += 1
+
+    def _step_land_surface(self, dt):
+        """Advance the force-restore ground temperature and heat or cool the
+        lowest layer (CAM stage S6), as PrimitiveSigma._step_land_surface does.
+
+        The inputs are the hydrostatic model's: the lowest-level winds
+        U/mu_u and V/mu_v at their own points, theta_1 = Th/mu, p_s = p_top + mu,
+        p_1 and dp_1 from the sigma levels, and z_1 from the hypsometric
+        equation (surface.lowest_level_height, the height the drag uses). The
+        theta tendency is added to Th[-1] as mu * rate; theta_g goes to the
+        drag through hy.theta_surface, with Louis (1979) stability.
+        """
+        from sigma import RD as RD_, G0 as G0_, P0 as P0_, KAPPA as KAPPA_
+        c, lev = self.core, self.lev
+        mu = c.mu
+        sig_1 = float(np.asarray(lev.sigma)[-1])
+        dsig_1 = float(np.asarray(lev.dsigma)[-1])
+        sigh_1 = float(np.asarray(lev.sigma_half)[-1])
+        th1 = c.Th[-1] / mu
+        f1 = qv1 = None
+        if c.Q is not None:                       # S7: dry theta_1 and q_v1
+            q1 = c.Q[:, -1] / mu[None]
+            f1 = self._rho_f(q1)
+            th1 = th1 / f1
+            qv1 = q1[0]
+        u1 = c.U[-1] / c.h_to_u(mu)
+        v1 = c.V[-1] / c.h_to_v(mu)
+        ps = lev.p_top + mu
+        p1 = lev.p_top + sig_1 * mu
+        dp1 = dsig_1 * mu
+        T1 = th1 * (p1 / P0_) ** KAPPA_
+        z1 = RD_ * T1 / G0_ * np.log((lev.p_top + sigh_1 * mu) / p1)
+        if qv1 is None:
+            rate, theta_g = self.land_surface.step(self.time + 0.5 * dt, dt, u1, v1, th1,
+                                                   ps, p1, dp1, z1)
+            c.Th[-1] += dt * rate * mu
+        else:
+            rate, theta_g = self.land_surface.step(self.time + 0.5 * dt, dt, u1, v1, th1,
+                                                   ps, p1, dp1, z1, qv1=qv1)
+            # vapour into the lowest layer: d(mu q_v) = g E dt / dsigma_1
+            E = self.land_surface.last["E"]
+            c.Q[0, -1] += dt * G * E / c.ds[-1]
+            q1n = c.Q[:, -1] / mu[None]
+            c.Th[-1] = mu * (th1 + dt * rate) * self._rho_f(q1n)
+        self.h.theta_surface = theta_g
+
+    def _step_moisture(self, dt):
+        """Hole filling, then one Kessler warm-rain step (moisture.py) on dry
+        theta and q, column by column; Theta = mu theta_rho is rebuilt from the
+        result. Pressure, density and layer depths are the core's own
+        (non-hydrostatic p from the equation of state). CAM stage S7."""
+        c = self.core
+        if c._ck is not None and hasattr(c._ck, "moist_col"):
+            return self._step_moisture_c(dt)
+        from moisture import kessler, fill_negative, rho_factor
+        mu = c.mu
+        al, p = c.diagnose(mu, c.Th, c.phi)
+        rho = 1.0 / al
+        dz = (c.phi[:-1] - c.phi[1:]) / G
+        q = c.Q / mu[None, None]
+        th = c.Th / (mu[None] * rho_factor(q[0], q[1], q[2]))
+        w = c.ds[:, None, None]
+        for i in range(q.shape[0]):
+            q[i], lost = fill_negative(q[i], w)
+            self.q_lost += float((lost * mu).sum()) / G
+        th, qv, qc, qr, rain = kessler(th, q[0], q[1], q[2], p, rho, dz, dt,
+                                       warm_rain=self.warm_rain)
+        c.Q = np.stack([qv, qc, qr]) * mu[None, None]
+        c.Th = mu[None] * th * rho_factor(qv, qc, qr)
+        self.rain_step = rain
+        self.rain = self.rain + rain
+
+    def _step_moisture_c(self, dt):
+        from moisture import (EPS, LV, SVP1, SVP2, SVP3, SVPT0, KC1, KC2, KC3, KC4, MAX_CR_SED)
+        c = self.core
+        C = np.ascontiguousarray
+        c.Th, c.Q, c.mu, c.phi = C(c.Th), C(c.Q), C(c.mu), C(c.phi)
+        rain = np.zeros_like(c.mu)
+        lost = np.zeros_like(c.mu)
+        c._ck.moist_col(dt, P0, RD, GAMMA, CP, KAPPA, G, c._cref()["ds"], c.mu, c.phi, c.Th, c.Q,
+                        rain, lost, warm_rain=self.warm_rain, consts=(EPS, LV, SVP1, SVP2, SVP3, SVPT0, KC1, KC2, KC3, KC4,
+                                            MAX_CR_SED))
+        self.q_lost += float((lost * c.mu).sum()) / G
+        self.rain_step = rain
+        self.rain = self.rain + rain
 
     C_SOUND = 350.0        # m/s, an upper bound for the horizontal sound speed
     ACOUSTIC_COURANT = 0.5 # per acoustic substep (forward-backward, two dimensions)

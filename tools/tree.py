@@ -119,6 +119,8 @@ NOTES = {
     "tools/cam_cycle.sh": "S5: the 12 km cycle, then the 3 km analysis and nested NH forecast, in one budget",
     "tools/cam_compare.py": "CAM S5g: paired comparison of verification archives by lead, day/night and terrain relief class (CSV + tables)",
     "tools/plot_cam_skill.py": "CAM S5g: figure of 2 m T, 10 m u and v RMSE by lead for the 3 km and 12 km arms",
+    "tools/plot_cam_land.py": "CAM S6c: figure of 2 m T, 10 m u and v RMSE by lead and day/night 2 m T bias, 3 km with land surface vs 12 km",
+    "docs/cam_land_skill.png": "test S6c: 3 km CAM with the land surface vs 12 km NH and production over 20 cycles (paired matches)",
     "docs/cam_skill_by_lead.png": "test S5g: 3 km vs 12 km RMSE by lead over 20 cycles (paired matches)",
     "tools/nest_check.py": "S5: 3 km nested forecast against its interpolated 12 km driver, by edge band",
     "src/nest.py": "S5: 12 km forecast -> 3 km boundary frames (bilinear by staggering, hydrostatic terrain shift, ln p)",

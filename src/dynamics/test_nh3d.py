@@ -142,5 +142,80 @@ report("physics_every='step' evaluates the physics once per step (stage: three t
        n_stage == 15 and n_step == 5 and d6 < 1e-12 and b6.core.extra_tendency == b6._physics,
        f"calls: stage {n_stage}, step {n_step}; max|du| {d6:.1e} m/s with no physics active; hook restored")
 
+# 7. CAM stage S6: the land surface in the NH core
+# 7a. One land-surface step adds exactly what ForceRestoreSurface.step returns,
+#     with the hydrostatic model's inputs (z1 from surface.lowest_level_height).
+import copy
+from datetime import datetime
+from land_surface import ForceRestoreSurface
+from surface import lowest_level_height
+
+g7 = CGrid(12, 10, 12000.0, 12000.0, f0=1e-4, beta=0.0, edge_mode="replicate")
+lat7 = np.linspace(40, 41, 10)[:, None] * np.ones((1, 12))
+lon7 = np.linspace(-75, -74, 12)[None, :] * np.ones((10, 1))
+land7 = np.ones((10, 12), bool); land7[:, :3] = False
+
+def _nh_land(start, wind=3.0):
+    h = _HydroNoPhys(g7)
+    h.theta_surface = None
+    m = nh3d.NHModel(h)
+    rng = np.random.default_rng(7)
+    mu = np.full((10, 12), 9.0e4)
+    th = 290 + 25 * (1 - np.asarray(lev.sigma))[:, None, None] + rng.normal(0, 0.2, (lev.nz, 10, 12))
+    u = np.full((lev.nz, 10, 12), wind); v = 0.5 * u
+    m.set_state(u, v, th, mu)
+    p1 = lev.p_top + float(np.asarray(lev.sigma)[-1]) * mu
+    z1 = lowest_level_height(th, mu, lev)
+    m.land_surface = ForceRestoreSurface(lat7, lon7, land7, start, th[-1] * (p1 / 1.0e5) ** (287.04 / 1004.5), z1)
+    return m
+
+m7 = _nh_land(datetime(2026, 9, 28, 17))
+ls_ref = copy.deepcopy(m7.land_surface)
+c7 = m7.core
+th_b = c7.Th / c7.mu[None]
+u1, v1 = (c7.U / c7.h_to_u(c7.mu)[None])[-1], (c7.V / c7.h_to_v(c7.mu)[None])[-1]
+ps = lev.p_top + c7.mu
+sig = np.asarray(lev.sigma); dsig = np.asarray(lev.dsigma)
+rate, tg = ls_ref.step(0.5 * 60.0, 60.0, u1, v1, th_b[-1], ps, lev.p_top + sig[-1] * c7.mu,
+                       dsig[-1] * c7.mu, lowest_level_height(th_b, c7.mu, lev))
+Th_before = c7.Th.copy()
+m7._step_land_surface(60.0)
+# compare the stored layer with Th_before + dt*rate*mu directly: the increment
+# (~20 on Th ~ 2.6e7) cannot be recovered from a difference to better than ~3e-10
+d_th = float(np.abs(c7.Th[-1] - (Th_before[-1] + 60.0 * rate * c7.mu)).max())
+d_tg = float(np.abs(m7.h.theta_surface - tg).max())
+d_up = float(np.abs(c7.Th[:-1] - Th_before[:-1]).max())
+report("NH land-surface step adds exactly ForceRestoreSurface.step's tendency to the lowest layer only",
+       d_th == 0.0 and d_tg == 0.0 and d_up == 0.0 and float(np.abs(rate).max()) > 0,
+       f"Th_1 vs Th_1 + dt*rate*mu {d_th:.1e}, theta_g diff {d_tg:.1e}, change above level 1 {d_up:.1e}, "
+       f"max |rate| {np.abs(rate).max():.2e} K/s")
+
+# 7b. Sun heats and night cools the lowest layer over land; water is held
+def _hour(start):
+    m = _nh_land(start, wind=2.0)
+    th0 = (m.core.Th[-1] / m.core.mu).copy()
+    for k in range(60):
+        m._step_land_surface(60.0)
+        m.time += 60.0
+    d = m.core.Th[-1] / m.core.mu - th0
+    return float(d[land7].mean()), float(np.abs(m.land_surface.Tg - m.land_surface.T2)[~land7].max())
+
+day, wat_d = _hour(datetime(2026, 9, 28, 17))     # ~ local noon at 74.5 W
+night, wat_n = _hour(datetime(2026, 9, 28, 7))    # ~ 3 am local
+report("over land the lowest layer warms in one hour of sun and cools in one hour of night; water held",
+       day > 0.05 and night < 0.0 and wat_d == 0.0 and wat_n == 0.0,
+       f"mean d(theta_1) over land: day {day:+.3f} K, night {night:+.3f} K; water |Tg - T2| {wat_d:.1e}, {wat_n:.1e}")
+
+# 7c. A full NH step with the land surface: drag sees theta_g (Louis), state finite
+m7c = _nh_land(datetime(2026, 9, 28, 17))
+m7c.h.drag, m7c.h.mixing = True, True
+m7c.h.z0 = np.where(land7, 1.0, 0.0002)
+m7c.h.ri_crit, m7c.h.k_max, m7c.h.mixing_length = 0.25, 200.0, 100.0
+for _ in range(5):
+    m7c.step(30.0)
+ok7c = all(np.isfinite(a).all() for a in (m7c.u, m7c.v, m7c.theta)) and m7c.theta_surface is not None
+report("five NH steps with the land surface on stay finite, and the drag sees theta_g",
+       ok7c, f"max|u| {np.abs(m7c.u).max():.2f} m/s, theta_g {np.min(m7c.theta_surface):.1f}-{np.max(m7c.theta_surface):.1f} K")
+
 print(f"\n{sum(results)}/{len(results)} passed")
 raise SystemExit(0 if all(results) else 1)

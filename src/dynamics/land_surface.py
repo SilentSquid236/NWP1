@@ -36,9 +36,11 @@ The force-restore ground temperature of Deardorff (1978), over land:
   - C_h is the neutral transfer coefficient times the Louis (1979) heat
     stability function.
   - U = max(|V_1|, U_MIN) keeps free convection going in calm air.
-- LE = EF max(Rn, 0) is latent heat. The model is dry, so evaporation is a
-  fixed share of daytime net radiation. It is the one constant that stands in
-  for moisture, and it goes when moisture arrives.
+- LE = EF max(Rn, 0) is latent heat: evaporation is a fixed share of daytime
+  net radiation. It was the one constant standing in for moisture in the dry
+  model. With moisture (CAM stage S7) it is kept, and becomes the vapour
+  source E = LE / Lv over land, so the energy balance is unchanged; over
+  water E is a bulk flux (see step()).
 - T2 is the deep-soil temperature, held at its initial value for the 24 h run.
 
 Over water the surface temperature is held at its initial value. Lakes and
@@ -172,7 +174,7 @@ class ForceRestoreSurface:
         when = self.start + timedelta(seconds=float(t_seconds))
         return S0 * TAU * np.maximum(sin_solar_elevation(self.lat, self.lon, when), 0.0)
 
-    def step(self, t_seconds, dt, u1, v1, theta1, ps, p1, dp1, z1):
+    def step(self, t_seconds, dt, u1, v1, theta1, ps, p1, dp1, z1, qv1=None):
         """
         Advance Tg by dt; return d(theta_1)/dt (K/s) and theta_g for the drag.
 
@@ -200,6 +202,16 @@ class ForceRestoreSurface:
         self.Tg = np.where(self.land, self.Tg + dt * dTg, self.T2)
         dtheta = G0 * H / (CP * dp1) * (P0 / p1) ** KAPPA
         self.last = {"H": H, "Rn": Rn, "LE": LE, "Ri": Ri}
+        if qv1 is not None:
+            # SURFACE VAPOUR FLUX (CAM stage S7), kg/m^2/s upward. Over land the
+            # latent heat LE that the energy budget already spends becomes
+            # vapour, E = LE / Lv, so the ground's energy balance is the one of
+            # S6 unchanged. Over water, E = rho C_h U (q_s(T_w, p_s) - q_v1)
+            # with the same transfer coefficient as the heat flux; negative
+            # (dew onto the water) is allowed.
+            from moisture import qsat, LV
+            e_water = rho * ch * U * (qsat(self.Tg, ps) - np.asarray(qv1, dtype=float))
+            self.last["E"] = np.where(self.land, LE / LV, e_water)
         return dtheta, self.Tg / ex_s
 
     def __repr__(self):

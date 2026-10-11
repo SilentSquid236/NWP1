@@ -22,11 +22,7 @@ Conventions used throughout:
 
 import numpy as np
 
-RD = 287.058        # J/(kg K)  gas constant for dry air
-CP = 1004.6         # J/(kg K)  specific heat at constant pressure
-KAPPA = RD / CP     # ~0.2857
-P0 = 100_000.0      # Pa, reference pressure for potential temperature
-G0 = 9.80665
+from constants import RD, CP, KAPPA, P0, G0     # one definition for all of NWP1 (2026-10-07)
 
 
 def exner(p):

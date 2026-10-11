@@ -601,13 +601,26 @@ EXPORT void FN(phys_col)(int nz, int ny, int nx, const int *xm1, const int *ym1,
                          REAL ri_crit, REAL k_max, REAL mixing_length,
                          int do_drag, int do_mix,
                          const REAL *sigma, const REAL *sigma_half, const REAL *z0,
+                         const REAL *theta_s, REAL louis_b, REAL louis_d, REAL louis_cm,
                          const REAL *mu, const REAL *U, const REAL *V, const REAL *Th,
-                         REAL *FU, REAL *FV, REAL *FT)
+                         REAL *FU, REAL *FV, REAL *FT,
+                         int nq, const REAL *Qm, REAL *FQ, REAL eps)
 {
+    /* nq, Qm, FQ, eps (CAM stage S7): with nq = 3, Qm = mu (qv, qc, qr)
+     * (3, nz, ny, nx) and Th = mu theta_rho. As NHModel._physics: q = Qm / mu,
+     * f = (1 + qv/eps) / (1 + qv + qc + qr), theta = (Th / mu) / f is what the
+     * drag and mixing see; q is mixed with theta's K, FQ = mu * its tendency
+     * (zero without mixing), and FT is multiplied by f at the end.
+     * nq = 0: the dry kernel (Qm and FQ unused, may be NULL). */
+    /* theta_s (2-D, NULL = neutral): the surface potential temperature of the
+     * land surface; the drag then takes the Louis (1979) momentum function of
+     * the bulk Richardson number, as surface.surface_drag(stability="louis")
+     * with land_surface.louis_momentum. CAM stage S6. */
     const size_t N = (size_t)ny * nx;
     #pragma omp parallel
     {
         REAL p[nz], T[nz], th[nz], u[nz], v[nz], dz[nz], K[nz], mu_[nz], mv_[nz], mt_[nz];
+        REAL mq_[nz], ff[nz], qloc[3 * nz];
         #pragma omp for collapse(2) schedule(static)
         for (int j = 0; j < ny; j++)
             for (int i = 0; i < nx; i++) {
@@ -619,10 +632,17 @@ EXPORT void FN(phys_col)(int nz, int ny, int nx, const int *xm1, const int *ym1,
                     const size_t c = (size_t)k * N + c2;
                     p[k] = p_top + sigma[k] * m;
                     th[k] = Th[c] / m;
+                    if (nq) {
+                        for (int s = 0; s < nq; s++) qloc[s * nz + k] = Qm[((size_t)s * nz + k) * N + c2] / m;
+                        const REAL qv = qloc[k], qc = qloc[nz + k], qr = qloc[2 * nz + k];
+                        ff[k] = ((REAL)1.0 + qv / eps) / ((REAL)1.0 + qv + qc + qr);
+                        th[k] = th[k] / ff[k];
+                    }
                     T[k] = th[k] * pow(p[k] / P0_, KAPPA_);
                     u[k] = U[c] / mu_u;
                     v[k] = V[c] / mu_v;
                     FU[c] = 0; FV[c] = 0; FT[c] = 0;
+                    for (int s = 0; s < nq; s++) FQ[(size_t)s * nz * N + c] = 0;
                 }
                 if (do_drag) {
                     REAL ph1 = p_top + sigma_half[nz] * m, ph0 = p_top + sigma_half[nz - 1] * m;
@@ -634,6 +654,21 @@ EXPORT void FN(phys_col)(int nz, int ny, int nx, const int *xm1, const int *ym1,
                     REAL zz1 = z1 > 2 * zz0 ? z1 : 2 * zz0;
                     REAL lg = (REAL)0.4 / log(zz1 / zz0);
                     REAL cd = lg * lg;
+                    if (theta_s) {
+                        const REAL th1 = th[nz - 1];
+                        REAL sp2 = u1 * u1 + v1 * v1;
+                        if (sp2 < (REAL)0.01) sp2 = (REAL)0.01;
+                        const REAL Ri = (G0_ * z1 * (th1 - theta_s[c2])) / (th1 * sp2);
+                        REAL F;
+                        if (Ri >= 0) {
+                            F = (REAL)1.0 / ((REAL)1.0 + (REAL)2.0 * louis_b * Ri / sqrt((REAL)1.0 + louis_d * Ri));
+                        } else {
+                            const REAL zoz = zz1 / zz0;
+                            F = (REAL)1.0 - (REAL)2.0 * louis_b * Ri
+                                / ((REAL)1.0 + (REAL)3.0 * louis_b * louis_cm * cd * sqrt(-Ri * zoz));
+                        }
+                        cd = cd * F;
+                    }
                     const size_t c = (size_t)(nz - 1) * N + c2;
                     FU[c] = mu_u * (-cd * speed * u1 / dz1);
                     FV[c] = mu_v * (-cd * speed * v1 / dz1);
@@ -668,7 +703,14 @@ EXPORT void FN(phys_col)(int nz, int ny, int nx, const int *xm1, const int *ym1,
                         FV[c] = FV[c] + mu_v * mv_[k];
                         FT[c] = FT[c] + m * mt_[k];
                     }
+                    for (int s = 0; s < nq; s++) {
+                        const size_t off = (size_t)s * nz * N + c2;
+                        FN(_mix_col)(nz, qloc + s * nz, 1, K, dz, mq_);
+                        for (int k = 0; k < nz; k++) FQ[off + (size_t)k * N] = m * mq_[k];
+                    }
                 }
+                if (nq)
+                    for (int k = 0; k < nz; k++) FT[(size_t)k * N + c2] *= ff[k];
             }
     }
 }
@@ -681,6 +723,11 @@ EXPORT void FN(phys_col)(int nz, int ny, int nx, const int *xm1, const int *ym1,
  * cols: the n flat indices (j*nx+i) of the zone dilated by one cell (the
  * interior neighbours whose U, V change when mu changes in the zone).
  * a: the per-step weights (already rescaled per unit time), 0 outside.
+ * an, tw (P-79): theta's weights. an = the narrow-zone weights (2-D), tw =
+ *     per level the share of an (nz; NULL = all levels narrow). At level k
+ *     theta is relaxed with (1 - tw[k]) * a + tw[k] * an. an = NULL: theta
+ *     uses a. Where the weight is below a, theta (and the hydrostatic phi
+ *     built from it) moves less than u, v and mu.
  * Driving state: wa*A + wb*B for u, v, theta (nz) and pi (2-D).
  * Pass 1 updates mu (into mu_new); pass 2 everything else.
  * ==================================================================== */
@@ -699,7 +746,8 @@ EXPORT void FN(relax_col)(int nz, int ny, int nx, int n, const int *cols,
                           const int *xm1, const int *ym1,
                           REAL p_top, REAL P0_, REAL KAPPA_, REAL RD_, REAL G_,
                           const REAL *sf, const REAL *ds, const REAL *terrain,
-                          const REAL *a, const REAL *mu_old, const REAL *mu_new,
+                          const REAL *a, const REAL *an, const REAL *tw,
+                          const REAL *mu_old, const REAL *mu_new,
                           REAL wa, REAL wb,
                           const REAL *uA, const REAL *uB, const REAL *vA, const REAL *vB,
                           const REAL *tA, const REAL *tB,
@@ -725,7 +773,8 @@ EXPORT void FN(relax_col)(int nz, int ny, int nx, int n, const int *cols,
                 REAL et = wa * tA[c] + wb * tB[c];
                 u = u + al * (eu - u);
                 v = v + al * (ev - v);
-                t = t + al * (et - t);
+                const REAL alt = an ? (tw ? ((REAL)1 - tw[k]) * al + tw[k] * an[c2] : an[c2]) : al;
+                t = t + alt * (et - t);
                 U[c] = u * mun_u;
                 V[c] = v * mun_v;
                 Th[c] = t * mn;
@@ -1184,13 +1233,17 @@ EXPORT void FN(as_b_b)(int nz, int ny, int nx, const int *xm1, const int *xp1,
  * ==================================================================== */
 EXPORT long FN(pav_col)(int nz, int ny, int nx, const int *xm1, const int *ym1,
                         REAL tol, int mix, const REAL *dsigma, const REAL *mu,
-                        REAL *U, REAL *V, REAL *Th)
+                        REAL *U, REAL *V, REAL *Th, int nq, REAL *Qm)
 {
+    /* nq, Qm (CAM stage S7, P-74): nq <= 3 mass-weighted mixing ratios
+     * Qm = mu q (nq, nz, ny, nx), mixed over the same blocks as theta (q =
+     * Qm/mu in, Qm = q*mu out, at every point as for Th). nq = 0: unused. */
     const size_t N = (size_t)ny * nx;
     long ncol = 0;
     #pragma omp parallel reduction(+:ncol)
     {
         REAL t[nz], uu[nz], vv[nz], Sw[nz], S0[nz], S1[nz], S2[nz];
+        REAL qq[3 * nz], Sq[3 * nz];
         int start[nz];
         #pragma omp for schedule(static)
         for (size_t c2 = 0; c2 < N; c2++) {
@@ -1204,6 +1257,7 @@ EXPORT long FN(pav_col)(int nz, int ny, int nx, const int *xm1, const int *ym1,
                 t[k] = Th[c] / m;
                 uu[k] = U[c] / mu_u;
                 vv[k] = V[c] / mu_v;
+                for (int s = 0; s < nq; s++) qq[s * nz + k] = Qm[((size_t)s * nz + k) * N + c2] / m;
             }
             for (int k = 0; k < nz - 1; k++)
                 if (t[k] < t[k + 1] - tol) { bad = 1; break; }
@@ -1217,6 +1271,7 @@ EXPORT long FN(pav_col)(int nz, int ny, int nx, const int *xm1, const int *ym1,
                     Sw[top] = wk;
                     S0[top] = wk * t[k];
                     if (mix) { S1[top] = wk * uu[k]; S2[top] = wk * vv[k]; }
+                    for (int s = 0; s < nq; s++) Sq[s * nz + top] = wk * qq[s * nz + k];
                     start[top] = jj;
                     while (top >= 1) {
                         REAL upper = S0[top] / Sw[top];
@@ -1225,6 +1280,7 @@ EXPORT long FN(pav_col)(int nz, int ny, int nx, const int *xm1, const int *ym1,
                         Sw[top - 1] += Sw[top];
                         S0[top - 1] += S0[top];
                         if (mix) { S1[top - 1] += S1[top]; S2[top - 1] += S2[top]; }
+                        for (int s = 0; s < nq; s++) Sq[s * nz + top - 1] += Sq[s * nz + top];
                         top--;
                     }
                 }
@@ -1235,6 +1291,7 @@ EXPORT long FN(pav_col)(int nz, int ny, int nx, const int *xm1, const int *ym1,
                     if (b + 1 <= top && start[nxt] == jj) b = b + 1;
                     t[k] = S0[b] / Sw[b];
                     if (mix) { uu[k] = S1[b] / Sw[b]; vv[k] = S2[b] / Sw[b]; }
+                    for (int s = 0; s < nq; s++) qq[s * nz + k] = Sq[s * nz + b] / Sw[b];
                 }
             }
             for (int k = 0; k < nz; k++) {
@@ -1242,6 +1299,7 @@ EXPORT long FN(pav_col)(int nz, int ny, int nx, const int *xm1, const int *ym1,
                 Th[c] = t[k] * m;
                 U[c] = uu[k] * mu_u;
                 V[c] = vv[k] * mu_v;
+                for (int s = 0; s < nq; s++) Qm[((size_t)s * nz + k) * N + c2] = qq[s * nz + k] * m;
             }
         }
     }
@@ -1271,4 +1329,254 @@ EXPORT void FN(uv_maxabs)(int nz, int ny, int nx, const int *xm1, const int *ym1
     }
     out[0] = nan ? (REAL)NAN : mu_;
     out[1] = nan ? (REAL)NAN : mv_;
+}
+
+
+/* ======================================================================
+ * MOISTURE (CAM stage S7; moisture.py, NH3D._adv_q, NHModel._step_moisture)
+ * ==================================================================== */
+
+/*
+ * adv_q: flux-form tendencies of mu q for nq mixing ratios, as NH3D._adv_q:
+ *   Omega from the face fluxes U, V (as NH3D.omega), the horizontal faces
+ *   with FLUX3, the vertical faces as _vface3, then the divergence.
+ *   q, out: (nq, nz, ny, nx); om: work (nz+1, ny, nx); fx, fy: work (nz, ny, nx).
+ */
+EXPORT void FN(adv_q)(int nq, int nz, int ny, int nx,
+                      const int *xm1, const int *xp1, const int *xm2,
+                      const int *ym1, const int *yp1, const int *ym2,
+                      REAL dx, REAL dy, const REAL *ds, const REAL *U, const REAL *V,
+                      const REAL *q, REAL *out, REAL *om, REAL *fx, REAL *fy)
+{
+    const size_t N = (size_t)ny * nx;
+    /* Omega, one column at a time */
+    #pragma omp parallel
+    {
+        REAL dv[nz];
+        #pragma omp for schedule(static)
+        for (size_t c2 = 0; c2 < N; c2++) {
+            const size_t j = c2 / nx, i = c2 % nx;
+            REAL dmu = 0;
+            for (int k = 0; k < nz; k++) {
+                const size_t r = (size_t)k * N + j * nx;
+                dv[k] = (U[r + xp1[i]] - U[r + i]) / dx
+                        + (V[(size_t)k * N + (size_t)yp1[j] * nx + i] - V[r + i]) / dy;
+                dmu = dmu + dv[k] * ds[k];
+            }
+            dmu = -dmu;
+            om[c2] = 0;
+            for (int k = 0; k < nz; k++)
+                om[(size_t)(k + 1) * N + c2] = om[(size_t)k * N + c2] - (dmu + dv[k]) * ds[k];
+            om[(size_t)nz * N + c2] = 0;
+        }
+    }
+    for (int s = 0; s < nq; s++) {
+        const REAL *qs = q + (size_t)s * nz * N;
+        REAL *os = out + (size_t)s * nz * N;
+        #pragma omp parallel for collapse(2) schedule(static)
+        for (int k = 0; k < nz; k++)
+            for (int j = 0; j < ny; j++) {
+                const size_t r = (size_t)k * N + (size_t)j * nx;
+                const size_t rm1 = (size_t)k * N + (size_t)ym1[j] * nx;
+                const size_t rp1 = (size_t)k * N + (size_t)yp1[j] * nx;
+                const size_t rm2 = (size_t)k * N + (size_t)ym2[j] * nx;
+                for (int i = 0; i < nx; i++) {
+                    fx[r + i] = FLUX3(U[r + i], qs[r + i], qs[r + xm1[i]], qs[r + xp1[i]], qs[r + xm2[i]]);
+                    fy[r + i] = FLUX3(V[r + i], qs[r + i], qs[rm1 + i], qs[rp1 + i], qs[rm2 + i]);
+                }
+            }
+        #pragma omp parallel
+        {
+            REAL qf[nz + 1];
+            #pragma omp for schedule(static)
+            for (size_t c2 = 0; c2 < N; c2++) {
+                const size_t j = c2 / nx, i = c2 % nx;
+                #define QS(k) qs[(size_t)(k) * N + c2]
+                qf[0] = QS(0); qf[nz] = QS(nz - 1);
+                for (int k = 1; k < nz; k++) qf[k] = (REAL)0.5 * (QS(k) + QS(k - 1));
+                if (nz >= 4) {
+                    for (int k = 2; k <= nz - 2; k++) {
+                        const REAL a = QS(k - 2), b = QS(k - 1), cc = QS(k), d = QS(k + 1);
+                        const REAL avg = ((REAL)7.0 * (b + cc) - (a + d)) / (REAL)12.0;
+                        const REAL dif = ((REAL)3.0 * (cc - b) - (d - a)) / (REAL)12.0;
+                        const REAL o = om[(size_t)k * N + c2];
+                        const REAL sg = (o > 0) ? (REAL)1 : ((o < 0) ? (REAL)-1 : (REAL)0);
+                        qf[k] = avg - sg * dif;
+                    }
+                }
+                #undef QS
+                for (int k = 0; k < nz; k++) {
+                    const size_t r = (size_t)k * N + j * nx;
+                    const REAL fz0 = om[(size_t)k * N + c2] * qf[k];
+                    const REAL fz1 = om[(size_t)(k + 1) * N + c2] * qf[k + 1];
+                    os[r + i] = -((fx[r + xp1[i]] - fx[r + i]) / dx
+                                  + (fy[(size_t)k * N + (size_t)yp1[j] * nx + i] - fy[r + i]) / dy)
+                                - (fz1 - fz0) / ds[k];
+                }
+            }
+        }
+    }
+}
+
+/* rain terminal velocity, Klemp and Wilhelmson (1978), as moisture._vt */
+static REAL FN(_vt)(REAL qr, REAL rho, REAL rho_b)
+{
+    REAL x = (REAL)0.001 * rho * qr;
+    if (x < 0) x = 0;
+    return (REAL)36.34 * pow(x, (REAL)0.1364) * sqrt(rho_b / rho);
+}
+
+/*
+ * moist_col: NHModel._step_moisture in one pass per column: the core's p,
+ * rho and dz; hole filling (moisture.fill_negative, weights ds); dry theta =
+ * Th / (mu f); one Kessler step (moisture.kessler); Theta and Q rebuilt.
+ *   cst = EPS, LV, SVP1, SVP2, SVP3, SVPT0, KC1, KC2, KC3, KC4, MAX_CR_SED
+ *   rain (2-D): mm this step (overwritten); lost (2-D): sum of ds * owed q
+ *   that could not be repaid (overwritten).
+ */
+EXPORT void FN(moist_col)(int nz, int ny, int nx, int nq, REAL dt,
+                          REAL P0_, REAL RD_, REAL GAMMA_, REAL CP_, REAL KAPPA_, REAL G_,
+                          const REAL *ds, const REAL *mu, const REAL *phi, REAL *Th, REAL *Q,
+                          REAL *rain, REAL *lost, int warm_rain, const REAL *cst)
+{
+    const size_t N = (size_t)ny * nx;
+    const REAL EPS_ = cst[0], LV_ = cst[1], SVP1_ = cst[2], SVP2_ = cst[3], SVP3_ = cst[4];
+    const REAL SVPT0_ = cst[5], KC1_ = cst[6], KC2_ = cst[7], KC3_ = cst[8], KC4_ = cst[9];
+    const REAL MAXCR = cst[10];
+    #pragma omp parallel
+    {
+        REAL p[nz], rho[nz], dz[nz], th[nz], qv[nz], qc[nz], qr[nz], vt[nz], flux[nz];
+        #pragma omp for schedule(static)
+        for (size_t c2 = 0; c2 < N; c2++) {
+            const REAL m = mu[c2];
+            REAL *qq[3] = {qv, qc, qr};
+            REAL lsum = 0;
+            for (int k = 0; k < nz; k++) {
+                const size_t c = (size_t)k * N + c2;
+                const REAL dphi = phi[c] - phi[c + N];
+                const REAL al = dphi / (m * ds[k]);
+                p[k] = P0_ * pow(RD_ * Th[c] / (m * P0_ * al), GAMMA_);
+                rho[k] = (REAL)1.0 / al;
+                dz[k] = dphi / G_;
+                for (int s = 0; s < nq; s++) qq[s][k] = Q[((size_t)s * nz + k) * N + c2] / m;
+            }
+            /* f with the q before filling, as NHModel._step_moisture */
+            for (int k = 0; k < nz; k++) {
+                const size_t c = (size_t)k * N + c2;
+                const REAL f = ((REAL)1.0 + qv[k] / EPS_) / ((REAL)1.0 + qv[k] + qc[k] + qr[k]);
+                th[k] = Th[c] / (m * f);
+            }
+            for (int s = 0; s < nq; s++) {
+                REAL owe = 0, have = 0;
+                for (int k = 0; k < nz; k++) {
+                    const REAL x = qq[s][k];
+                    if (x < 0) owe = owe - x * ds[k]; else have = have + x * ds[k];
+                }
+                REAL scale;
+                if (have > owe) scale = (REAL)1.0 - owe / (have > 0 ? have : (REAL)1.0);
+                else { scale = 0; lsum = lsum + (owe - have); }
+                for (int k = 0; k < nz; k++) {
+                    const REAL x = qq[s][k] > 0 ? qq[s][k] : (REAL)0;
+                    qq[s][k] = x * scale;
+                }
+            }
+            lost[c2] = lsum;
+            /* sedimentation */
+            const REAL rb = rho[nz - 1];
+            REAL crmax = 0;
+            for (int k = 0; k < nz; k++) {
+                vt[k] = FN(_vt)(qr[k], rho[k], rb);
+                const REAL cr = vt[k] * dt / dz[k];
+                if (cr > crmax) crmax = cr;
+            }
+            int nfall = (int)floor((REAL)0.5 + crmax / MAXCR);
+            if (nfall < 1) nfall = 1;
+            const REAL dtf = dt / nfall;
+            REAL rn = 0;
+            for (int n = 0; n < nfall; n++) {
+                for (int k = 0; k < nz; k++) flux[k] = rho[k] * qr[k] * vt[k];
+                for (int k = 0; k < nz; k++) {
+                    const REAL dv = (k == 0) ? flux[0] : flux[k] - flux[k - 1];
+                    qr[k] = qr[k] - dtf * dv / (rho[k] * dz[k]);
+                }
+                rn = rn + flux[nz - 1] * dtf;
+                for (int k = 0; k < nz; k++) vt[k] = FN(_vt)(qr[k], rho[k], rb);
+            }
+            rain[c2] = rn;
+            const REAL f5 = SVP2_ * (SVPT0_ - SVP3_) * LV_ / CP_;
+            for (int k = 0; k < nz; k++) {
+                if (warm_rain) {
+                    const REAL qrp = qr[k] > 0 ? qr[k] : (REAL)0;
+                    const REAL factorn = (REAL)1.0 / ((REAL)1.0 + KC3_ * dt * pow(qrp, KC4_));
+                    const REAL ex = qc[k] - KC2_ > 0 ? qc[k] - KC2_ : (REAL)0;
+                    const REAL qrprod = qc[k] * ((REAL)1.0 - factorn) + factorn * KC1_ * dt * ex;
+                    REAL a = qc[k] - qrprod; qc[k] = a > 0 ? a : (REAL)0;
+                    REAL b = qr[k] + qrprod; qr[k] = b > 0 ? b : (REAL)0;
+                }
+                const REAL pii = pow(p[k] / P0_, KAPPA_);
+                const REAL temp = pii * th[k];
+                const REAL gam = LV_ / (CP_ * pii);
+                const REAL es = SVP1_ * exp(SVP2_ * (temp - SVPT0_) / (temp - SVP3_));
+                const REAL qvs = EPS_ * es / (p[k] - es);
+                const REAL tt = temp - SVP3_;
+                const REAL prod = (qv[k] - qvs) / ((REAL)1.0 + p[k] / (p[k] - es) * qvs * f5 / (tt * tt));
+                const REAL rcgs = (REAL)0.001 * rho[k];
+                const REAL rq = rcgs * qr[k];
+                const REAL sub = qvs - qv[k] > 0 ? qvs - qv[k] : (REAL)0;
+                REAL e1 = dt * ((((REAL)1.6 + (REAL)124.9 * pow(rq, (REAL)0.2046)) * pow(rq, (REAL)0.525))
+                                / ((REAL)2.55e8 / (p[k] * qvs) + (REAL)5.4e5)) * (sub / (rcgs * qvs));
+                REAL e2 = -prod - qc[k]; if (e2 < 0) e2 = 0;
+                REAL ern = e1 < e2 ? e1 : e2;
+                if (qr[k] < ern) ern = qr[k];
+                const REAL product = prod > -qc[k] ? prod : -qc[k];
+                th[k] = th[k] + gam * (product - ern);
+                REAL nv = qv[k] - product + ern; qv[k] = nv > 0 ? nv : (REAL)0;
+                qc[k] = qc[k] + product;
+                qr[k] = qr[k] - ern;
+            }
+            for (int k = 0; k < nz; k++) {
+                const size_t c = (size_t)k * N + c2;
+                const REAL f = ((REAL)1.0 + qv[k] / EPS_) / ((REAL)1.0 + qv[k] + qc[k] + qr[k]);
+                Th[c] = m * th[k] * f;
+                for (int s = 0; s < nq; s++) Q[((size_t)s * nz + k) * N + c2] = qq[s][k] * m;
+            }
+        }
+    }
+}
+
+
+/* Q update of one RK stage (NH3D._q_stage), C backend:
+ *   q = Qs / mus;  FQ = adv_q(q, U, V) [+ extra];  out = Q0 + dts * FQ
+ * qw, fq: work (nq, nz, ny, nx); om, fx, fy as adv_q. extra may be NULL. */
+EXPORT void FN(q_stage)(int nq, int nz, int ny, int nx,
+                        const int *xm1, const int *xp1, const int *xm2,
+                        const int *ym1, const int *yp1, const int *ym2,
+                        REAL dx, REAL dy, const REAL *ds, const REAL *U, const REAL *V,
+                        const REAL *Q0, const REAL *Qs, const REAL *mus, const REAL *extra,
+                        REAL dts, REAL *out, REAL *qw, REAL *fq, REAL *om, REAL *fx, REAL *fy)
+{
+    const size_t N = (size_t)ny * nx, n3 = (size_t)nq * nz * N;
+    #pragma omp parallel for schedule(static)
+    for (size_t c = 0; c < n3; c++) qw[c] = Qs[c] / mus[c % N];
+    FN(adv_q)(nq, nz, ny, nx, xm1, xp1, xm2, ym1, yp1, ym2, dx, dy, ds, U, V, qw, fq, om, fx, fy);
+    if (extra) {
+        #pragma omp parallel for schedule(static)
+        for (size_t c = 0; c < n3; c++) out[c] = Q0[c] + dts * (fq[c] + extra[c]);
+    } else {
+        #pragma omp parallel for schedule(static)
+        for (size_t c = 0; c < n3; c++) out[c] = Q0[c] + dts * fq[c];
+    }
+}
+
+EXPORT void FN(fill_zero)(size_t n, REAL *out)
+{
+    #pragma omp parallel for schedule(static)
+    for (size_t c = 0; c < n; c++) out[c] = 0;
+}
+
+/* out = y + a * x */
+EXPORT void FN(scale_add)(size_t n, REAL a, const REAL *x, const REAL *y, REAL *out)
+{
+    #pragma omp parallel for schedule(static)
+    for (size_t c = 0; c < n; c++) out[c] = y[c] + a * x[c];
 }

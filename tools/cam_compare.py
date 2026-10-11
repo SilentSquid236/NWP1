@@ -105,7 +105,10 @@ def main():
     p.add_argument("--stations-csv", default=None, help="write the station classes here")
     p.add_argument("--terrain-npz", default=None,
                    help="unlimited terrain on the same grid for the relief classes")
+    p.add_argument("--vars", default=",".join(VARS),
+                   help="variables to pair (default TMP,UGRD,VGRD; DPT for moist arms, S7)")
     a = p.parse_args()
+    vars_ = tuple(v.strip() for v in a.vars.split(",") if v.strip())
 
     labels, roots = [], []
     for spec in a.arms:
@@ -126,7 +129,7 @@ def main():
             with open(os.path.join(r, c, "matches.jsonl")) as fh:
                 for line in fh:
                     m = json.loads(line)
-                    if m["variable"] in VARS:
+                    if m["variable"] in vars_:
                         k = key(c, m)
                         d[k] = float(m["error"])
                         if ai == 0:
@@ -186,7 +189,7 @@ def main():
                 w.writerow([var, lab, f"cycle:{c}", "all", "all", n, f"{b:.4f}", f"{r:.4f}"])
 
     ref = labels[0]
-    for var in VARS:
+    for var in vars_:
         print(f"\n{var}: RMSE by lead (paired), and {labels[1:]} minus {ref}")
         print("  lead      n  " + "  ".join(f"{l:>8s}" for l in labels))
         for L in sorted({k[1] for k in groups if k[0] == var and k[1] >= 0}):

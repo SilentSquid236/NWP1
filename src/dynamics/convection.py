@@ -169,7 +169,7 @@ def dry_convective_adjustment(theta, u, v, pi, lev, max_sweeps=20,
 
 
 def dry_convective_adjustment_pav(theta, u, v, pi, lev, mix_momentum=True,
-                                  tol=1e-10):
+                                  tol=1e-10, scalars=None):
     """
     The same adjustment as `dry_convective_adjustment`, exact in one pass.
 
@@ -192,6 +192,9 @@ def dry_convective_adjustment_pav(theta, u, v, pi, lev, mix_momentum=True,
     NumPy arrays (for torch CPU tensors the conversion is a copy of those few
     columns). A stable state comes back as unchanged copies, value for value.
     Returns (theta, u, v, info) with new arrays; the inputs are not modified.
+
+    scalars (CAM stage S7, P-74): further fields (the moisture mixing ratios)
+    mixed over the same blocks; they come back as info["scalars"].
     """
     xp = xp_of(theta, u, v, pi)
     torch_in = xp.name != "numpy"
@@ -202,6 +205,8 @@ def dry_convective_adjustment_pav(theta, u, v, pi, lev, mix_momentum=True,
 
     nz = th.shape[0]
     t2, u2, v2 = th.reshape(nz, -1), uu.reshape(nz, -1), vv.reshape(nz, -1)
+    sc = [np.array(to_numpy(a), dtype=float, copy=True) for a in (scalars or [])]
+    sc2 = [a.reshape(nz, -1) for a in sc]
     bad = t2[:-1] < t2[1:] - tol
     before = float(bad.mean())
     cb = np.nonzero(bad.any(axis=0))[0]          # columns needing work
@@ -210,7 +215,7 @@ def dry_convective_adjustment_pav(theta, u, v, pi, lev, mix_momentum=True,
         n = cb.size
         ar = np.arange(n)
         w = np.asarray(lev.dsigma, float)[:, None] * pa.reshape(1, -1)[:, cb]
-        fields = [t2] + ([u2, v2] if mix_momentum else [])
+        fields = [t2] + ([u2, v2] if mix_momentum else []) + sc2
         S_w = np.zeros((nz, n))
         S = [np.zeros((nz, n)) for _ in fields]  # mass-weighted sums
         start = np.zeros((nz, n), dtype=np.int64)
@@ -255,6 +260,8 @@ def dry_convective_adjustment_pav(theta, u, v, pi, lev, mix_momentum=True,
     info = {"unstable_before": before, "unstable_after": after,
             "sweeps": 1 if cb.size else 0, "columns": int(cb.size),
             "scheme": "pav"}
+    if scalars is not None:
+        info["scalars"] = sc
     if torch_in:
         import torch
         th, uu, vv = (torch.from_numpy(a) for a in (th, uu, vv))

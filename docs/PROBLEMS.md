@@ -39,6 +39,95 @@ hypothesis, **G** missing physics, **H** performance, **I** logistics.
 # OPEN
 
 
+## P-80 — A run pinned to one socket used the other socket's memory
+
+**Category** H · **First seen** 2026-10-11 (test E7) · **Status** FIXED for pinned runs (`src/numa_bind.py`)
+
+**Symptom.** Of two identical 3 km runs pinned one per socket, the node-1 run was 1.4–1.7× slower (E6b, E6c, E7).
+
+**Cause.** The server's page cache fills node 1, and with `vm.zone_reclaim_mode = 0` new allocations go to node 0: 12.2 of 19.4 GB were remote; IPC 0.50 against 0.58.
+
+**Fix.** `forecast.py` binds memory to the node(s) of its CPU affinity at start-up (MPOL_BIND, via ctypes). Opt out with `NWP_NUMA_BIND=0`. A 4 GB check went from 3.68 GB remote to none. With the bind, the next E7 runs on node 0 and node 1 both ran at 4.0–4.1 min per forecast hour; the unbound node-1 run had run at 6–7.
+
+**Still open.** Cron runs are not pinned, so their OpenMP threads span both sockets. Whether pinning the cron 3 km run to one socket (26 cores, local memory) is faster than 26 threads spread over both is untested.
+
+## P-79 — The 3 km edges are relaxed four times faster, over a zone four times narrower, than the 12 km edges
+**Category** F · **First seen** 2026-10-10 (test E5) · **Status** PARTLY FIXED 2026-10-10 (E6–E6c: ring peak 5.3 → 2.6 at no 2 m T cost; a fuller fix, 1.8, costs 0.2 K; E7 campaign running)
+
+**Symptom.** With the P-76 start-up fix the 12 km outer band is clean, but the 3 km ring is unchanged. On 2026-09-26 00Z, cells 5–15 have an MSLP gradient of 6–10 hPa/100 km against 1.4 inside (peak ratio 4.7–5.5, the same as the S6c run). The zone converges column mass at 41–72 hPa/h rms at +6 h, against 0.4 inside. An interpolated boundary frame alone carries only 6–13, so the frames are not the source.
+
+**Cause (proposed).** The Davies weights (width 15 cells, alpha 0.1) are set in cells and per step. The NH adapter rescales alpha to the hydrostatic CFL step (`hydro.max_dt()`): 17.1 s at 12 km but about 4 s at 3 km. So the 3 km edge e-folding time is about 40 s against about 160 s, and the zone is 45 km against 180 km. The model's own adjustment fights a much stiffer relaxation. At 12 km the same signature remains, weaker, 3–11 cells in (11–15 hPa/h at +1 h; the P-76 residual).
+
+**Tests (2 cycles, 12 h; RESEARCH_LOG 2026-10-10).**
+- E6: the 180 km zone at the 12 km time scale gives peak 1.8–1.9 against 5.3, but 2 m T is +0.20 K at stations 15–60 cells in, where the 3 km is relaxed toward the 12 km forecast.
+- E6b: a narrow 45 km θ/q zone keeps T but leaves a peak of 2.8–3.1.
+- E6c: θ/q over the wide zone above σ 0.80 and the narrow one below σ 0.90 gives peak 2.6 at T −0.01 K. **Adopted for 3 km** in `cam_cycle.sh`.
+
+**Still open.** The residual ring (2.6 against the analysis's 0.9), and the cost of the 60-cell zone (+18 % wall time per run).
+
+---
+
+## P-78 — The verification operators used z0 = 0.1 m while the drag used 1.0 m over land and 0.0002 m over water
+**Category** I · **First seen** 2026-10-07 (EQUATIONS.md audit) · **Status** FIXED 2026-10-10 (default `--z0-operator model`; test P2)
+
+**Symptom.** Since test AM (2026-10-03) the model's surface drag has used a land/sea roughness map (1.0 / 0.0002 m). The 10 m wind and 2 m temperature operators in `verification/sigma_operator.py` kept z0 = 0.1 m, and a docstring said they matched. Every 10 m wind score since AM reduces the lowest-level wind with a different log profile from the one the model integrates.
+
+**Fix written (2026-10-10).** `verify.py --z0-operator {fixed,model}`, default `fixed`, so past scores reproduce. `model` takes log-z0 interpolated from the forecast's new `z0` field; for older files it rebuilds the default land/sea map. `forecast.py` now writes `z0`. `test_verify.py` 12/12. **Measured (P2, 20 cycles):** land 10 m factor −24% (median ratio 0.756), water +24%. nhMb u RMSE 2.026 → 1.921, v 2.213 → 2.125 (v bias −0.54 → −0.11), 2 m T −0.004 K. `model` is now the default; scores before 2026-10-10 used 0.1 m.
+
+---
+
+## P-77 — The exact divergence solve was unstable on the server's SciPy (3 km runs started at 10^7 m/s)
+**Category** F · **First seen** 2026-10-10 (test E5) · **Status** FIXED 2026-10-10
+
+**Symptom.** Every 3 km run of the first E5 attempt diverged at t+0.00 h. The initialisation reported max|div| 1.9 × 10⁻⁴ → 3.4 × 10⁴ s⁻¹, and initial max|u| was 3 × 10⁷ m/s.
+
+**Cause.** The P-76 fix (`--init-balance exact`) factorised the 2D Laplacian with SuperLU. On SciPy 1.9.1 (server) the factorisation was unstable for divergence fields (residuals 10⁰–10⁹ times the divergence, changing with column ordering), while SciPy 1.15 (desktop) was exact. The 12 km E4 initial solves happened to come out right (≤ 6.8 × 10⁻¹⁶ in all 40 logs).
+
+**Fix.** A structured direct solver with no pivoting. The last column and last row are 1D problems, and the interior is solved by fast diagonalisation (orthogonal eigenvectors of two symmetric tridiagonal matrices). Residual 1.3 × 10⁻¹² s⁻¹ at 3 km on both machines, in 0.03–0.2 s. `test_bounded_init.py` now includes the 3 km grid (6/6 on both). **Confirmed:** the restarted E5 runs pass +1 h with no divergence.
+
+---
+
+## P-76 — A square ring of packed isobars along the domain edges
+**Category** F · **First seen** 2026-10-07 (user report) · **Status** FIXED for the outer band 2026-10-10 (test E4; defaults changed). Residual: a weaker bump 5–15 cells in, and a dewpoint cost (+0.07 K). The v cost (+0.08 m/s) was mostly the verification operator (P-78): with the drag-consistent operator nhMb beats nhM on v (2.125 vs 2.128)
+
+**Symptom.** On the MSLP maps the isobars pack into a square along the domain edges. Measured with `tools/edge_diag.py`: inside the 15-cell relaxation zone the MSLP gradient is 2–3× the interior's at 12 km and 5–11× at 3 km. It appears from +1 h and stays steady. The analysis has no ring.
+
+**Cause (diagnosed, not yet fixed).** The interior loses about half its analysed pressure contrast in the first hour, because the analysed winds do not support the analysed pressure field and the pressure adjusts to the wind. The relaxation zone holds surface pressure to the frame point by point, and for 12 km the frame is the hour-0 analysis all day. The 3 km zone inherits the 12 km ring and compresses it into a quarter of the width.
+
+**Boundary-side fix: refuted (test E1).** `forecast.py --relax-pi {full, mean, none}` was implemented and tested, C against NumPy. Relaxing only the zone mean, or nothing, raised the ring index at +12 h from 1.8 to 9.1–9.9, and the zone MSLP RMSE from 2.6 to 13–27 hPa. The relaxed winds do not fit the analysed pressure. The default stays `full`, and the option stays for diagnosis.
+
+**E3 (2026-10-07).** Masking below-ground heights made no difference (identical to E2). Zone-mean edge pressure failed again with balanced winds (ring index 7.74).
+
+**Cause found (2026-10-09).** The ring is already present at +0.1 h, while the analysis and the surface pressure built from it have none. The model's column mass-flux divergence implies a surface-pressure tendency of 23.6 hPa/h rms in the outer three cells, against 6 inside, and it persists because the frames re-impose the same winds every step. The source is the initialisation that the initial state and every frame share: a periodic-FFT lowpass, whose wrap-around ringing affects temperature at the edges, and a periodic-FFT divergence removal plus polish, which leaves about 10⁻⁵ s⁻¹ in the outer cells and spreads it about 10 cells inward. Fix: `--init-filter mirror` and `--init-balance exact` (`test_bounded_init.py`, 5/5). The defaults are unchanged until E4 passes. See RESEARCH_LOG 2026-10-09.
+
+**Correction 2026-10-10:** the hPa/h tendencies quoted for P-76 used μ = π − p_top and are about 25 % low (reference 31.6, both fixes 6.0 in the outer three cells at +0.1 h; RESEARCH_LOG E4 entry).
+
+**E4 (2026-10-10).** The bounded start-up (`--init-filter mirror --init-balance exact`) cuts the outer-band pressure tendency from 23.6 to 4.7 hPa/h and the +1 h edge gradient from 2.31 to 1.32 (analysis 1.34). Over 20 cycles the ring index at +12 h falls from 1.84 to 1.40, and the outer 5-cell gradient from 2.6 to 1.4 (analysis 1.2). u RMSE falls from 2.342 to 2.026; v rises from 2.141 to 2.217, and dewpoint from 2.657 to 2.724. These are now the defaults. **Still open:** a smaller gradient excess 5–15 cells in (1.6–1.8 against 1.2), where the relaxation weight fades. The 3 km check of this (E5) is running.
+
+**Analysis-side fix (in test).** Test E2 sets the initial and frame winds more than 1500 m above the ground to the geostrophic wind of the analysed heights (`--init-winds geostrophic`).
+
+## P-74 — Moist core approximations that are known and not yet measured
+**Category** G · **First seen** 2026-10-07 · **Status** OPEN (known simplifications of S7)
+
+**What.** The S7 moisture (moisture.py) makes four simplifications.
+- mu, the air mass of the column, does not change when rain falls out or the surface evaporates. The error is at most ~0.3 hPa in a day of heavy rain.
+- The mixing ratios are relative to dry air in the Kessler formulas, but they are weighted by the whole-air mu (a ~1 % difference).
+- ~~The PAV dry adjustment acts on theta_rho (the core's variable) and does not mix q in the columns it adjusts.~~ Measured (S7b): the 12 km moist run's 2 m dewpoint had a day bias of +1.14 K over hilly and +1.55 K over mountain stations, and lost to persistence in all 20 cycles. The PAV now mixes q over the same blocks (2026-10-07); arm nh12M2 tests it.
+- The physics in a stage uses the q of the step start ("stage" physics mode only; production uses "step").
+
+**Why accepted.** Each is small next to the warm-rain scheme's own uncertainty. The first two are what WRF's dry-mass formulation also neglects in part.
+
+**Closes when.** The PAV/q interaction is measured on a real 3 km case (cloud base and 2 m dewpoint in the afternoon), or the PAV is made to mix q.
+
+## P-75 — Cron runs whatever commit the server repository is at, and does not verify the 3 km runs
+**Category** I · **First seen** 2026-10-07 · **Status** OPEN
+
+**Symptom.** The crontab installed on 2026-10-07 runs `/data5/pierce/AINWP/tools/cam_cycle.sh`. The server repository was at 7ec9285 (S5), so the scheduled 3 km runs have no land surface until S6 is pushed and pulled. `daily.sh verify` → `verify_pending.py` scores only `tensors_3d`, so the 3 km forecasts are archived but not verified.
+
+**Fix (written 2026-10-07, deployed when pulled).**
+- The user pushes and pulls after each stage.
+- `verify_pending.py` now also scores `tensors_3km` runs from the last 72 h (`--max-age-3km-h`). The 3 km pairs go to `data/verification_3km`, because the archive de-duplicates by station and time and one archive for both grids would keep only the first grid's pairs. The 3 km forecasts are not copied into the archive (`verify(copy_forecast=False)`; 1.6 GB each).
+
 ## P-71 — Every Python step claims half the server's threads, so parallel jobs oversubscribe it
 **Category** I, H · **First seen** 2026-10-03 · **Status** OPEN
 
@@ -493,6 +582,12 @@ service, which is P-06 and is where this project's defects have always been.
 
 **NH core (2026-10-05, test S5g).** The NH core still has no land surface. Over 20 cycles both dry NH runs (3 km and 12 km) show the P-59 signature: 2 m T bias −1.5 K by day and +1.2 K by night. The 12 km production model with its land surface scores 3.22 K against 3.89 K for the dry 3 km run. Wiring the force-restore land surface into `NHModel` is the proposed next CAM step.
 
+**NH core, done (2026-10-06/07, tests S6b and S6c).** The land surface now runs in the NH core. Day/night 2 m T biases:
+- 12 km NH: −0.05 K / −0.79 K (dry: −1.61 / +1.07);
+- 3 km: +0.30 K / −0.45 K.
+
+The 3 km CAM scores 2.97 K against 3.22 K for AM. What stays open in P-59 is shared by both cores: the night cold bias of the surface scheme (AM −0.66 K).
+
 ## P-64 — Cycling never used the previous forecast: snapshots land one step past the hour
 **Category** B, A · **First seen** 2026-10-01 · **Status** OPEN (fix in, awaiting test)
 
@@ -570,6 +665,15 @@ service, which is P-06 and is where this project's defects have always been.
 
 
 # FIXED
+
+## P-73 — S5g compared 12 km and 3 km arms that differed in roughness
+**Category** E · **First seen** 2026-10-07 · **Status** FIXED 2026-10-07 (interpretation corrected)
+
+**Symptom.** S5g reported that the dry 3 km run beat the dry 12 km NH run in 10 m u by 0.30 m/s, twice as much over terrain, and called it a resolution gain.
+
+**Cause.** The 12 km arm was S5a b2, which ran with `--z0 0.1` everywhere. The 3 km runs used the default land/sea roughness map (1 m over land, 0.0002 m over water). S6b measured the map alone under the same physics: −0.30 m/s in u (L1 → L2). With matched roughness (S6c) the 3 km and 12 km NH runs have the same u, 2.385 against 2.383 m/s, in every terrain class.
+
+**Fix.** The S5g entry carries a correction, and the S6c entry gives the measurement. Rule: when an earlier run is reused as a comparison arm, read its command line, not its test name.
 
 ## P-72 — The 3 km run spends 70 % of each step outside the C dynamics
 **Category** H · **First seen** 2026-10-03 · **Status** FIXED 2026-10-05

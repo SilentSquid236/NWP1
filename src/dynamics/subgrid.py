@@ -283,6 +283,118 @@ def remove_divergence_spectral(u, v, grid):
     return u - grid.dx_backward(chi), v - grid.dy_backward(chi)
 
 
+_EXACT_SOLVERS = {}
+
+
+def _bounded_poisson_solver(grid):
+    """
+    Exact solver for L chi = d, L = dx_forward(dx_backward(.)) +
+    dy_forward(dy_backward(.)) with the grid's REPLICATE edges, cached per
+    grid shape and spacing.
+
+    With replicate edges the western and southern boundary faces of the
+    correction vanish (chi[-1] = chi[0]), and the last column (row) has no x
+    (y) divergence at all, so in 1D the operator is
+
+        row 0        : (chi1 - chi0) / h^2
+        rows 1..n-2  : (chi[i+1] - 2 chi[i] + chi[i-1]) / h^2
+        row n-1      : 0
+
+    The 2D operator is the Kronecker sum. Its north-east corner row is
+    identically zero (that cell's divergence is always 0) and constants are
+    its null space, so the corner unknown is pinned to 0. The rest is block
+    triangular:
+      - the last column's equations hold only y-differences within that
+        column, and the last row's only x-differences within that row: two 1D
+        problems (Neumann at the start, the pinned corner at the end);
+      - the interior (rows 0..ny-2, columns 0..nx-2) is the Kronecker sum of
+        two SYMMETRIC tridiagonal matrices, with the column and row above as
+        known edge values. It is solved by fast diagonalisation: both 1D
+        matrices are diagonalised by orthogonal eigenvectors (eigh), so the
+        solve is two small dense transforms and a division -- stable, exact to
+        round-off, and free of pivoting.
+
+    REPLACED 2026-10-10: the first version factorised the 2D matrix with
+    SuperLU (scipy.sparse.linalg.splu). It was exact on the desktop
+    (SciPy 1.15) but unstable on the server's SciPy 1.9.1 -- residuals 10^0 to
+    10^9 times the divergence, depending on the column ordering -- and every 3 km
+    run of test E5 started with winds of 10^7 m/s.
+    """
+    key = (grid.ny, grid.nx, float(grid.dx), float(grid.dy))
+    if key in _EXACT_SOLVERS:
+        return _EXACT_SOLVERS[key]
+    ny, nx = grid.ny, grid.nx
+    dx2, dy2 = float(grid.dx) ** 2, float(grid.dy) ** 2
+
+    def interior_1d(m):
+        """The m x m 1D operator (h = 1): Neumann at 0, Dirichlet beyond m-1."""
+        a = np.zeros((m, m))
+        i = np.arange(m)
+        a[i, i] = -2.0
+        a[0, 0] = -1.0
+        a[i[:-1], i[:-1] + 1] = 1.0
+        a[i[1:], i[1:] - 1] = 1.0
+        return a
+
+    Ax, Ay = interior_1d(nx - 1), interior_1d(ny - 1)
+    lx, Qx = np.linalg.eigh(Ax)
+    ly, Qy = np.linalg.eigh(Ay)
+    denom = ly[:, None] / dy2 + lx[None, :] / dx2          # (ny-1, nx-1), all < 0
+    Ay_inv = np.linalg.inv(Ay)
+    Ax_inv = np.linalg.inv(Ax)
+
+    def solve(d):
+        d = np.asarray(d, dtype=float)
+        chi = np.zeros((ny, nx))
+        # last column (rows 0..ny-2): (1/dy^2) Ay c = d; corner pinned at 0
+        chi[:-1, -1] = dy2 * (Ay_inv @ d[:-1, -1])
+        # last row (columns 0..nx-2): (1/dx^2) Ax r = d
+        chi[-1, :-1] = dx2 * (Ax_inv @ d[-1, :-1])
+        # interior, with the column and row above as Dirichlet values
+        rhs = d[:-1, :-1].copy()
+        rhs[:, -1] -= chi[:-1, -1] / dx2
+        rhs[-1, :] -= chi[-1, :-1] / dy2
+        chi[:-1, :-1] = Qy @ ((Qy.T @ rhs @ Qx) / denom) @ Qx.T
+        return chi
+
+    _EXACT_SOLVERS[key] = solve
+    return solve
+
+
+def remove_divergence_exact(u, v, grid):
+    """
+    Remove the divergent part of a wind field exactly on the BOUNDED domain
+    (P-76, test E4).
+
+    remove_divergence_spectral assumes periodicity. On this domain that leaves
+    divergence of order 1e-5 1/s in the outermost cells, and the iterative
+    polish of the "hybrid" method spreads it about ten cells inward. Those are
+    the relaxation-zone cells, where the boundary frames -- prepared the same
+    way -- re-impose the winds every step: a column-mass convergence of about
+    20 hPa/h in the outer three cells (12 km, 2026-09-28 06Z), balanced by the
+    surface-pressure relaxation as a standing pressure ring at the edges.
+
+    Here chi solves the model's own discrete Laplacian with the grid's
+    replicate edges (a sparse direct solve), so the divergence that the model
+    computes vanishes to round-off in every cell, edges included. The
+    western and southern boundary-face winds are unchanged.
+    """
+    if getattr(grid, "edge_mode", "replicate") == "periodic":
+        return remove_divergence_spectral(u, v, grid)
+    solve = _bounded_poisson_solver(grid)
+    u = np.array(u, dtype=float)
+    v = np.array(v, dtype=float)
+    div = grid.dx_forward(u) + grid.dy_forward(v)
+    if u.ndim == 2:
+        chi = solve(div)
+        return u - grid.dx_backward(chi), v - grid.dy_backward(chi)
+    for k in range(u.shape[0]):
+        chi = solve(div[k])
+        u[k] = u[k] - grid.dx_backward(chi)
+        v[k] = v[k] - grid.dy_backward(chi)
+    return u, v
+
+
 def balance_initial_state(u, v, grid, target_div=2e-5, max_iter=400,
                           verbose=True, method="hybrid", edge=6):
     """
@@ -312,7 +424,12 @@ def balance_initial_state(u, v, grid, target_div=2e-5, max_iter=400,
     d0 = maxdiv(u, v)
     speed0 = float(np.abs(u).max())
 
-    if method in ("spectral", "hybrid"):
+    if method == "exact":
+        # Bounded-domain solve (P-76, test E4): exact in every cell, so no
+        # polish -- the polish spreads edge residuals inward.
+        u, v = remove_divergence_exact(u, v, grid)
+        it = 1
+    elif method in ("spectral", "hybrid"):
         # Exact in one shot. Applied per level for a 3D field.
         if u.ndim == 3:
             for k in range(u.shape[0]):
@@ -359,8 +476,9 @@ def balance_initial_state(u, v, grid, target_div=2e-5, max_iter=400,
         print(f"  initialisation : max|div| {d0:.2e} -> {d:.2e} 1/s "
               f"({method}, {it} pass{'es' if it > 1 else ''})"
               + ("" if info["converged"] else "  (did not reach target)"))
-        print(f"                   interior max|div| {d_interior:.2e} 1/s "
-              f"(edges are relaxed to the driver anyway)")
+        print(f"                   interior max|div| {d_interior:.2e} 1/s"
+              + ("" if method == "exact" else
+                 " (edge cells keep the periodic solve's error; P-76)"))
         print(f"                   implied omega {info['omega_before_Pa_s']:.1f}"
               f" -> {d_interior * 80000:.2f} Pa/s interior; "
               f"max|u| {speed0:.1f} -> {info['speed_after']:.1f} m/s")

@@ -179,7 +179,11 @@ def station_pressure_from_altimeter(alti_inhg, elev_m):
 
 def slp_from_station_pressure(p_stn_pa, elev_m, t_k):
     """Reduce station pressure to sea level with a standard lapse rate."""
-    g, rd, gamma = 9.80665, 287.05, 0.0065
+    import sys as _sys
+    from pathlib import Path as _Path
+    _sys.path.insert(0, str(_Path(__file__).resolve().parent.parent / "dynamics"))
+    from constants import RD as rd, G0 as g      # one definition for all of NWP1 (was 287.05 here)
+    gamma = 0.0065
     t_mean = float(t_k) + 0.5 * gamma * float(elev_m)
     return float(p_stn_pa) * np.exp(g * float(elev_m) / (rd * t_mean))
 

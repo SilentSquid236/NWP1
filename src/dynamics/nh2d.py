@@ -58,12 +58,8 @@ TIME INTEGRATION (Wicker and Skamarock 2002; Klemp et al. 2007)
 """
 import numpy as np
 
-G = 9.80665
-RD = 287.04
-CP = 1004.5
-CV = CP - RD
-P0 = 1.0e5
-KAPPA = RD / CP
+from constants import RD, CP, CV, P0, KAPPA, G0 as G   # one definition for all of NWP1
+# (until 2026-10-07 this core used RD 287.04, CP 1004.5; see constants.py)
 
 
 def reference_state(z_c, z_w, theta_c, p_surface=P0):

@@ -149,6 +149,21 @@ def parse_asos_csv(text, station_meta=None, source="asos"):
         tmpf = _num(row.get("tmpf"))
         add("TMP", f_to_k(tmpf) if tmpf is not None else None)
         add("RH", _num(row.get("relh")))
+        dwpf = _num(row.get("dwpf"))
+        add("DPT", f_to_k(dwpf) if dwpf is not None else None)     # CAM stage S7
+        mslp = _num(row.get("mslp"))                                # P-76: hPa -> Pa
+        add("PMSL", mslp * 100.0 if mslp is not None else None)
+        # Hourly precipitation (S7 scoring): p01i is the routine METAR's
+        # accumulation since the previous hourly reset, in inches. "T" (trace,
+        # under 0.01 in) is kept as 0 mm rather than dropped: a trace hour is
+        # a dry hour at every threshold scored, and dropping it would bias the
+        # sample toward wet hours.
+        p01 = (row.get("p01i") or "").strip()
+        if p01 == "T":
+            add("APCP1H", 0.0)
+        else:
+            p01v = _num(p01)
+            add("APCP1H", p01v * 25.4 if p01v is not None else None)
 
         drct, sknt = _num(row.get("drct")), _num(row.get("sknt"))
         if drct is not None and sknt is not None:
@@ -167,7 +182,7 @@ def asos_url(networks, start, end, stations=None):
                the same pattern, e.g. "NY_RWIS".
     """
     params = [("data", "tmpf"), ("data", "dwpf"), ("data", "relh"),
-              ("data", "drct"), ("data", "sknt"),
+              ("data", "drct"), ("data", "sknt"), ("data", "mslp"), ("data", "p01i"),
               # Exact timestamps, as src/analysis/sources.py sends them. Until
               # 2026-09-26 this sent only year/month/day, and every
               # verification window ended at 00Z of the end DATE: a 24 h

@@ -143,13 +143,17 @@ def eddy_diffusivity(Ri, S2, ri_crit=RI_CRIT, k_max=K_MAX,
 
 
 def vertical_mixing(u, v, theta, pi, lev, ri_crit=RI_CRIT, k_max=K_MAX,
-                    mixing_length=MIXING_LENGTH):
+                    mixing_length=MIXING_LENGTH, scalars=None):
     """
     Tendencies from turbulent vertical mixing: d/dz ( K du/dz ), etc.
 
-    Returns (du, dv, dtheta), each shaped like the input. Fluxes vanish at the
-    lid and the ground, so this redistributes momentum and heat within a
+    Returns (du, dv, dtheta, K), each shaped like the input. Fluxes vanish at
+    the lid and the ground, so this redistributes momentum and heat within a
     column without creating or destroying either.
+
+    scalars (CAM stage S7): an optional sequence of further fields (the
+    moisture mixing ratios) mixed with the same K; their tendencies are then
+    returned as a fifth item, a list in the same order.
     """
     Ri, N2, S2, dz = richardson(u, v, theta, pi, lev)
     K = eddy_diffusivity(Ri, S2, ri_crit, k_max, mixing_length)
@@ -165,6 +169,8 @@ def vertical_mixing(u, v, theta, pi, lev, ri_crit=RI_CRIT, k_max=K_MAX,
         out[-1] = -flux[-1] / dz[-1]
         return out
 
+    if scalars is not None:
+        return mix(u), mix(v), mix(theta), K, [mix(a) for a in scalars]
     return mix(u), mix(v), mix(theta), K
 
 

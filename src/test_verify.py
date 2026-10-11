@@ -243,6 +243,157 @@ def test_auto_surface_operator():
            ok, f"got {got}")
 
 
+# ---------------------------------------------------------------------------
+def test_dewpoint_scored_for_moist_forecasts():
+    """
+    CAM stage S7: ASOS dwpf becomes DPT observations; a forecast with qv is
+    scored against them (lowest-level qv at the station pressure), a dry one
+    skips them with a named reason. A uniform qv chosen to give Td = 10 C at
+    the model surface must score within 0.5 K of 10 C at a station near the
+    model's elevation.
+    """
+    import moisture as mo
+    with tempfile.TemporaryDirectory() as d:
+        d = Path(d)
+        fc = fake_forecast(d / "forecast.npz", 3, terrain_height=6.0)
+        z = dict(np.load(fc))
+        ps = z["p_top"] + z["pi"][0]
+        qv = float(mo.qsat(283.15, float(ps.mean())))          # Td = 10 C at p_s
+        z["qv"] = np.full(z["theta"].shape, qv)
+        np.savez_compressed(d / "moist.npz", **z)
+        lines = ["station,valid,lon,lat,elevation,tmpf,dwpf,drct,sknt"]
+        for h in range(4):
+            t = RUN + timedelta(hours=h)
+            lines.append(f"KBOS,{t:%Y-%m-%d %H:%M},-71.01,42.36,6.0,59.0,50.0,270,10")
+        first, last = RUN + timedelta(hours=1), RUN + timedelta(hours=3)
+        for name in ("dry", "moist"):
+            paths = V.archive_paths(d / name, RUN)
+            V.store_raw(paths["raw"], f"asos_{first:%Y%m%d%H}_{last:%Y%m%d%H}", "\n".join(lines) + "\n")
+        m_dry, _ = V.verify(fc, d / "dry", run_time=RUN, report_only=True, verbose=False)
+        m_wet, _ = V.verify(d / "moist.npz", d / "moist", run_time=RUN, report_only=True, verbose=False)
+        dpt = [m for m in m_wet if m["variable"] == "DPT"]
+        td_obs = (50.0 - 32.0) * 5 / 9 + 273.15
+        ok = (len(dpt) == 3 and not any(m["variable"] == "DPT" for m in m_dry)
+              and all(abs(m["forecast"] - 283.15) < 0.5 for m in dpt)
+              and all(abs(m["observation"] - td_obs) < 1e-6 for m in dpt))
+        report("dewpoint: DPT pairs for a moist forecast (Td within 0.5 K), none for a dry one", ok,
+               f"{len(dpt)} DPT pairs, forecast Td {[round(m['forecast'] - 273.15, 2) for m in dpt]} C, "
+               f"obs {td_obs - 273.15:.2f} C; dry run DPT pairs "
+               f"{sum(m['variable'] == 'DPT' for m in m_dry)}")
+
+
+# ---------------------------------------------------------------------------
+def test_sea_level_pressure_scored():
+    """
+    P-76: ASOS mslp becomes PMSL observations, scored against the forecast's
+    sea-level pressure reduced as the maps reduce it (maps/derive.py). With the
+    station near the model's terrain height the forecast MSLP must equal the
+    map MSLP field at that point to 0.01 hPa.
+    """
+    sys.path.insert(0, str(HERE / "maps"))
+    from derive import column_state, mslp
+    with tempfile.TemporaryDirectory() as d:
+        d = Path(d)
+        fc = fake_forecast(d / "forecast.npz", 3, terrain_height=6.0)
+        z = dict(np.load(fc))
+        p, T, Z, ps = column_state(z["theta"][0], z["pi"][0], z["sigma"], float(z["p_top"]), z["terrain"])
+        m = mslp(ps, T, Z, z["terrain"])
+        lines = ["station,valid,lon,lat,elevation,tmpf,mslp,drct,sknt"]
+        for h in range(4):
+            t = RUN + timedelta(hours=h)
+            lines.append(f"KBOS,{t:%Y-%m-%d %H:%M},-71.01,42.36,6.0,59.0,1012.3,270,10")
+        first, last = RUN + timedelta(hours=1), RUN + timedelta(hours=3)
+        paths = V.archive_paths(d / "a", RUN)
+        V.store_raw(paths["raw"], f"asos_{first:%Y%m%d%H}_{last:%Y%m%d%H}", "\n".join(lines) + "\n")
+        mt, _ = V.verify(fc, d / "a", run_time=RUN, report_only=True, verbose=False)
+        pm = [x for x in mt if x["variable"] == "PMSL"]
+        ok = (len(pm) == 3 and all(abs(x["observation"] - 101230.0) < 1e-6 for x in pm)
+              and all(abs(x["forecast"] - float(m.mean())) < 1.0 for x in pm))
+        report("sea-level pressure: PMSL pairs scored against the map MSLP (within 0.01 hPa)", ok,
+               f"{len(pm)} PMSL pairs, forecast {[round(x['forecast'] / 100, 2) for x in pm]} hPa, "
+               f"map MSLP {float(m.mean()) / 100:.2f} hPa, obs 1012.30 hPa")
+
+
+# ---------------------------------------------------------------------------
+def test_hourly_precipitation_scored():
+    """
+    S7: ASOS p01i becomes APCP1H observations (inches -> mm; a trace "T" is
+    0 mm, "M" is no observation). A moist forecast is scored with the rain of
+    the hour ending at each snapshot: the difference of the accumulated "rain"
+    field from the snapshot an hour earlier. A forecast without rain skips them
+    with a named reason. Two reports 1 km apart -- one wet, one dry -- must
+    both pass QC (no buddy check on precipitation).
+    """
+    with tempfile.TemporaryDirectory() as d:
+        d = Path(d)
+        fc = fake_forecast(d / "forecast.npz", 3, terrain_height=6.0)
+        z = dict(np.load(fc))
+        acc = np.array([0.5, 2.5, 2.5])                      # mm since the start at +1, +2, +3 h
+        z["rain"] = np.stack([np.full(z["pi"][0].shape, a) for a in acc]).astype(np.float32)
+        np.savez_compressed(d / "moist.npz", **z)
+        lines = ["station,valid,lon,lat,elevation,tmpf,p01i,drct,sknt"]
+        p01 = {1: "0.04", 2: "T", 3: "M"}
+        for h in range(1, 4):
+            t = RUN + timedelta(hours=h)
+            lines.append(f"KBOS,{t:%Y-%m-%d %H:%M},-71.01,42.36,6.0,59.0,{p01[h]},270,10")
+            lines.append(f"KXYZ,{t:%Y-%m-%d %H:%M},-71.00,42.36,6.0,59.0,0.00,270,10")
+        first, last = RUN + timedelta(hours=1), RUN + timedelta(hours=3)
+        for name in ("dry", "moist"):
+            paths = V.archive_paths(d / name, RUN)
+            V.store_raw(paths["raw"], f"asos_{first:%Y%m%d%H}_{last:%Y%m%d%H}", "\n".join(lines) + "\n")
+        m_dry, _ = V.verify(fc, d / "dry", run_time=RUN, report_only=True, verbose=False)
+        m_wet, _ = V.verify(d / "moist.npz", d / "moist", run_time=RUN, report_only=True, verbose=False)
+        pr = sorted([m for m in m_wet if m["variable"] == "APCP1H"], key=lambda m: (m["station"], m["lead_hours"]))
+        bos = [m for m in pr if m["station"] == "KBOS"]
+        ok = (len(pr) == 5 and len(bos) == 2
+              and abs(bos[0]["observation"] - 1.016) < 1e-9 and abs(bos[0]["forecast"] - 0.5) < 1e-4
+              and bos[1]["observation"] == 0.0 and abs(bos[1]["forecast"] - 2.0) < 1e-4
+              and not any(m["variable"] == "APCP1H" for m in m_dry))
+        report("hourly precipitation: APCP1H pairs (0.04 in -> 1.016 mm, trace -> 0, M dropped), "
+               "forecast = hour's rain from the accumulation; wet next to dry both kept; none for a dry run", ok,
+               f"{len(pr)} pairs; KBOS obs {[round(m['observation'], 3) for m in bos]} mm, "
+               f"forecast {[round(m['forecast'], 3) for m in bos]} mm; dry-run pairs "
+               f"{sum(m['variable'] == 'APCP1H' for m in m_dry)}")
+
+
+# ---------------------------------------------------------------------------
+def test_model_z0_operator():
+    """
+    Test P2 (P-78; model is the default since 2026-10-10): --z0-operator model
+    reduces the lowest-level wind with the
+    forecast's own roughness (its z0 field). With z0 = 1 m everywhere the
+    10 m factor must be ln(10/1)/ln(z1/1), against ln(10/0.1)/ln(z1/0.1)
+    with the fixed operator, at the same z1.
+    """
+    with tempfile.TemporaryDirectory() as d:
+        d = Path(d)
+        fc = fake_forecast(d / "forecast.npz", 3, terrain_height=6.0)
+        z = dict(np.load(fc))
+        z["z0"] = np.full(z["terrain"].shape, 1.0, np.float32)
+        np.savez_compressed(d / "z0.npz", **z)
+        lines = ["station,valid,lon,lat,elevation,tmpf,drct,sknt"]
+        for h in range(4):
+            t = RUN + timedelta(hours=h)
+            lines.append(f"KBOS,{t:%Y-%m-%d %H:%M},-71.01,42.36,6.0,59.0,270,10")
+        first, last = RUN + timedelta(hours=1), RUN + timedelta(hours=3)
+        for name in ("fixed", "model"):
+            paths = V.archive_paths(d / name, RUN)
+            V.store_raw(paths["raw"], f"asos_{first:%Y%m%d%H}_{last:%Y%m%d%H}", "\n".join(lines) + "\n")
+        mf, _ = V.verify(d / "z0.npz", d / "fixed", run_time=RUN, report_only=True, verbose=False,
+                         z0_operator="fixed")
+        mm, _ = V.verify(d / "z0.npz", d / "model", run_time=RUN, report_only=True, verbose=False,
+                         z0_operator="model")
+        uf = [m for m in mf if m["variable"] == "UGRD"][0]
+        um = [m for m in mm if m["variable"] == "UGRD"][0]
+        z1 = um["model_level_agl_m"]
+        want_f, want_m = np.log(10 / 0.1) / np.log(z1 / 0.1), np.log(10 / 1.0) / np.log(z1 / 1.0)
+        ok = (abs(uf["wind_factor"] - want_f) < 1e-9 and abs(um["wind_factor"] - want_m) < 1e-6
+              and abs(um["z0"] - 1.0) < 1e-6 and abs(uf["z0"] - 0.1) < 1e-12)
+        report("z0 operator: model uses the forecast's z0 (factor ln(10/z0)/ln(z1/z0) at z0 = 1 m); fixed keeps 0.1 m",
+               ok, f"z1 {z1:.1f} m; factor fixed {uf['wind_factor']:.4f} (want {want_f:.4f}), "
+                   f"model {um['wind_factor']:.4f} (want {want_m:.4f})")
+
+
 if __name__ == "__main__":
     print("\nVerification archiver\n" + "=" * 66)
     for fn in (test_raw_observations_are_stored_verbatim,
@@ -252,7 +403,11 @@ if __name__ == "__main__":
                test_elevation_correction_is_recorded,
                test_report_only_refuses_without_cache,
                test_old_forecast_format_is_refused,
-               test_auto_surface_operator):
+               test_auto_surface_operator,
+               test_dewpoint_scored_for_moist_forecasts,
+               test_sea_level_pressure_scored,
+               test_hourly_precipitation_scored,
+               test_model_z0_operator):
         try:
             fn()
         except Exception as e:

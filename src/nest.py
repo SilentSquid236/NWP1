@@ -25,11 +25,7 @@ pi in the frames is p_s - p_top, as everywhere in NWP1.
 """
 import numpy as np
 
-G = 9.80665
-RD = 287.04
-CP = 1004.5
-KAPPA = RD / CP
-P0 = 1.0e5
+from constants import RD, CP, KAPPA, P0, G0 as G   # one definition (was 287.04 / 1004.5)
 LAPSE = 0.0065
 
 
@@ -139,14 +135,48 @@ def frame_from_coarse(u, v, theta, pi, sigma_src, p_top, h_src, h_dst, sigma_dst
     return uu, vv, th, ps_c - p_top
 
 
-def frames_from_forecast(path, h_dst, sigma_dst, hours):
-    """[(t_seconds, u, v, theta, pi)] from a 12 km forecast file, up to `hours`."""
+def scalar_from_coarse(q, pi, sigma_src, p_top, h_src, h_dst, sigma_dst, theta=None):
+    """A cell-centred 12 km scalar (a mixing ratio) on the 3 km grid and
+    sigma_dst: regridded and remapped linear in ln p, held beyond the end
+    levels, so a non-negative field stays non-negative (CAM stage S7)."""
+    NY, NX = h_dst.shape
+    sig_s = np.asarray(sigma_src, float)[:, None, None]
+    sig_d = np.asarray(sigma_dst, float)[:, None, None]
+    ps_src = pi + p_top
+    t_low = theta[-1] * ((p_top + sig_s[-1, 0, 0] * pi) / P0) ** KAPPA
+    ps = regrid(ps_src, (NY, NX))
+    hs = regrid(h_src, (NY, NX))
+    tl = regrid(t_low, (NY, NX))
+    ps_d = surface_pressure_to(ps, hs, h_dst, tl)
+    p_s = p_top + sig_s * (ps - p_top)[None]
+    p_d = p_top + sig_d * (ps_d - p_top)[None]
+    return np.maximum(remap_column(regrid(q, (NY, NX)), p_s, p_d), 0.0)
+
+
+def frames_from_forecast(path, h_dst, sigma_dst, hours, moist=False):
+    """[(t_seconds, u, v, theta, pi)] from a 12 km forecast file, up to `hours`.
+
+    moist (CAM stage S7): each tuple gets a sixth item, a dict of qv, qc, qr on
+    the destination grid when the file has them (empty otherwise).
+    """
     z = np.load(path, allow_pickle=False)
+    has_q = moist and all(k in z.files for k in ("qv", "qc", "qr"))
+    h_src = np.asarray(z["terrain"], float)
     out = []
     for n, t in enumerate(np.asarray(z["times_s"], float)):
         if t > hours * 3600.0 + 1e-6:
             break
-        out.append((float(t),) + frame_from_coarse(
+        fr = (float(t),) + frame_from_coarse(
             z["u"][n], z["v"][n], z["theta"][n], z["pi"][n], z["sigma"],
-            float(z["p_top"]), np.asarray(z["terrain"], float), h_dst, sigma_dst))
+            float(z["p_top"]), h_src, h_dst, sigma_dst)
+        if moist:
+            extra = {}
+            if has_q:
+                th_n, pi_n = np.asarray(z["theta"][n], float), np.asarray(z["pi"][n], float)
+                for k in ("qv", "qc", "qr"):
+                    extra[k] = scalar_from_coarse(np.asarray(z[k][n], float), pi_n, z["sigma"],
+                                                  float(z["p_top"]), h_src, h_dst, sigma_dst,
+                                                  theta=th_n)
+            fr = fr + (extra,)
+        out.append(fr)
     return out

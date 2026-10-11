@@ -40,10 +40,10 @@ import numpy as np
 
 from obs_operator import GridInterpolator, elevation_correct_temperature
 
-RD = 287.05
-G0 = 9.80665
-P0 = 100_000.0
-KAPPA = RD / 1004.6
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent / "dynamics"))
+from constants import RD, G0, P0, KAPPA     # one definition (was RD 287.05 here)
 
 
 class SigmaInterpolator(GridInterpolator):
@@ -84,10 +84,11 @@ class SigmaInterpolator(GridInterpolator):
         Factor that takes the lowest-level wind down to 10 m (P-68).
 
         Neutral log law, ln(10/z0) / ln(z1/z0), with z1 the lowest level's
-        height above the MODEL ground and z0 the model's own roughness length.
-        It is the same profile the model's surface drag assumes
-        (surface.neutral_drag_coefficient), so the operator and the model agree
-        on what the lowest level means. Returns (factor, z1_above_ground), or
+        height above the MODEL ground. It is the profile the model's surface
+        drag assumes (surface.neutral_drag_coefficient) -- but only if z0 is
+        the drag's own roughness. CORRECTION 2026-10-10: since test AM the drag
+        uses 1.0 m over land and 0.0002 m over water while this operator kept
+        0.1 m; verify.py --z0-operator model passes the drag's map (test P2). Returns (factor, z1_above_ground), or
         (None, None) outside the domain.
         """
         z1 = self.lowest_level_height(theta3d, lat, lon)
@@ -125,9 +126,9 @@ class SigmaInterpolator(GridInterpolator):
                 "zeta": float(zeta), "Ri_bulk": float(ri), "model_level_agl_m": agl,
                 "model_elev_m": float(h), "Tg": float(tg)}
 
-    def station_temperature_similarity(self, theta3d, u3d, v3d, tg2d, lat, lon, station_elev):
+    def station_temperature_similarity(self, theta3d, u3d, v3d, tg2d, lat, lon, station_elev, z0=0.1):
         """2 m temperature by similarity, then the standard lapse from model ground to station."""
-        d = self.surface_similarity(theta3d, u3d, v3d, tg2d, lat, lon)
+        d = self.surface_similarity(theta3d, u3d, v3d, tg2d, lat, lon, z0=z0)
         if d is None:
             return None, {}
         T2 = d["T2_model_ground"]
@@ -207,6 +208,26 @@ class SigmaInterpolator(GridInterpolator):
             return None if th is None else th * (p[-1] / P0) ** KAPPA
         th = self.at_pressure(theta3d, lat, lon, pressure)
         return None if th is None else th * (pressure / P0) ** KAPPA
+
+    def station_dewpoint(self, qv3d, theta3d, lat, lon, station_elev):
+        """
+        2 m dewpoint at a station (CAM stage S7): the lowest-level vapour
+        mixing ratio (taken as constant through the surface layer) at the
+        station pressure, which is the model surface pressure moved to the
+        station elevation with the lowest-level temperature's scale height.
+        Returns (value, info) like station_temperature.
+        """
+        from moisture import dewpoint
+        qv = self.at_surface(qv3d, lat, lon)
+        ps = self.surface_pressure(lat, lon)
+        zm = self.model_elevation(lat, lon)
+        T = self.temperature(theta3d, lat, lon)
+        if qv is None or ps is None or zm is None or T is None:
+            return None, {}
+        dz = 0.0 if station_elev is None else float(station_elev) - float(zm)
+        p = float(ps) * np.exp(-G0 * dz / (RD * float(T)))
+        return float(dewpoint(max(float(qv), 1e-6), p)), {
+            "qv_lowest": float(qv), "p_station": p, "elev_correction_m": dz}
 
     def station_temperature(self, theta3d, lat, lon, station_elev):
         """

@@ -34,19 +34,30 @@ it removed.
 import numpy as np
 
 
-def spectral_lowpass(field, grid, cutoff_dx=4.0, rolloff_dx=8.0):
+def spectral_lowpass(field, grid, cutoff_dx=4.0, rolloff_dx=8.0, mirror=False):
     """
     Smoothly remove variance at wavelengths shorter than `cutoff_dx` grid
     cells, leaving everything longer than `rolloff_dx` untouched.
 
     Response is 1 for wavelengths >= rolloff_dx, 0 for <= cutoff_dx, and a
     raised cosine in between. Works on 2D or 3D (level, y, x) fields.
+
+    mirror=True (P-76, test E4) filters the field's even reflection
+    (2ny x 2nx, a cosine transform in effect) and returns the original
+    quarter. The plain FFT treats the domain as periodic: a field warmer in
+    the south than the north has a jump where north wraps onto south, and
+    the filter's ringing from that jump put 1.5 K rms into the outer three
+    cells of a smooth 10 K gradient (synthetic test). Mirrored, 0.03 K.
     """
     if cutoff_dx >= rolloff_dx:
         raise ValueError("cutoff_dx must be shorter than rolloff_dx")
 
     a = np.asarray(field, dtype=float)
     ny, nx = a.shape[-2:]
+    if mirror:
+        top = np.concatenate([a, a[..., :, ::-1]], axis=-1)
+        big = np.concatenate([top, top[..., ::-1, :]], axis=-2)
+        return spectral_lowpass(big, grid, cutoff_dx, rolloff_dx)[..., :ny, :nx]
 
     # Wavelength in grid cells for each Fourier mode.
     kx = np.fft.fftfreq(nx)            # cycles per grid cell
@@ -84,7 +95,7 @@ def grid_scale_energy(field, grid, cutoff_dx=4.0):
 
 
 def filter_initial_state(u, v, theta, grid, cutoff_dx=4.0, rolloff_dx=8.0,
-                         filter_theta=True):
+                         filter_theta=True, mirror=False):
     """
     Apply the lowpass to an initial state, returning filtered copies.
 
@@ -93,12 +104,12 @@ def filter_initial_state(u, v, theta, grid, cutoff_dx=4.0, rolloff_dx=8.0,
     unbalanced at exactly the scales that were just cleaned, and the
     pressure-gradient force puts the noise straight back into the wind.
     """
-    uf = spectral_lowpass(u, grid, cutoff_dx, rolloff_dx)
-    vf = spectral_lowpass(v, grid, cutoff_dx, rolloff_dx)
+    uf = spectral_lowpass(u, grid, cutoff_dx, rolloff_dx, mirror=mirror)
+    vf = spectral_lowpass(v, grid, cutoff_dx, rolloff_dx, mirror=mirror)
     if not filter_theta:
         return uf, vf, theta
     # Filter the DEVIATION from the horizontal mean so the mean profile,
     # which carries the stratification, is untouched.
     ref = theta.mean(axis=(-2, -1), keepdims=True)
-    tf = ref + spectral_lowpass(theta - ref, grid, cutoff_dx, rolloff_dx)
+    tf = ref + spectral_lowpass(theta - ref, grid, cutoff_dx, rolloff_dx, mirror=mirror)
     return uf, vf, tf

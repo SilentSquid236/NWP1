@@ -38,6 +38,8 @@ RESERVE_MIN=6   # forecast set-up (~1 min) + output write (~1.3 min since S5e wr
                 # float32 at zlib 1; it was ~6 min at float64/zlib 6 in S5c2), with margin.
                 # The deadline counts only the steps.
 CAM_THREADS="${NWP_CAM_THREADS:-26}"
+# NWP_CAM_ARGS: extra forecast.py options for the 3 km run, e.g. "--moist"
+# (CAM stage S7); empty by default.
 export NWP_CBUILD="${NWP_CBUILD:-$DATA/cbuild}"
 # resources.py sets the BLAS/OpenMP caps of every Python step to a fraction of
 # the machine (default 50 % = 52 threads). A quarter (26, one socket) for the
@@ -91,7 +93,10 @@ echo "NWP1 CAM cycle $RUN, $HOURS h, budget $BUDGET_MIN min, $CAM_THREADS thread
 if [ -z "${NWP_SKIP_12KM:-}" ]; then
     step "12 km cycle (daily.sh)" bash "$ROOT/tools/daily.sh" "$RUN" "$HOURS" || true
 fi
-for f in "$D12/obs_analysis_f00.npz" "$D12/forecast.npz"; do
+# Edges: the 12 km forecast of the same cycle; NWP_CAM_BOUNDARY overrides the
+# file (CAM stage S6 campaign: the AM forecasts kept by test AM).
+BFC="${NWP_CAM_BOUNDARY:-$D12/forecast.npz}"
+for f in "$D12/obs_analysis_f00.npz" "$BFC"; do
     if [ ! -f "$f" ]; then
         echo "=== no $f: the 3 km run needs the 12 km analysis and forecast" >> "$LOG"
         exit 1
@@ -110,10 +115,16 @@ if [ "$LEFT_MIN" -lt 5 ]; then
     echo "=== 3 km forecast SKIPPED: $USED_MIN of $BUDGET_MIN min already used" >> "$LOG"
     exit 1
 fi
+# Edge relaxation in physical units (P-79, tests E6-E6c, 2026-10-10): u, v and
+# pi over 180 km (the 12 km zone) at the 12 km time scale; theta and q over
+# 180 km above sigma 0.80 but only 45 km near the ground, where the 12 km
+# forecast's boundary layer would cost the 3 km 2 m temperature. Override with
+# NWP_CAM_RELAX (empty string = the old 15-cell, CFL-step relaxation).
+CAM_RELAX="${NWP_CAM_RELAX---relax-width-km 180 --relax-thermo-width-km 45 --relax-thermo-sigma 0.80,0.90 --relax-dt-ref 17.1}"
 step "3 km forecast" python -u "$ROOT/src/forecast.py" --run-dir "$D3" --hours "$HOURS" \
     --output-every 1 --core nh --nh-backend c --threads "$CAM_THREADS" \
-    --nh-physics step --levels 40 --boundary-forecast "$D12/forecast.npz" \
-    --deadline-min "$LEFT_MIN" || true
+    --nh-physics step --levels 40 --boundary-forecast "$BFC" \
+    --deadline-min "$LEFT_MIN" $CAM_RELAX ${NWP_CAM_ARGS:-} || true
 
 # Compute ledger (docs/COMPUTE_LEDGER.md): one line per run, kept with the logs.
 log_compute() {   # script, threads

@@ -156,6 +156,36 @@ def load_forecast(path):
     return {k: z[k] for k in z.files}
 
 
+def forecast_mslp(fc, snapshot):
+    """Sea-level pressure (Pa) of one snapshot, as maps/derive.py computes it."""
+    import sys as _sys
+    from pathlib import Path as _P
+    _sys.path.insert(0, str(_P(__file__).resolve().parent / "maps"))
+    from derive import column_state, mslp
+    ter = np.asarray(fc["terrain"], float)
+    p, T, Z, ps = column_state(np.asarray(fc["theta"][snapshot], float), np.asarray(fc["pi"][snapshot], float),
+                               fc["sigma"], float(fc["p_top"]), ter)
+    return mslp(ps, T, Z, ter)
+
+
+def hourly_rain(fc, snapshot):
+    """
+    Rain (mm) in the hour ending at `snapshot`, from the accumulated "rain"
+    field: the difference from the snapshot one hour earlier, or the
+    accumulation itself when the snapshot is at +1 h. False when neither
+    exists (output not hourly).
+    """
+    t = np.asarray(fc["times_s"], float)
+    r = np.asarray(fc["rain"], float)
+    tk = t[snapshot]
+    if abs(tk - 3600.0) < 1.0:
+        return np.maximum(r[snapshot], 0.0)
+    j = np.where(np.abs(t - (tk - 3600.0)) < 1.0)[0]
+    if len(j) == 0:
+        return False
+    return np.maximum(r[snapshot] - r[j[0]], 0.0)
+
+
 def build_interpolator(fc, snapshot):
     """Grid and operator for one snapshot of a forecast."""
     ny, nx = fc["theta"].shape[-2:]
@@ -172,8 +202,31 @@ def build_interpolator(fc, snapshot):
 # Matching
 # ---------------------------------------------------------------------------
 
+Z0_FIXED = 0.1                 # the operators' roughness before 2026-10-10
+Z0_LAND_DEFAULT, Z0_SEA_DEFAULT = 1.0, 0.0002     # forecast.py defaults since test AM
+
+
+def model_z0_map(fc):
+    """
+    The roughness map (m) the forecast's drag used, and where it came from.
+
+    Forecasts written since 2026-10-10 carry it ("z0"). For older ones the
+    default land/sea map is rebuilt as forecast.py builds it: land = raw ETOPO
+    terrain above 0 m, 1.0 m over land and 0.0002 m over water (test AM). A
+    run made with --z0 or other --z0-land/--z0-sea values is NOT recoverable
+    this way; those runs should be verified with --z0-operator fixed.
+    """
+    if "z0" in fc:
+        return np.asarray(fc["z0"], float), "forecast file"
+    ter = np.asarray(fc["terrain"], float)
+    raw = Path(config.DATA_ROOT) / "static" / f"terrain_etopo_{ter.shape[0]}x{ter.shape[1]}.npz"
+    land = (np.load(raw)["terrain"] > 0.0) if raw.exists() else (ter > 0.0)
+    return np.where(land, Z0_LAND_DEFAULT, Z0_SEA_DEFAULT), f"default land/sea map ({raw.name if raw.exists() else 'run terrain'})"
+
+
 def match_snapshot(fc, snapshot, obs, valid_time, lead_hours,
-                   window_min=30, wind_operator="log10m", surface_operator="standard"):
+                   window_min=30, wind_operator="log10m", surface_operator="standard",
+                   z0_operator="fixed", z0_map=None):
     """
     Pair one forecast snapshot with the observations valid near it.
 
@@ -194,6 +247,17 @@ def match_snapshot(fc, snapshot, obs, valid_time, lead_hours,
 
     matches = []
     skipped = {}
+    mslp2d = None            # sea-level pressure field, built on first use (P-76)
+    acc1h = None             # one-hour rain field, built on first use (S7)
+    logz0 = None if z0_map is None else np.log(np.maximum(np.asarray(z0_map, float), 1e-6))
+
+    def z0_at(lat, lon):
+        # the model's roughness at the station: log-z0 interpolated, so a
+        # coastal station between 1 m and 0.0002 m gets a geometric mean
+        if z0_operator != "model" or logz0 is None:
+            return Z0_FIXED
+        g = op.horizontal(logz0, lat, lon)
+        return Z0_FIXED if g is None else float(np.exp(g))
 
     def skip(why):
         skipped[why] = skipped.get(why, 0) + 1
@@ -214,7 +278,8 @@ def match_snapshot(fc, snapshot, obs, valid_time, lead_hours,
             # pressure.
             if o.pressure is None and tg is not None:
                 value, info = op.station_temperature_similarity(
-                    theta, u, v, tg, o.lat, o.lon, getattr(o, "elevation", None))
+                    theta, u, v, tg, o.lat, o.lon, getattr(o, "elevation", None),
+                    z0=z0_at(o.lat, o.lon))
             elif o.pressure is None:
                 value, info = op.station_temperature(
                     theta, o.lat, o.lon, getattr(o, "elevation", None))
@@ -227,21 +292,51 @@ def match_snapshot(fc, snapshot, obs, valid_time, lead_hours,
             # the ground) needs a reduction, or every wind score is mostly
             # the speed ratio. "lowest" keeps the old operator for comparison.
             if value is not None and o.pressure is None and tg is not None:
-                d = op.surface_similarity(theta, u, v, tg, o.lat, o.lon)
+                d = op.surface_similarity(theta, u, v, tg, o.lat, o.lon, z0=z0_at(o.lat, o.lon))
                 if d is not None:
                     info = {"wind_operator": "similarity", "wind_factor": d["wind_factor"],
+                            "z0": z0_at(o.lat, o.lon),
                             "zeta": d["zeta"], "Ri_bulk": d["Ri_bulk"],
                             "model_level_agl_m": d["model_level_agl_m"],
                             "forecast_lowest_level": float(value)}
                     value = value * d["wind_factor"]
             elif (value is not None and o.pressure is None
                     and wind_operator == "log10m"):
-                f, agl = op.wind_10m_factor(theta, o.lat, o.lon)
+                f, agl = op.wind_10m_factor(theta, o.lat, o.lon, z0=z0_at(o.lat, o.lon))
                 if f is not None:
                     info = {"wind_operator": "log10m", "wind_factor": f,
+                            "z0": z0_at(o.lat, o.lon),
                             "model_level_agl_m": agl,
                             "forecast_lowest_level": float(value)}
                     value = value * f
+        elif o.variable == "PMSL" and o.pressure is None:
+            # P-76: sea-level pressure, reduced exactly as the maps reduce it
+            # (maps/derive.py), then interpolated to the station
+            if mslp2d is None:
+                mslp2d = forecast_mslp(fc, snapshot)
+            value = op.horizontal(mslp2d, o.lat, o.lon)
+        elif o.variable == "APCP1H" and o.pressure is None:
+            # S7: one-hour precipitation. The forecast's "rain" is accumulated
+            # surface rain (mm) since the start; the hour ending at this
+            # snapshot is its difference from the snapshot one hour earlier
+            # (or from zero at the start). METARs report the hour ending at
+            # about :53, within the 30 min window of the snapshot.
+            if "rain" not in fc:
+                skip("precipitation: forecast has no rain")
+                continue
+            if acc1h is None:
+                acc1h = hourly_rain(fc, snapshot)
+            if acc1h is False:
+                skip("precipitation: no snapshot one hour earlier")
+                continue
+            value = op.horizontal(acc1h, o.lat, o.lon)
+        elif o.variable == "DPT" and o.pressure is None:
+            # CAM stage S7: 2 m dewpoint from a moist forecast's lowest-level qv
+            if "qv" not in fc:
+                skip("dewpoint: forecast has no moisture")
+                continue
+            value, info = op.station_dewpoint(fc["qv"][snapshot], theta, o.lat, o.lon,
+                                              getattr(o, "elevation", None))
         else:
             skip(f"variable not verified: {o.variable}")
             continue
@@ -293,8 +388,12 @@ def resolve_surface_operator(fc):
 
 def verify(forecast_path, archive_root, run_time=None, window_min=30,
            report_only=False, networks=None, verbose=True,
-           wind_operator="log10m", surface_operator="auto"):
+           wind_operator="log10m", surface_operator="auto", copy_forecast=True,
+           z0_operator="model"):
     fc = load_forecast(forecast_path)
+    z0_map, z0_src = (model_z0_map(fc) if z0_operator == "model" else (None, f"fixed {Z0_FIXED:g} m"))
+    if verbose:
+        print(f"  operator z0    : {z0_src}")
     times_s = np.asarray(fc["times_s"], dtype=float)
     if surface_operator == "auto":
         surface_operator = resolve_surface_operator(fc)
@@ -341,7 +440,9 @@ def verify(forecast_path, archive_root, run_time=None, window_min=30,
             print(f"                   stored {len(text)/1e3:.0f} kB verbatim")
 
     # ---- 2. THE FORECAST, BESIDE THEM ----------------------------------
-    if not paths["forecast"].exists():
+    # (copy_forecast=False for the 3 km runs: 1.6 GB each, and they stay in
+    # tensors_3km beside their verified.json; P-75)
+    if copy_forecast and not paths["forecast"].exists():
         shutil.copy2(forecast_path, paths["forecast"])
 
     # ---- 3. DERIVED: parse, QC, match ----------------------------------
@@ -360,7 +461,8 @@ def verify(forecast_path, archive_root, run_time=None, window_min=30,
         lead = float(times_s[i]) / 3600.0
         m, sk = match_snapshot(fc, i, kept, vt, lead, window_min,
                                wind_operator=wind_operator,
-                               surface_operator=surface_operator)
+                               surface_operator=surface_operator,
+                               z0_operator=z0_operator, z0_map=z0_map)
         m = [r for r in m
              if (r["valid_time"], r["station"], r["variable"]) not in seen]
         all_matches.extend(m)
@@ -384,6 +486,7 @@ def verify(forecast_path, archive_root, run_time=None, window_min=30,
             "skipped": all_skips,
             "wind_operator": wind_operator,
             "surface_operator": surface_operator,
+            "z0_operator": z0_src,
             "written": datetime.now(timezone.utc).isoformat(),
         }, f, indent=2)
 
@@ -418,6 +521,13 @@ def main():
                         "neutral log law (the default since 2026-10-02, "
                         "P-68), or the lowest model level as it is (the "
                         "old default; scores before 2026-10-02 used it)")
+    # DEFAULT CHANGED 2026-10-10 (P-78, test P2): the drag's own roughness.
+    # Every wind score reported before 2026-10-10 used "fixed" (0.1 m).
+    p.add_argument("--z0-operator", choices=("fixed", "model"), default="model",
+                   help="roughness in the 10 m wind and 2 m temperature operators: model = the "
+                        "drag's own map (the forecast's z0 field, or the default land 1.0 m / "
+                        "water 0.0002 m map rebuilt for older files; default since 2026-10-10, "
+                        "test P2), fixed = 0.1 m everywhere (all scores before)")
     p.add_argument("--surface-operator", choices=("auto", "standard", "similarity"),
                    default="auto",
                    help="standard: 2 m temperature from the lowest level by a "
@@ -466,7 +576,8 @@ def main():
                             window_min=args.window_min,
                             report_only=args.report_only,
                             wind_operator=args.wind_operator,
-                            surface_operator=args.surface_operator)
+                            surface_operator=args.surface_operator,
+                            z0_operator=args.z0_operator)
 
     if matches:
         print()

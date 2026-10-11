@@ -43,8 +43,10 @@ import numpy as np
 import barnes
 import geo
 
-RD = 287.05
-G0 = 9.80665
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent / "dynamics"))
+from constants import RD, G0, KAPPA     # one definition for all of NWP1 (was RD 287.05 here)
 EPS = 0.622
 LAPSE = 0.0065
 CHANNELS = ("TMP", "RH", "UGRD", "VGRD", "HGT")
@@ -200,7 +202,7 @@ def first_guess_from_forecast(path, lead_hours, levels_pa, rh_default=None):
     pi = z["pi"][i].astype(float)
     p3d = p_top + sigma[:, None, None] * pi[None]
     theta = z["theta"][i].astype(float)
-    T = theta * (p3d / 100_000.0) ** (RD / 1004.6)
+    T = theta * (p3d / 100_000.0) ** KAPPA
     bg = {"TMP": sigma_to_pressure_levels(T, p3d, levels_pa, "TMP"),
           "UGRD": sigma_to_pressure_levels(z["u"][i].astype(float), p3d, levels_pa, "U"),
           "VGRD": sigma_to_pressure_levels(z["v"][i].astype(float), p3d, levels_pa, "V")}

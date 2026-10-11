@@ -53,6 +53,7 @@ class Observation:
 RANGE_LIMITS = {
     "TMP": (170.0, 340.0),        # K
     "RH": (0.0, 105.0),           # %, slight slack for supersaturation
+    "DPT": (170.0, 320.0),        # K, 2 m dewpoint (CAM stage S7)
     "UGRD": (-150.0, 150.0),      # m/s
     "VGRD": (-150.0, 150.0),
     "HGT": (-500.0, 60000.0),     # gpm
@@ -60,6 +61,9 @@ RANGE_LIMITS = {
     # report of 101 hPa (an altimeter of "3.00" inHg, seen from SMQ on
     # 2026-09-21) is a decode error, not weather.
     "PMSL": (87000.0, 108500.0),  # Pa
+    # One-hour precipitation (mm). 150 mm/h is above the US hourly record
+    # band for this region; larger values are decode errors.
+    "APCP1H": (0.0, 150.0),       # mm in the hour ending at the report
 }
 
 # Default observation + representativeness error by source and variable.
@@ -190,7 +194,10 @@ def run_qc(observations, backgrounds=None, blacklist=None,
     final = []
     neighbours = buddy_neighbours(kept, buddy_radius_km)
     for obs, nb in zip(kept, neighbours):
-        ok, why = buddy_check(obs, nb, buddy_sigma)
+        if obs.variable in NO_BUDDY_CHECK:
+            ok, why = True, "buddy check not applied to this variable"
+        else:
+            ok, why = buddy_check(obs, nb, buddy_sigma)
         if not ok:
             obs.qc_flag, obs.qc_reason = "rejected", why
             summary["buddy"] += 1
@@ -205,6 +212,12 @@ def run_qc(observations, backgrounds=None, blacklist=None,
 
 
 BUDDY_WINDOW_S = 1800      # neighbours within 30 min
+
+# Variables the buddy check must not see. Hourly precipitation is spatially
+# intermittent: a shower 20 km from dry neighbours has a neighbour median of 0
+# and a spread floor of 0.5 * error_std, so the check would reject every
+# isolated convective report -- exactly the events a moist model is scored on.
+NO_BUDDY_CHECK = {"APCP1H"}
 
 
 def buddy_neighbours_reference(kept, radius_km):

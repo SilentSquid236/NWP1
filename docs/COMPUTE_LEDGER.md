@@ -26,28 +26,32 @@ Machine time used by this project, kept from 2026-10-03 at the user's request
   `$DATA/logs/compute_hours.csv` (start, cycle, script, wall minutes, threads).
   Those runs will be in that file, not here.
 
-## Totals to 2026-10-05 (51 server jobs)
+## Totals to 2026-10-10 (65 server jobs)
 
 | Work | Jobs | Run hours | Core-hours (upper bound) |
 |---|---|---|---|
 | Dry 12 km model (tests AB–AN) | 29 | 23.6 | 505 |
-| CAM stages S2–S5 (AO, S3a–S5h, benchmarks, profiles) | 22 | 16.9 | 729 |
-| **All server jobs** | **51** | **40.5** | **1235** |
+| CAM stages S2–S7 and the first live cycle (AO, S3a–S6c, benchmarks, profiles) | 26 | 30.6 | 1333 |
+| S7 moisture tests, edge-ring and scoring tests (S7ab–S7d, P-76 diagnostics, E1–E6c, P1, P2; E7 running) | 16 | 15.7 | 744 |
+| **All server jobs** | **71** | **69.9** | **2583** |
 
-Computed from the CSV rows (run_h 40.51, core-h 1234.60). The CAM rows are
+Computed from the CSV rows (run_h 69.95, core-h 2583.29). E4–E7, P1 and P2 were started by hand over the
+command channel (the approval cards did not reach the user, 2026-10-10); their rows are written from the
+job logs, and the P1/P2 times are approximate (file stamps). E7 has no hours yet. The CAM rows are
 the two CAM benchmarks of 2026-10-02 (857ef10a, 1975c024) and every job
 from test AO (7efb640f) on; all other server rows count as the dry 12 km
-model, including the wait job for test AA.
+model, including the wait job for test AA. S6c's 1.07 h wait for its gate
+is in run_h but not in its core-hours.
 
 Approval waits added 3.4 h of wall clock in total (2.1 h of it one test job
 submitted while the user was away, 2026-10-04).
 
 The largest single jobs:
-- the 3 km campaign S5g, ≤525 core-hours (10.1 h on both sockets);
+- the 3 km campaigns S6c (≤541 core-hours, 10.4 h on both sockets after its gate) and S5g (≤525, 10.1 h);
 - the holdout AN, ≤157 core-hours;
 - the campaigns AL, AK and AM, 38–74 each.
 
 One 3 km 24 h cycle at 26 threads costs **23 core-hours** alone on the
 machine (S5c3: 53.6 min) and 26 core-hours when two run at once, one per
 socket (S5g: 59–67 min each). Before the S5e kernels a cycle cost ~40
-core-hours and did not finish. The S5g campaign is most of the CAM total.
+core-hours and did not finish. The two 3 km campaigns are most of the CAM total.

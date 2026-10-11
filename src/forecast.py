@@ -241,6 +241,91 @@ def stabilise_frame(theta, u, v, pi, lev, columns=None):
                            f"unstable after {info['sweeps']} sweeps")
     return theta, u, v, info
 
+def balanced_winds(fields, grid, terrain, channels=None, smooth_km=50.0,
+                   agl_low=500.0, agl_high=1500.0, info=None, mask_ground=True, weight=1.0):
+    """
+    Replace the analysed winds above the boundary layer by the geostrophic
+    wind of the analysed heights, on the pressure levels, before the sigma
+    conversion (P-76, edge test E2).
+
+        u_g = -(g / f) dZ/dy,   v_g = (g / f) dZ/dx
+
+    with f the model's own (beta-plane) Coriolis parameter at the cell centres
+    and Z smoothed by a Gaussian of `smooth_km` first (the gradient of a
+    gap-filled height field is noisy at the grid scale). Below `agl_low` m
+    above the terrain the analysed (observed) winds are kept, above
+    `agl_high` m the geostrophic wind is used, linear in height between.
+
+    WHY. The analysis builds heights from sea-level pressure (dense ASOS) and
+    winds mostly from sparse soundings; the two do not balance. At this domain
+    size the pressure adjusts to the wind within the first hour (test E1, the
+    edge diagnostic: the interior loses half its pressure contrast while the
+    relaxed edges keep it). A wind in balance with the heights keeps the
+    pressure pattern instead.
+    """
+    from scipy.ndimage import gaussian_filter
+    channels = list(channels or config.CHANNELS)
+    ci = {c: i for i, c in enumerate(channels)}
+    out = np.array(fields, dtype=float, copy=True)
+    Z = out[ci["HGT"]]
+    u, v = out[ci["UGRD"]], out[ci["VGRD"]]
+    sig = (smooth_km * 1e3 / grid.dy, smooth_km * 1e3 / grid.dx)
+    f = np.asarray(grid.f_h, dtype=float)
+    G0_ = 9.80665
+    ter = np.asarray(terrain, dtype=float)
+    ratio = []
+    means = []
+    for k in range(Z.shape[0]):
+        agl = Z[k] - ter
+        if mask_ground:
+            # E3: smooth only heights above the ground (normalised convolution).
+            # Below the terrain the pressure-level heights are extrapolated, and
+            # smoothing them into the neighbouring columns gave spurious winds
+            # around the mountains (E2: v bias -1.5 m/s at mountain stations).
+            m = (agl > 0.0).astype(float)
+            num = gaussian_filter(np.where(agl > 0.0, Z[k], 0.0), sig, mode="nearest")
+            den = gaussian_filter(m, sig, mode="nearest")
+            Zs = np.where(den > 1e-3, num / np.maximum(den, 1e-3), Z[k])
+        else:
+            Zs = gaussian_filter(Z[k], sig, mode="nearest")
+        dzdy, dzdx = np.gradient(Zs, grid.dy, grid.dx)
+        ug, vg = -G0_ / f * dzdy, G0_ / f * dzdx
+        w = weight * np.clip((agl - agl_low) / (agl_high - agl_low), 0.0, 1.0)   # 1 = geostrophic
+        above = agl > agl_high
+        if above.any():
+            sa = np.hypot(u[k], v[k])[above].mean()
+            sg = np.hypot(ug, vg)[above].mean()
+            ratio.append((k, float(sa), float(sg)))
+            means.append((k, float(u[k][above].mean()), float(v[k][above].mean()),
+                          float(ug[above].mean()), float(vg[above].mean())))
+        u[k] = (1.0 - w) * u[k] + w * ug
+        v[k] = (1.0 - w) * v[k] + w * vg
+    if info is not None:
+        info["speed_analysis_vs_geostrophic"] = ratio
+        info["mean_uv_analysis_vs_geostrophic"] = means
+    return out
+
+
+def rh_on_sigma(fields, lev, pi, channels=None):
+    """The analysis RH channel (%) on the model's sigma levels (CAM stage S7):
+    linear in ln p, held beyond the end levels."""
+    from interpolate import interp_log_p
+    channels = list(channels or config.CHANNELS)
+    if "RH" not in channels:
+        raise SystemExit(f"--moist needs an RH channel; the frames have {channels}")
+    rh = np.asarray(fields[channels.index("RH")], dtype=float)
+    p_pa = np.asarray(config.PRESSURE_LEVELS, dtype=float) * 100.0
+    return np.clip(interp_log_p(rh, p_pa, lev.pressure(pi), extrapolate="hold"), 0.0, 100.0)
+
+
+def qv_from_rh_sigma(rh, theta, pi, lev):
+    """Vapour mixing ratio on sigma levels from RH (%) and theta (S7)."""
+    from moisture import qv_from_rh
+    from sigma import P0, KAPPA
+    p = lev.pressure(pi)
+    return qv_from_rh(rh, theta * (p / P0) ** KAPPA, p)
+
+
 def state_to_boundary(u, v, theta, pi=None):
     """Package a model state as boundary-driver input."""
     out = {"u": u, "v": v, "theta": theta}
@@ -262,11 +347,60 @@ class Relaxation3D:
     edge.
     """
 
-    def __init__(self, grid, width=10, alpha_max=1.0, profile="cosine"):
+    PI_MODES = ("full", "mean", "none")
+
+    def __init__(self, grid, width=10, alpha_max=1.0, profile="cosine", pi_mode="full",
+                 thermo_width=None, thermo_sigma=None, sigma=None):
         self.inner = DaviesRelaxation(grid, width, alpha_max, profile)
         self.alpha = self.inner.alpha[None, :, :]
         self.alpha2d = self.alpha[0]          # one array, so torch caches it once
         self.width = width
+        # P-79 / E6: theta and q may be relaxed over a narrower zone than
+        # u, v and pi. None = the same zone (the behaviour before 2026-10-10).
+        self.thermo_width = thermo_width
+        if thermo_width is not None:
+            if thermo_width > width:
+                raise ValueError("the thermodynamic zone must not be wider than the dynamic one")
+            narrow = DaviesRelaxation(grid, thermo_width, alpha_max, profile).alpha[None, :, :]
+            self.alpha2d_thermo = narrow[0]
+            self.thermo_levels = None
+            if thermo_sigma is not None:
+                # P-79 / E6c: the narrow zone only near the ground. Above sigma
+                # top theta and q are relaxed with the full (wide) weights,
+                # below sigma bottom with the narrow ones, linear in between.
+                # thermo_levels[k] is the narrow share at level k.
+                top, bot = thermo_sigma
+                s = np.asarray(sigma, dtype=float)
+                self.thermo_levels = np.clip((s - top) / (bot - top), 0.0, 1.0)
+                w = self.thermo_levels[:, None, None]
+                self.alpha_thermo = (1.0 - w) * self.alpha + w * narrow
+            else:
+                self.alpha_thermo = narrow
+        else:
+            self.alpha_thermo = self.alpha
+            self.alpha2d_thermo = None
+            self.thermo_levels = None
+        # SURFACE PRESSURE AT THE EDGES (P-76). "full" relaxes pi toward the
+        # frame point by point (the behaviour to 2026-10-07). "mean" relaxes
+        # only the zone's weighted mean of pi toward the frame's, so the edge
+        # pressure PATTERN is free to follow the interior while the mass in
+        # the zone is held. "none" leaves pi free at the edges (winds, theta
+        # and q are still relaxed).
+        if pi_mode not in self.PI_MODES:
+            raise ValueError(f"pi_mode must be one of {self.PI_MODES}, not {pi_mode!r}")
+        self.pi_mode = pi_mode
+
+    def pi_target(self, pi_model, pi_frame):
+        """The pi the zone is relaxed toward, for the chosen pi_mode (None:
+        do not relax pi)."""
+        if self.pi_mode == "none":
+            return None
+        if self.pi_mode == "full":
+            return pi_frame
+        a = np.asarray(to_numpy(self.alpha2d), dtype=float)
+        d = float((a * (np.asarray(to_numpy(pi_frame), float) - np.asarray(to_numpy(pi_model), float))).sum()
+                  / a.sum())
+        return pi_model + d
 
     def apply(self, model, ext):
         # Backend-neutral: for torch the weights and the driving state are
@@ -278,13 +412,16 @@ class Relaxation3D:
         if "v" in ext:
             model.v += a * (xp.asarray(ext["v"]) - model.v)
         if "theta" in ext:
-            model.theta += a * (xp.asarray(ext["theta"]) - model.theta)
+            at = xp.asarray(self.alpha_thermo)
+            model.theta += at * (xp.asarray(ext["theta"]) - model.theta)
         # Surface pressure is PROGNOSTIC in the sigma core, so it has to be
         # relaxed at the edges too. Leaving it free while relaxing the wind
         # drives the boundary column toward a mass field the incoming flow
         # does not support.
         if "pi" in ext:
-            model.pi += xp.asarray(self.alpha2d) * (xp.asarray(ext["pi"]) - model.pi)
+            tgt = self.pi_target(model.pi, xp.asarray(ext["pi"]))
+            if tgt is not None:
+                model.pi += xp.asarray(self.alpha2d) * (tgt - model.pi)
 
     @property
     def interior_fraction(self):
@@ -437,6 +574,11 @@ def run_forecast(model, driver, relax, duration, dt=None, output_every=None,
             snapshots.append((stamp, *snap))
             if getattr(model, "land_surface", None) is not None:
                 info.setdefault("tg", []).append(np.array(model.land_surface.Tg, copy=True))
+            if getattr(model, "moist", False):
+                # S7: mixing ratios and accumulated rain at the output times
+                info.setdefault("q", []).append(
+                    np.asarray(model.q(), dtype=snapshot_dtype or np.float64))
+                info.setdefault("rain", []).append(np.array(model.rain, dtype=np.float32))
             if progress:
                 print(" " * 96, end="\r")      # clear the progress line
                 su, sv, sth, spi = snap
@@ -446,7 +588,10 @@ def run_forecast(model, driver, relax, duration, dt=None, output_every=None,
                       f"max|v| {np.abs(sv).max():6.1f}  "
                       f"theta {sth.min():.1f}-{sth.max():.1f} K  "
                       f"p_s {ps.min()/100:.0f}-{ps.max()/100:.0f} hPa  "
-                      f"max|sigma_dot| {float(xp.abs(model.sigma_dot()).max()):.2e}")
+                      f"max|sigma_dot| {float(xp.abs(model.sigma_dot()).max()):.2e}"
+                      + (f"  max qc {float(info['q'][-1][1].max()) * 1e3:.2f} g/kg"
+                         f"  rain max {float(model.rain.max()):.1f} mm"
+                         if getattr(model, "moist", False) else ""))
             if not (np.isfinite(snap[0]).all() and np.isfinite(snap[1]).all()):
                 print("  FORECAST DIVERGED -- stopping")
                 info["stopped"] = f"diverged at {model.time/3600:.2f} h"
@@ -461,6 +606,14 @@ def run_forecast(model, driver, relax, duration, dt=None, output_every=None,
 # ---------------------------------------------------------------------------
 
 def main():
+    # Bind memory to the NUMA node of a pinned run before any large array or
+    # thread pool exists (RESEARCH_LOG 2026-10-11: a run pinned to node 1 had
+    # most of its memory on node 0 and ran 1.4-1.7x slower). No numerical effect.
+    try:
+        from numa_bind import bind_to_cpu_nodes
+        print("  " + bind_to_cpu_nodes(), flush=True)
+    except Exception as e:  # never let placement stop a forecast
+        print(f"  numa bind     : skipped ({e})", flush=True)
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--run-dir", required=True,
@@ -473,6 +626,25 @@ def main():
     # (06Z 2026-09-23 calm, 12Z 2026-09-25 jet) then run 24 h clean. The old
     # behaviour is --relax-width 10 --relax-alpha 1 --div-damp 0.
     p.add_argument("--relax-width", type=int, default=15)
+    p.add_argument("--relax-width-km", type=float, default=None,
+                   help="relaxation zone width in km (overrides --relax-width: cells = "
+                        "round(km / dx)). 180 km is the 12 km default of 15 cells (P-79, test E6)")
+    p.add_argument("--relax-thermo-width-km", type=float, default=None,
+                   help="relax theta and q over this narrower zone (km); u, v and pi keep the "
+                        "full width. Default: the same zone (P-79, test E6b)")
+    p.add_argument("--relax-thermo-sigma", default=None,
+                   help="TOP,BOTTOM (sigma): with --relax-thermo-width-km, use the narrow theta/q "
+                        "zone only below BOTTOM and the full zone above TOP, linear between "
+                        "(P-79, test E6c; e.g. 0.80,0.90)")
+    p.add_argument("--relax-dt-ref", type=float, default=None,
+                   help="NH core: the step (s) the Davies weights refer to, so the edge "
+                        "e-folding time is the same on every grid. Default: the hydrostatic "
+                        "CFL step (17.1 s at 12 km, ~4 s at 3 km). 17.1 at 3 km gives the "
+                        "12 km time scale (P-79, test E6)")
+    p.add_argument("--relax-pi", choices=Relaxation3D.PI_MODES, default="full",
+                   help="edge relaxation of surface pressure (P-76): full = point by point "
+                        "(default, the behaviour to 2026-10-07), mean = only the zone mean, "
+                        "none = free")
     p.add_argument("--backend", choices=("numpy", "torch"), default="numpy",
                    help="array backend for the core: numpy (one core) or "
                         "torch (multi-threaded CPU, same float64 physics)")
@@ -515,8 +687,8 @@ def main():
     p.add_argument("--land-surface", dest="land_surface", action="store_true", default=None,
                    help="Force-restore ground temperature with a surface energy "
                         "budget (land_surface.py; P-59, tests AK, AM, AN). ON by default "
-                        "since 2026-10-03 for the hydrostatic core; off with "
-                        "--surface-heating or --core nh")
+                        "since 2026-10-03 for the hydrostatic core and since CAM "
+                        "stage S6 (2026-10-05) for --core nh; off with --surface-heating")
     p.add_argument("--no-land-surface", dest="land_surface", action="store_false",
                    help="Turn the land surface off (the pre-2026-10-03 configuration)")
     p.add_argument("--z0", type=float, default=None,
@@ -540,6 +712,19 @@ def main():
     p.add_argument("--stochastic", action="store_true",
                    help="Enable SPPT-style tendency perturbations (Buizza et al. 1999)")
     p.add_argument("--seed", type=int, default=None)
+    # DEFAULTS CHANGED 2026-10-10 (P-76, test E4): mirror + exact. The periodic
+    # FFTs put about 20 hPa/h of mass convergence and a temperature ringing into
+    # the outer cells, which the frames re-imposed every step (the edge ring).
+    # The old behaviour is --init-filter periodic --init-balance hybrid.
+    p.add_argument("--init-filter", choices=("periodic", "mirror"), default="mirror",
+                   help="lowpass of the initial state and frames: mirror = FFT of the even "
+                        "reflection, no wrap-around ringing at the edges (default since "
+                        "2026-10-10, P-76 test E4); periodic = plain FFT (the behaviour before)")
+    p.add_argument("--init-balance", choices=("hybrid", "exact"), default="exact",
+                   help="divergence removal of the initial state and frames: exact = sparse "
+                        "solve on the bounded grid, zero divergence in every cell (default since "
+                        "2026-10-10, P-76 test E4); hybrid = periodic FFT plus 60 polish passes "
+                        "(the behaviour before)")
     p.add_argument("--no-balance", action="store_true",
                    help="Skip initial divergence removal. The forecast will "
                         "almost certainly blow up; useful only for showing "
@@ -567,6 +752,18 @@ def main():
     p.add_argument("--raw-boundaries", action="store_true",
                    help="Do not convectively adjust the boundary frames "
                         "(the behaviour before P-63; comparison only)")
+    p.add_argument("--init-winds", choices=("analysis", "geostrophic", "geostrophic-e2"),
+                   default="analysis",
+                   help="P-76 test E2: 'geostrophic' replaces the analysed winds more than "
+                        "1500 m above the ground (blended from 500 m) by the geostrophic wind "
+                        "of the analysed heights, in the initial state and the analysis frames")
+    p.add_argument("--init-winds-weight", type=float, default=1.0,
+                   help="with --init-winds geostrophic: the geostrophic share above 1500 m "
+                        "(1 = replace the analysed wind, 0.5 = half and half; test E4)")
+    p.add_argument("--moist", action="store_true",
+                   help="CAM stage S7: carry water vapour, cloud and rain (warm-rain Kessler "
+                        "microphysics) in the NH core; vapour from the analysis RH, "
+                        "boundaries from the frames' RH or the coarse forecast's q")
     p.add_argument("--out", default=None, help="Where to write forecast .npz")
     p.add_argument("--output-dtype", choices=("auto", "f64", "f32"), default="auto",
                    help="precision of the written fields (default auto: float32 for grids "
@@ -588,9 +785,9 @@ def main():
             args.z0_land, args.z0_sea = Z0_LAND_DEFAULT, Z0_SEA_DEFAULT
         args.z0 = 0.1
     if args.land_surface is None:
-        args.land_surface = not args.surface_heating and args.core == "hydrostatic"
-        if args.core != "hydrostatic" and not args.surface_heating:
-            print("  NOTE: --core nh has no land surface yet; running without it")
+        # On for both cores since CAM stage S6 (user decision 2026-10-05:
+        # the NH core gets the land surface before moisture).
+        args.land_surface = not args.surface_heating
 
     run_dir = Path(args.run_dir)
     files, source = driving_frames(run_dir)
@@ -625,14 +822,33 @@ def main():
     fields0, meta0 = load_state(files[0])
     grid = build_grid(fields0, levels)
     print(f"  grid           : {grid}")
+    if args.relax_width_km is not None:
+        args.relax_width = max(1, int(round(1000.0 * args.relax_width_km / min(grid.dx, grid.dy))))
+        print(f"  relax width    : {args.relax_width_km:g} km -> {args.relax_width} cells")
     print(f"  vertical       : {lev}")
 
     terrain, p_sfc = load_terrain(run_dir, fields0.shape[-2:])
     print(f"  terrain        : {terrain.min():.0f}-{terrain.max():.0f} m"
           + ("" if p_sfc is None else "   (surface pressure from HRRR)"))
 
+    if args.init_winds.startswith("geostrophic"):
+        winfo = {}
+        fields0 = balanced_winds(fields0, grid, terrain, info=winfo,
+                                 mask_ground=(args.init_winds == "geostrophic"),
+                                 weight=args.init_winds_weight)
+        r_ = winfo["speed_analysis_vs_geostrophic"]
+        print(f"  initial winds  : geostrophic share {args.init_winds_weight:g} above 1500 m AGL (blend from 500 m); mean speed "
+              "analysis/geostrophic by level: "
+              + ", ".join(f"{a:.1f}/{g:.1f}" for _, a, g in r_[::max(1, len(r_) // 6)]) + " m/s")
+        mm_ = winfo["mean_uv_analysis_vs_geostrophic"]
+        print("                   mean (u, v) analysis -> geostrophic by level: "
+              + ", ".join(f"({a:+.1f},{b:+.1f})->({c:+.1f},{d_:+.1f})" for _, a, b, c, d_ in mm_[::max(1, len(mm_) // 6)]))
     pi0, u0, v0, th0 = hrrr_to_sigma_state(fields0, lev, terrain,
                                            p_surface=p_sfc)
+    if args.moist:
+        if args.core != "nh":
+            raise SystemExit("--moist needs --core nh")
+        rh0 = rh_on_sigma(fields0, lev, pi0)
 
     # Boundary frames. Each is put through the SAME conversion as the initial
     # state -- if the edges were prepared differently from the interior, the
@@ -641,11 +857,14 @@ def main():
     n_unstable_frames, frame_sweeps, frame_frac = 0, 0, 0.0
     for i, f in enumerate(files[:args.hours + 1]):
         fl, _ = load_state(f)
+        if args.init_winds.startswith("geostrophic"):
+            fl = balanced_winds(fl, grid, terrain, mask_ground=(args.init_winds == "geostrophic"),
+                                weight=args.init_winds_weight)
         pi_b, u, v, th = hrrr_to_sigma_state(fl, lev, terrain,
                                              p_surface=p_sfc)
         if not args.no_balance:
-            u, v, th = filter_initial_state(u, v, th, grid)
-            u, v, _ = balance_initial_state(u, v, grid, verbose=False)
+            u, v, th = filter_initial_state(u, v, th, grid, mirror=(args.init_filter == "mirror"))
+            u, v, _ = balance_initial_state(u, v, grid, verbose=False, method=args.init_balance)
         # ADJUST THE DRIVING STATE ONCE (P-63). The model removes static
         # instability after every step, but the relaxation then pulls the
         # edge columns back toward the frame. A frame with an unstable layer
@@ -663,18 +882,23 @@ def main():
                 frame_frac = max(frame_frac, cinfo["unstable_before"])
         times.append(i * 3600.0)
         states.append(state_to_boundary(u, v, th, pi_b))
+        if args.moist:
+            states[-1]["qv"] = qv_from_rh_sigma(rh_on_sigma(fl, lev, pi_b), th, pi_b, lev)
     if args.boundary_forecast:
         # NESTED RUN (CAM stage S5): the edges follow a coarser forecast of the
         # same cycle, hour by hour, instead of the analysis held fixed. Hour 0
         # is this run's own initial state; later hours come from nest.py.
         import nest
-        nf = nest.frames_from_forecast(args.boundary_forecast, terrain, lev.sigma, args.hours)
+        nf = nest.frames_from_forecast(args.boundary_forecast, terrain, lev.sigma, args.hours,
+                                       moist=args.moist)
         times, states = times[:1], states[:1]
         # Only the relaxation zone (plus one cell) ever reads a frame.
         zone = Relaxation3D(grid, width=args.relax_width, alpha_max=args.relax_alpha).alpha2d > 0
         zone_d = zone.copy()
         zone_d[1:] |= zone[:-1]; zone_d[:-1] |= zone[1:]; zone_d[:, 1:] |= zone[:, :-1]; zone_d[:, :-1] |= zone[:, 1:]
-        for t, u, v, th, pi_b in nf:
+        n_moist_frames = 0
+        for fr_ in nf:
+            t, u, v, th, pi_b = fr_[:5]
             if t <= 0.0:
                 continue
             if not args.raw_boundaries:
@@ -685,7 +909,14 @@ def main():
                     frame_frac = max(frame_frac, cinfo["unstable_before"])
             times.append(t)
             states.append(state_to_boundary(u, v, th, pi_b))
-        print(f"  nested in      : {args.boundary_forecast} ({len(nf)} hourly frames)")
+            if len(fr_) > 5 and fr_[5]:
+                states[-1].update(fr_[5])          # S7: qv, qc, qr of the coarse run
+                n_moist_frames += 1
+        print(f"  nested in      : {args.boundary_forecast} ({len(nf)} hourly frames"
+              + (f", {n_moist_frames} with moisture)" if args.moist else ")"))
+        if args.moist and n_moist_frames == 0:
+            print("  NOTE: the coarse forecast has no moisture; the edges keep the "
+                  "initial vapour (frame 0) and the model's own cloud and rain")
         if times[-1] < args.hours * 3600.0 - 1e-6:
             print(f"  NOTE: the coarse forecast ends at {times[-1] / 3600:.2f} h; the edges are "
                   f"held at its last frame after that")
@@ -726,6 +957,7 @@ def main():
         land_z0, src_z0 = _land_mask(terrain)
         z0 = np.where(land_z0, zl, zs)
         z0_note = f"z0 = {zl:g} m over land, {zs:g} m over water ({src_z0})"
+    args._z0_map = z0              # written with the forecast, for verify.py --z0-operator model
     model = PrimitiveSigma(grid, lev, terrain=terrain, stochastic=stoch,
                            sponge_levels=args.sponge_levels, hyper=hyper,
                            ri_crit=args.ri_crit, mixing=not args.no_mixing,
@@ -776,8 +1008,9 @@ def main():
     # divergence than the unfiltered one and still survives ten hours longer:
     # wavenumber content is the controlling variable, not divergence.
     if not args.no_balance:
-        u0, v0, th0 = filter_initial_state(u0, v0, th0, grid)
-        u0, v0, binfo = balance_initial_state(u0, v0, grid)
+        u0, v0, th0 = filter_initial_state(u0, v0, th0, grid, mirror=(args.init_filter == "mirror"))
+        u0, v0, binfo = balance_initial_state(u0, v0, grid, method=args.init_balance)
+        print(f"  init edges     : filter {args.init_filter}, balance {args.init_balance}")
         if binfo.get("omega_after_Pa_s", 0.0) > 5.0:
             print("  WARNING: initial divergence is still large; expect a "
                   "noisy first hour.")
@@ -792,19 +1025,35 @@ def main():
         # hydrostatic model built above supplies the grid, terrain and physics
         # settings; its prepared state is loaded with w = 0 and a hydrostatic phi.
         from nh3d import NHModel
-        if args.land_surface or args.surface_heating:
-            raise SystemExit("--core nh does not yet support --land-surface or --surface-heating")
+        if args.surface_heating:
+            raise SystemExit("--core nh does not support --surface-heating; it uses --land-surface")
         if args.backend == "torch":
             print("  NOTE: --core nh runs on NumPy; --backend torch ignored")
             args.backend = "numpy"
         hydro = model
         model = NHModel(hydro, backend=args.nh_backend, threads=args.threads,
                         physics_every=args.nh_physics)
-        model.set_state(u0, v0, th0, pi0)
+        if args.moist:
+            # S7: vapour from the analysis RH at the prepared temperature
+            qv0 = qv_from_rh_sigma(rh0, th0, pi0, lev)
+            model.set_state(u0, v0, th0, pi0, q={"qv": qv0})
+            print(f"  moisture       : qv, qc, qr (Kessler warm rain); initial qv "
+                  f"{qv0.min() * 1e3:.2f}-{qv0.max() * 1e3:.2f} g/kg from RH "
+                  f"{rh0.min():.0f}-{rh0.max():.0f} %")
+        else:
+            model.set_state(u0, v0, th0, pi0)
         if args.nh_backend == "c":
             print(f"  NH kernels     : compiled C (nh3d_kernels.c), {model.core.threads} OpenMP threads")
         if args.nh_physics == "step":
             print("  NH physics     : once per step, held over the RK stages")
+        if args.relax_dt_ref is not None:
+            # P-79 / test E6: the edge e-folding time in SECONDS, the same on
+            # every grid. By default the reference is the hydrostatic CFL step,
+            # 17.1 s at 12 km but ~4 s at 3 km, so the 3 km edges were relaxed
+            # four times faster than the 12 km edges.
+            if not args.relax_dt_ref > 0:
+                raise SystemExit("--relax-dt-ref must be positive")
+            model.relax_dt_ref = float(args.relax_dt_ref)
         print(f"  core           : non-hydrostatic (nh3d.py, ns {model.core.ns}, dt <= {model.dt_max:g} s; "
               f"edge relaxation rescaled to the hydrostatic step {model.relax_dt_ref:.1f} s)")
 
@@ -835,11 +1084,27 @@ def main():
 
     if not 0.0 < args.relax_alpha <= 1.0:
         raise SystemExit(f"--relax-alpha {args.relax_alpha} is outside (0, 1]")
+    thermo_w = None
+    if args.relax_thermo_width_km is not None:
+        thermo_w = max(1, int(round(1000.0 * args.relax_thermo_width_km / min(grid.dx, grid.dy))))
+        if thermo_w >= args.relax_width:
+            thermo_w = None
+    tsig = None
+    if args.relax_thermo_sigma and thermo_w is not None:
+        tsig = tuple(float(x) for x in args.relax_thermo_sigma.split(","))
+        if not (len(tsig) == 2 and 0.0 < tsig[0] < tsig[1] <= 1.0):
+            raise SystemExit("--relax-thermo-sigma takes TOP,BOTTOM with 0 < TOP < BOTTOM <= 1")
     relax = Relaxation3D(grid, width=args.relax_width,
-                         alpha_max=args.relax_alpha)
+                         alpha_max=args.relax_alpha, pi_mode=args.relax_pi, thermo_width=thermo_w,
+                         thermo_sigma=tsig, sigma=lev.sigma)
+    if thermo_w is not None:
+        print(f"  relax thermo   : theta and q over {thermo_w} cells "
+              f"({args.relax_thermo_width_km:g} km)"
+              + (f" below sigma {tsig[1]:g}, the full zone above sigma {tsig[0]:g}" if tsig else "")
+              + f"; u, v, pi over {args.relax_width}")
     print(f"  relaxation     : width {args.relax_width}, "
           f"alpha {args.relax_alpha:g} at the edge, "
-          f"interior {relax.interior_fraction:.0%}")
+          f"interior {relax.interior_fraction:.0%}, surface pressure {args.relax_pi}")
     if args.div_damp > 0:
         # nu from the CFL step of the LOADED initial state. (Before 2026-09-26
         # this ran before the state was assigned, when u = v = 0 and theta was
@@ -873,6 +1138,10 @@ def main():
             # Held like everything else: the ground temperature at the cycle
             # time, so the similarity operator can score persistence too.
             info["tg"] = [np.array(model.land_surface.Tg, copy=True) for _ in times]
+        if getattr(model, "moist", False):
+            # S7: the initial vapour held too (the dewpoint persistence reference)
+            info["q"] = [model.q().copy() for _ in times]
+            info["rain"] = [np.zeros(model.pi.shape, np.float32) for _ in times]
         print(f"  persistence    : initial state written at {len(snaps)} times, "
               f"no integration\n")
         return _write_forecast(args, run_dir, snaps, info, lev, terrain, meta0, source)
@@ -959,6 +1228,13 @@ def _write_forecast(args, run_dir, snaps, info, lev, terrain, meta0, source):
         stopped=np.array(info.get("stopped", "")),
         wall_s=info.get("wall_s", np.nan),
         **({"tg": np.stack(info["tg"])} if info.get("tg") else {}),
+        # the drag's roughness length (m), so verification can use the model's own
+        **({"z0": np.broadcast_to(np.asarray(args._z0_map, dtype=np.float32), np.shape(terrain)).copy()}
+           if getattr(args, "_z0_map", None) is not None else {}),
+        **({"qv": np.stack([q[0] for q in info["q"]]).astype(dtype, copy=False),
+            "qc": np.stack([q[1] for q in info["q"]]).astype(dtype, copy=False),
+            "qr": np.stack([q[2] for q in info["q"]]).astype(dtype, copy=False),
+            "rain": np.stack(info["rain"])} if info.get("q") else {}),
     )
     print(f"\nWrote {len(snaps)} snapshots -> {out}  ({info.get('stopped')}, "
           f"{info.get('wall_s', float('nan'))/60:.1f} min)")

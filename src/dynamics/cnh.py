@@ -99,6 +99,11 @@ class Kernels:
         self._phys = getattr(self.lib, "phys_col" + s)
         self._rmu = getattr(self.lib, "relax_mu" + s)
         self._rcol = getattr(self.lib, "relax_col" + s)
+        self._advq = getattr(self.lib, "adv_q" + s)          # S7
+        self._moist = getattr(self.lib, "moist_col" + s)     # S7
+        self._qstage = getattr(self.lib, "q_stage" + s)      # S7
+        self._zero = getattr(self.lib, "fill_zero" + s)
+        self._sadd = getattr(self.lib, "scale_add" + s)
 
     def set_threads(self, n):
         """Set the OpenMP thread count (n <= 0 leaves it); returns the count in use."""
@@ -204,35 +209,104 @@ class Kernels:
 
     # --- physics and lateral relaxation (CAM stage S5d) -----------------------
     def phys_col(self, idx, p_top, P0, KAPPA, RD, G0, ri_crit, k_max, mixing_length,
-                 do_drag, do_mix, sigma, sigma_half, z0, mu, U, V, Th, FU, FV, FT):
+                 do_drag, do_mix, sigma, sigma_half, z0, mu, U, V, Th, FU, FV, FT,
+                 theta_s=None, louis=(5.0, 5.0, 7.4), Qm=None, FQ=None, eps=0.622):
+        """theta_s: 2-D surface potential temperature for Louis (1979) drag
+        stability (S6); None = neutral drag. louis = (B, D, C_M).
+        Qm, FQ, eps (S7): Qm = mu (qv, qc, qr) and Th = mu theta_rho; the
+        kernel converts to dry theta, mixes q with theta's K (FQ = mu times
+        the tendencies) and returns the theta_rho tendency in FT."""
         nz, ny, nx = U.shape
         a, i, r = self._a, self._idx, self._r
+        ts = None if theta_s is None else a(theta_s)
+        if Qm is None:
+            nq, qp, fqp = 0, None, None
+        else:
+            if Qm.shape != (3,) + U.shape or FQ is None or FQ.shape != Qm.shape:
+                raise ValueError("phys_col: Qm and FQ must be (3, nz, ny, nx)")
+            nq, qp, fqp = 3, a(Qm), a(FQ)
         self._phys(nz, ny, nx, i(idx["xm1"]), i(idx["ym1"]), r(p_top), r(P0), r(KAPPA), r(RD),
                    r(G0), r(ri_crit), r(k_max), r(mixing_length), int(bool(do_drag)),
-                   int(bool(do_mix)), a(sigma), a(sigma_half), a(z0), a(mu), a(U), a(V), a(Th),
-                   a(FU), a(FV), a(FT))
+                   int(bool(do_mix)), a(sigma), a(sigma_half), a(z0), ts, r(louis[0]), r(louis[1]),
+                   r(louis[2]), a(mu), a(U), a(V), a(Th), a(FU), a(FV), a(FT), nq, qp, fqp, r(eps))
 
     def relax_mu(self, cols, a2, mu, wa, wb, piA, piB, mu_new):
         self._rmu(int(cols.size), self._idx(cols), self._a(a2), self._a(mu), self._r(wa),
                   self._r(wb), self._a(piA), self._a(piB), self._a(mu_new))
 
     def relax_col(self, cols, idx, p_top, P0, KAPPA, RD, G, sf, ds, terrain, a2, mu_old, mu_new,
-                  wa, wb, uA, uB, vA, vB, tA, tB, U, V, Th, W, phi):
+                  wa, wb, uA, uB, vA, vB, tA, tB, U, V, Th, W, phi, a2n=None, tw=None):
+        """a2n: the narrow-zone theta weights (2-D), tw: per level the share of
+        a2n (nz) or None for all levels (P-79). a2n None: theta uses a2."""
         nz, ny, nx = U.shape
         a, i, r = self._a, self._idx, self._r
+        an = None if a2n is None else a(a2n)
+        twp = None if (a2n is None or tw is None) else a(tw)
         self._rcol(nz, ny, nx, int(cols.size), i(cols), i(idx["xm1"]), i(idx["ym1"]),
-                   r(p_top), r(P0), r(KAPPA), r(RD), r(G), a(sf), a(ds), a(terrain), a(a2),
+                   r(p_top), r(P0), r(KAPPA), r(RD), r(G), a(sf), a(ds), a(terrain), a(a2), an, twp,
                    a(mu_old), a(mu_new), r(wa), r(wb), a(uA), a(uB), a(vA), a(vB), a(tA), a(tB),
                    a(U), a(V), a(Th), a(W), a(phi))
 
+    # --- moisture (CAM stage S7) ----------------------------------------------
+    def adv_q(self, idx, dx, dy, ds, U, V, q, out, om, fx, fy):
+        """Flux-form tendencies of mu q (NH3D._adv_q) for q (nq, nz, ny, nx)."""
+        nq, nz, ny, nx = q.shape
+        if out.shape != q.shape or U.shape != (nz, ny, nx) or om.shape != (nz + 1, ny, nx) \
+                or fx.shape != (nz, ny, nx) or fy.shape != (nz, ny, nx):
+            raise ValueError("adv_q: shapes differ")
+        a, i, r = self._a, self._idx, self._r
+        self._advq(nq, nz, ny, nx, i(idx["xm1"]), i(idx["xp1"]), i(idx["xm2"]), i(idx["ym1"]),
+                   i(idx["yp1"]), i(idx["ym2"]), r(dx), r(dy), a(ds), a(U), a(V), a(q), a(out),
+                   a(om), a(fx), a(fy))
+
+    def q_stage(self, idx, dx, dy, ds, U, V, Q0, Qs, mus, extra, dts, out, qw, fq, om, fx, fy):
+        """out = Q0 + dts * (adv_q(Qs / mus, U, V) [+ extra]) (NH3D._q_stage)."""
+        nq, nz, ny, nx = Q0.shape
+        for x in (Qs, out, qw, fq) + (() if extra is None else (extra,)):
+            if x.shape != Q0.shape:
+                raise ValueError("q_stage: shapes differ")
+        a, i, r = self._a, self._idx, self._r
+        self._qstage(nq, nz, ny, nx, i(idx["xm1"]), i(idx["xp1"]), i(idx["xm2"]), i(idx["ym1"]),
+                     i(idx["yp1"]), i(idx["ym2"]), r(dx), r(dy), a(ds), a(U), a(V), a(Q0), a(Qs),
+                     a(mus), None if extra is None else a(extra), r(dts), a(out), a(qw), a(fq),
+                     a(om), a(fx), a(fy))
+
+    def fill_zero(self, out):
+        self._zero(ctypes.c_size_t(out.size), self._a(out))
+
+    def scale_add(self, a_, x, y, out):
+        """out = y + a_ * x"""
+        if not (x.shape == y.shape == out.shape):
+            raise ValueError("scale_add: shapes differ")
+        self._sadd(ctypes.c_size_t(x.size), self._r(a_), self._a(x), self._a(y), self._a(out))
+
+    def moist_col(self, dt, P0, RD, GAMMA, CP, KAPPA, G, ds, mu, phi, Th, Q, rain, lost,
+                  warm_rain=True, consts=None):
+        """NHModel._step_moisture in place on Th and Q (3, nz, ny, nx); rain
+        and lost (2-D) overwritten. consts: moisture.py's EPS, LV, SVP1, SVP2,
+        SVP3, SVPT0, KC1, KC2, KC3, KC4, MAX_CR_SED."""
+        nq, nz, ny, nx = Q.shape
+        if nq != 3 or Th.shape != (nz, ny, nx) or phi.shape != (nz + 1, ny, nx):
+            raise ValueError("moist_col: Q must be (3, nz, ny, nx) with Th (nz, ...) and phi (nz+1, ...)")
+        cst = np.ascontiguousarray(consts, dtype=self.dtype)
+        if cst.size != 11:
+            raise ValueError("moist_col: 11 constants")
+        a, r = self._a, self._r
+        self._moist(nz, ny, nx, nq, r(dt), r(P0), r(RD), r(GAMMA), r(CP), r(KAPPA), r(G), a(ds),
+                    a(mu), a(phi), a(Th), a(Q), a(rain), a(lost), int(bool(warm_rain)), a(cst))
+
     # --- after the step (CAM stage S5e) ---------------------------------------
-    def pav_col(self, xm1, ym1, tol, mix, dsigma, mu, U, V, Th):
-        """Dry convective adjustment (PAV) in place on U, V, Th; returns the
-        number of adjusted columns."""
+    def pav_col(self, xm1, ym1, tol, mix, dsigma, mu, U, V, Th, Qm=None):
+        """Dry convective adjustment (PAV) in place on U, V, Th (and Qm = mu q,
+        mixed over the same blocks, S7); returns the number of adjusted columns."""
         nz, ny, nx = Th.shape
         a = self._a
+        if Qm is not None and (Qm.ndim != 4 or Qm.shape[1:] != Th.shape or Qm.shape[0] > 3):
+            raise ValueError("pav_col: Qm must be (nq <= 3, nz, ny, nx)")
+        nq = 0 if Qm is None else int(Qm.shape[0])
         return int(self._pav(nz, ny, nx, self._idx(xm1), self._idx(ym1), self._r(tol),
-                             int(bool(mix)), a(dsigma), a(mu), a(U), a(V), a(Th)))
+                             int(bool(mix)), a(dsigma), a(mu), a(U), a(V), a(Th),
+                             nq, None if Qm is None else a(Qm)))
 
     def uv_maxabs(self, xm1, ym1, mu, U, V):
         """(max |U/mu_u|, max |V/mu_v|); NaN if either has a NaN."""

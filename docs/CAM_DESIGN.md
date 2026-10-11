@@ -206,7 +206,36 @@ forecast (`tools/cam_cycle.sh`). Measured cost:
   with its land surface.
 
 The wind gain is about twice as large over hilly and mountain stations as
-over flat ones.
+over flat ones. *Corrected 2026-10-07 (P-73): the gain came from the
+roughness map, not from resolution.*
+
+**S6 done (2026-10-07): the land surface in the NH core.** The NH core
+now runs the force-restore land surface (`NHModel._step_land_surface`),
+with the drag stability in C. Over the 20 campaign cycles, paired:
+
+| Run | 2 m T RMSE |
+|---|---|
+| 12 km NH + land | 3.328 K |
+| production AM | 3.223 K |
+| **3 km CAM + land, AM edges** | **2.971 K** (better than AM in 17 of 20 cycles) |
+
+In 10 m wind the 3 km and 12 km NH runs are level (u 2.385 vs 2.383 m/s).
+A 3 km cycle takes 61–63 min with two running at once.
+
+**S7 (warm-rain moisture) status (2026-10-07).** Written and tested locally;
+the server tests, the 12 km moist gate and the 3 km moist campaign are
+running (jobs 6a3b2292 and e313c709).
+- The core's Theta is mu theta_rho (density potential temperature). Vapour
+  buoyancy and condensate loading come in through the equation of state, and
+  the dry solver is unchanged.
+- qv, qc and qr are carried as mu q and advected with the mean acoustic
+  substep fluxes, so a uniform q stays uniform to round-off. Kessler warm
+  rain follows WRF; the land surface's latent heat becomes the vapour
+  source; `forecast.py --moist`; 2 m dewpoint is verified.
+- The Bryan–Fritsch moist/dry bubble pair is within 7.2 % in max w and
+  7.0 % in height after 1000 s (gate 10 %).
+- The moisture cost per 3 km step is the open number for the budget.
+  The prediction is 1.15–1.35 s per step, against 0.98 dry.
 
 **Change of order (decided by the user, 2026-10-05):** the land surface for the NH
 core before moisture. Without it the CAM's 2 m temperature cannot be

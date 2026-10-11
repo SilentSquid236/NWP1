@@ -44,11 +44,7 @@ import numpy as np
 
 from backend import xp_of
 
-RD = 287.058
-CP = 1004.6
-KAPPA = RD / CP
-P0 = 100_000.0
-G0 = 9.80665
+from constants import RD, CP, KAPPA, P0, G0     # one definition for all of NWP1 (2026-10-07)
 
 
 class SigmaLevels:
