@@ -52,7 +52,7 @@ hypothesis, **G** missing physics, **H** performance, **I** logistics.
 **Still open.** Cron runs are not pinned, so their OpenMP threads span both sockets. Whether pinning the cron 3 km run to one socket (26 cores, local memory) is faster than 26 threads spread over both is untested.
 
 ## P-79 — The 3 km edges are relaxed four times faster, over a zone four times narrower, than the 12 km edges
-**Category** F · **First seen** 2026-10-10 (test E5) · **Status** PARTLY FIXED 2026-10-10 (E6–E6c: ring peak 5.3 → 2.6 at no 2 m T cost; a fuller fix, 1.8, costs 0.2 K; E7 campaign running)
+**Category** F · **First seen** 2026-10-10 (test E5) · **Status** PARTLY FIXED (E6–E6c; confirmed by E7 over 20 cycles: ring at +12 h 7.0 → 2.5, 2 m T within 0.04 K; operational since 4de8a60)
 
 **Symptom.** With the P-76 start-up fix the 12 km outer band is clean, but the 3 km ring is unchanged. On 2026-09-26 00Z, cells 5–15 have an MSLP gradient of 6–10 hPa/100 km against 1.4 inside (peak ratio 4.7–5.5, the same as the S6c run). The zone converges column mass at 41–72 hPa/h rms at +6 h, against 0.4 inside. An interpolated boundary frame alone carries only 6–13, so the frames are not the source.
 
@@ -63,7 +63,7 @@ hypothesis, **G** missing physics, **H** performance, **I** logistics.
 - E6b: a narrow 45 km θ/q zone keeps T but leaves a peak of 2.8–3.1.
 - E6c: θ/q over the wide zone above σ 0.80 and the narrow one below σ 0.90 gives peak 2.6 at T −0.01 K. **Adopted for 3 km** in `cam_cycle.sh`.
 
-**Still open.** The residual ring (2.6 against the analysis's 0.9), and the cost of the 60-cell zone (+18 % wall time per run).
+**Still open.** The residual ring: 2.5 against the analysis's 1.05, with a 3.1 hPa/100 km bump at 30–45 km where the narrow θ/q zone ends. And the cost of the 60-cell zone: +29 % wall time in the dry operational run.
 
 ---
 

@@ -32,12 +32,12 @@ Machine time used by this project, kept from 2026-10-03 at the user's request
 |---|---|---|---|
 | Dry 12 km model (tests AB–AN) | 29 | 23.6 | 505 |
 | CAM stages S2–S7 and the first live cycle (AO, S3a–S6c, benchmarks, profiles) | 26 | 30.6 | 1333 |
-| S7 moisture tests, edge-ring and scoring tests (S7ab–S7d, P-76 diagnostics, E1–E6c, P1, P2; E7 running) | 16 | 15.7 | 744 |
-| **All server jobs** | **71** | **69.9** | **2583** |
+| S7 moisture tests, edge-ring and scoring tests (S7ab–S7d, P-76 diagnostics, E1–E7, P1, P2) | 18 | 48.7 | 1755 |
+| **All server jobs** | **73** | **102.9** | **3594** |
 
-Computed from the CSV rows (run_h 69.95, core-h 2583.29). E4–E7, P1 and P2 were started by hand over the
+Computed from the CSV rows (run_h 102.95, core-h 3594.29). E4–E7 (with e7r, e7s), P1 and P2 were started by hand over the
 command channel (the approval cards did not reach the user, 2026-10-10); their rows are written from the
-job logs, and the P1/P2 times are approximate (file stamps). E7 has no hours yet. The CAM rows are
+job logs, and the P1/P2 times are approximate (file stamps). E7's run_h is wall clock including waits for cron; its core-hours come from `compute_hours.csv`. The CAM rows are
 the two CAM benchmarks of 2026-10-02 (857ef10a, 1975c024) and every job
 from test AO (7efb640f) on; all other server rows count as the dry 12 km
 model, including the wait job for test AA. S6c's 1.07 h wait for its gate

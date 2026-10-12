@@ -5750,6 +5750,81 @@ Read-only diagnostics on existing runs, then a 1 h, 12 km run of 2026-09-28 06Z 
 
 ---
 
+## 2026-10-12 — E7: the moist 3 km campaign with the new edges
+
+20 cycles (2026-09-26 00Z .. 09-30 18Z), 24 h, 3 km NH, `--moist`, start-up mirror + exact, edge relaxation wt45s, nested in E4 nhMb. Verified with the P1 observations and the model z0 operator.
+- Arms: cam3E = this campaign; cam3L = S6c (dry, old edges), re-verified the same way; nhMb and nhM = 12 km (P2 archives); persistence.
+- Predictions G1–G5 (`e7/e7_predictions.txt`) were written before the runs. Tests: `test_nh3d_c.py` 30/30, `test_forecast.py` 17/17.
+- **Cycle 20260928_12 was rerun.** Its first run had remote memory (P-80) and was cut at 23.72 h. It was rerun with the bind (97.1 min) and all 20 cycles rescored (`e7r`).
+- **Dewpoint and precipitation were scored separately.** cam3L is dry, so the all-arm pairing left nothing to score; `e7s` scores them without cam3L.
+- Compute: 21 runs, 2333 run-min, 1011 core-h.
+
+![E7 campaign](e7_campaign.png)
+
+*(a) RMSE over all leads 0–24 h, pooled over the 20 cycles; pairs common to all arms (for dewpoint, all arms except the dry cam3L). (b) MSLP gradient at +12 h in 15 km bands from the domain edge, mean of 20 cycles (analysis: 18 valid times).*
+
+| | cam3E | cam3L | nhMb | nhM | persistence |
+|---|---|---|---|---|---|
+| 2 m T RMSE / bias (K) | **3.025** / +0.12 | 2.986 / −0.04 | 3.334 / −0.23 | 3.302 | 3.658 |
+| 2 m dewpoint (K) | 2.783 / −1.42 | — | 2.724 / −1.47 | 2.657 | **2.278** |
+| 10 m u (m/s) | **1.922** | 2.179 | 1.921 | 2.153 | 1.949 |
+| 10 m v (m/s) | **2.077** | 2.145 | 2.125 | 2.128 | 2.077 |
+| PMSL (hPa) / bias | 3.74 / +1.26 | 4.71 / +2.67 | 3.56 / +1.00 | — | **2.71** |
+| hourly rain ETS ≥ 0.25 mm / frequency bias | **0.032** / 0.16 | — | 0.023 / 0.10 | 0.022 / 0.22 | 0 |
+| ring peak +1 / +6 / +12 / +24 h | **1.94 / 2.46 / 2.54 / 2.28** | 5.84 / 6.78 / 6.96 / 6.59 | | | analysis 1.03–1.08 |
+
+**Per cycle.** On 2 m T, cam3E beats nhMb in 17 of 20 cycles (mean −0.29 K) and persistence in 18 of 20, but beats cam3L in only 7 of 20 (+0.02). On dewpoint it beats nhMb in 9 of 20 and persistence in 5 of 20.
+
+**Predictions.**
+- G1 2 m T ≤ cam3L + 0.05 K: **held, narrowly** (+0.039).
+- G2 dewpoint ≥ 0.10 K better than nhMb: **refuted.** It is 0.06 K worse, with the same −1.4 K dry bias as the 12 km.
+- G3 rain ETS (0.25 mm/h) above nhMb: **held, but meaningless in size.** 0.032 against 0.023, frequency bias 0.16, mean 0.023 against 0.143 mm/h observed.
+- G4 ring ≤ 3.0 at +12 h, cam3L ≥ 4.0: **held** (2.54 and 6.96).
+- G5 median run ≤ 100 min: **held** (95.5 min; 94.4–98.6 for the 18 bound runs).
+
+**Reading.**
+- The new edges do what E6c said over 20 cycles: the ring at +12 h falls from 7.0× to 2.5× the interior gradient. The cost is a residual bump of 3.1 hPa/100 km in the 30–45 km band, where the narrow θ/q zone ends.
+- The moist 3 km keeps the old dry 3 km's 2 m T skill and has better wind (u 2.18 → 1.92). E7 cannot say why: cam3E differs from cam3L in the edges, the start-up and the moisture at once.
+- It adds no dewpoint skill and almost no rain skill. The moisture errors (dry bias, warm-rain-only precipitation that is about 6× too light) come from the physics, not from resolution.
+- MSLP is worse than persistence at both resolutions, with the same high bias. That is P-74's remaining part, not an edge effect.
+
+**Not changed.** The operational 3 km stays dry: the moist run costs about 96 min per 24 h against 63 min dry, and the CAM budget is 150 min including the 12 km. Its measurable gains over the old dry run are wind and a trace of rain skill. The new operational dry run (new edges and start-up since 4de8a60) is not yet scored, so how much of the wind gain it keeps is open.
+
+---
+
+## 2026-10-11 — Operations: the first cron cycle on the pulled code (4de8a60)
+
+The user pulled 4de8a60 at about 19:00Z. The 18Z cycle (started 19:45Z) is the first on the new defaults; status 0.
+
+| | old code (12Z cycle, 10-11) | new code (18Z cycle, 10-11) |
+|---|---|---|
+| 12 km step (daily.sh) | 15.4 min | 15.1 min |
+| 3 km forecast, 24 h, dry | 48.7 min | 62.6 min |
+| whole CAM cycle | 70.3 min | 83.8 min |
+
+- The 3 km log confirms the new start-up (max |div| 5.47 × 10⁻⁴ → 3.3 × 10⁻¹⁴ s⁻¹, exact, one pass; mirror filter) and the wt45s edge relaxation.
+- The 3 km run is pinned to node 0 in cron, so the memory bind (P-80) applies there too.
+- The wider 60-cell edge zone costs 29 % at 3 km in the dry operational run, more than the 18 % measured in E6. The cycle still uses 84 of its 150 min.
+- One cycle only; the timing comparison spans different weather.
+
+---
+
+## 2026-10-11 — Operations: a status page readable from a phone
+
+The user asked for a way to follow progress while away. The school server runs no web server and home directories are private, so the page is a Markdown file pushed to GitHub.
+- `tools/status_page.py` (stdlib) builds `STATUS.md` from NWP1's own logs. It shows:
+  - the AI collaborator's notes (`data/status/notes.md`, newest first);
+  - experiments whose progress file changed in the last 24 h (forecasts completed, latest lines, state);
+  - the operational cron cycles of the last 3 days, from `compute_hours.csv`;
+  - server load and memory, the running forecasts with their step rate, and the next cron time;
+  - an **Attention** list for divergences, failed tests, non-zero status or deadline cuts. Handled events go in `data/status/ack.txt`.
+- `tools/status_push.sh` (cron, every 10 min, nice 19, tagged `# NWP1-cron`) pushes it as `README.md` to the orphan branch `status`. The branch is force-pushed as a single amended commit, so it never grows. `main` is never touched.
+- The push uses a deploy key for this repository only (`~/.ssh/nwp1_status_deploy` on the server; the public half is added by the user under Settings → Deploy keys). Deleting the key on GitHub, or the crontab line, stops it.
+- The installed copies live in `data/status/bin/` (ignored by git), so a `git pull` never meets untracked files. Crontab backup: `data/logs/crontab_backup_20261011.txt`.
+- Page: `github.com/SilentSquid236/NWP1/tree/status`.
+
+---
+
 ## 2026-10-11 — Operations: the 3 km run pinned to the second socket ran on remote memory (P-80)
 
 E7's first pair of 3 km runs (dev32, wt45s, moist) stepped at 0.48 and 0.34 steps/s: about 4.9 and 7 min per forecast hour, against 3.8 for E6's wt on the same cycle. The slowdown was present from hour 1, before any rain. The slower run was always the stream pinned to node 1 (odd CPUs); the same pattern fits E6b (61 / 86 min) and E6c (61 / 96 min).
