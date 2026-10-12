@@ -49,7 +49,9 @@ hypothesis, **G** missing physics, **H** performance, **I** logistics.
 
 **Fix.** `forecast.py` binds memory to the node(s) of its CPU affinity at start-up (MPOL_BIND, via ctypes). Opt out with `NWP_NUMA_BIND=0`. A 4 GB check went from 3.68 GB remote to none. With the bind, the next E7 runs on node 0 and node 1 both ran at 4.0–4.1 min per forecast hour; the unbound node-1 run had run at 6–7.
 
-**Still open.** Cron runs are not pinned, so their OpenMP threads span both sockets. Whether pinning the cron 3 km run to one socket (26 cores, local memory) is faster than 26 threads spread over both is untested.
+**Regression, 2026-10-12.** The first version read the Python main thread's affinity. OpenMP had already pinned that thread to CPU 0, so unpinned cron runs were bound to node 0 and ran 22 % slower (A/B: 2.8 against 2.3 min per forecast hour). Fixed: the bind now uses the launching shell's affinity, and the crontab sets `NWP_NUMA_BIND=0`.
+
+**Still open.** Whether pinning the cron 3 km run to one socket (26 cores, local memory) beats 26 threads spread over both, now that remote memory is understood. S5f (before P-80) found spreading faster.
 
 ## P-79 — The 3 km edges are relaxed four times faster, over a zone four times narrower, than the 12 km edges
 **Category** F · **First seen** 2026-10-10 (test E5) · **Status** PARTLY FIXED (E6–E6c; confirmed by E7 over 20 cycles: ring at +12 h 7.0 → 2.5, 2 m T within 0.04 K; operational since 4de8a60)
@@ -63,7 +65,7 @@ hypothesis, **G** missing physics, **H** performance, **I** logistics.
 - E6b: a narrow 45 km θ/q zone keeps T but leaves a peak of 2.8–3.1.
 - E6c: θ/q over the wide zone above σ 0.80 and the narrow one below σ 0.90 gives peak 2.6 at T −0.01 K. **Adopted for 3 km** in `cam_cycle.sh`.
 
-**Still open.** The residual ring: 2.5 against the analysis's 1.05, with a 3.1 hPa/100 km bump at 30–45 km where the narrow θ/q zone ends. And the cost of the 60-cell zone: +29 % wall time in the dry operational run.
+**Still open.** The residual ring: 2.5 against the analysis's 1.05, with a 3.1 hPa/100 km bump at 30–45 km where the narrow θ/q zone ends. The cost of the 60-cell zone is small: the +29 % first seen in cron was mostly the memory-bind regression (P-80).
 
 ---
 

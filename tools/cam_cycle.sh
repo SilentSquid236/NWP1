@@ -33,7 +33,13 @@ T12="$DATA/tensors_3d"
 T3="$DATA/tensors_3km"
 LOGDIR="$DATA/logs"
 LOCK="${NWP_CAM_LOCK:-$DATA/cam.lock}"   # a campaign running two cycles at once gives each its own
-BUDGET_MIN="${NWP_CYCLE_BUDGET_MIN:-90}"
+# NWP_CAM_MOIST=1 (E7, 2026-10-12): the 3 km run carries water vapour, cloud
+# and rain (--moist), with its edges from a moist 12 km NH forecast run here
+# (E4's nhMb set-up), because the production 12 km forecast has no qv/qc/qr. The
+# moist 3 km takes ~96 min per 24 h, so the default budget rises to 150 min.
+CAM_MOIST="${NWP_CAM_MOIST:-0}"
+if [ "$CAM_MOIST" = 1 ]; then BUDGET_MIN="${NWP_CYCLE_BUDGET_MIN:-150}"
+else BUDGET_MIN="${NWP_CYCLE_BUDGET_MIN:-90}"; fi
 RESERVE_MIN=6   # forecast set-up (~1 min) + output write (~1.3 min since S5e writes
                 # float32 at zlib 1; it was ~6 min at float64/zlib 6 in S5c2), with margin.
                 # The deadline counts only the steps.
@@ -87,7 +93,7 @@ step() {
     return $rc
 }
 
-echo "NWP1 CAM cycle $RUN, $HOURS h, budget $BUDGET_MIN min, $CAM_THREADS threads" >> "$LOG"
+echo "NWP1 CAM cycle $RUN, $HOURS h, budget $BUDGET_MIN min, $CAM_THREADS threads$([ "$CAM_MOIST" = 1 ] && echo ', moist')" >> "$LOG"
 
 # 1. The 12 km cycle
 if [ -z "${NWP_SKIP_12KM:-}" ]; then
@@ -102,6 +108,23 @@ for f in "$D12/obs_analysis_f00.npz" "$BFC"; do
         exit 1
     fi
 done
+
+# 1b. Moist runs: a moist 12 km NH forecast for the 3 km edges (E4 nhMb set-up:
+# bounded start-up is the forecast.py default). Same threads as the 3 km run.
+CAM_MOIST_ARGS=""
+if [ "$CAM_MOIST" = 1 ]; then
+    CAM_MOIST_ARGS="--moist"
+    if [ -z "${NWP_CAM_BOUNDARY:-}" ]; then
+        BFM="$D12/forecast_nhm.npz"
+        rm -f "$BFM"          # never nest in a stale file from an earlier attempt
+        step "12 km moist NH forecast (3 km edges)" python -u "$ROOT/src/forecast.py" --run-dir "$D12" \
+            --hours "$HOURS" --output-every 1 --core nh --nh-backend c --advection upwind3 \
+            --nh-physics step --levels 40 --threads "$CAM_THREADS" --moist --out "$BFM" \
+            --deadline-min 30 || true
+        if [ -f "$BFM" ]; then BFC="$BFM"
+        else echo "=== moist 12 km forecast missing: 3 km edges from $BFC (no moisture at the edges)" >> "$LOG"; fi
+    fi
+fi
 
 # 2. The 3 km analysis
 step "3 km analysis" python -u "$ROOT/src/ingest_obs.py" --cycle "$RUN" --from-raw \
@@ -124,7 +147,7 @@ CAM_RELAX="${NWP_CAM_RELAX---relax-width-km 180 --relax-thermo-width-km 45 --rel
 step "3 km forecast" python -u "$ROOT/src/forecast.py" --run-dir "$D3" --hours "$HOURS" \
     --output-every 1 --core nh --nh-backend c --threads "$CAM_THREADS" \
     --nh-physics step --levels 40 --boundary-forecast "$BFC" \
-    --deadline-min "$LEFT_MIN" $CAM_RELAX ${NWP_CAM_ARGS:-} || true
+    --deadline-min "$LEFT_MIN" $CAM_RELAX $CAM_MOIST_ARGS ${NWP_CAM_ARGS:-} || true
 
 # Compute ledger (docs/COMPUTE_LEDGER.md): one line per run, kept with the logs.
 log_compute() {   # script, threads

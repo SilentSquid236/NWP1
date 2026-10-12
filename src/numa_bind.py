@@ -13,6 +13,14 @@ OpenMP or torch start their pools.
 
 Opt out with NWP_NUMA_BIND=0. It is a no-op when the affinity spans every
 node, off Linux, or when the syscall fails.
+
+WHOSE affinity (corrected 2026-10-12): the launching shell's, not this
+process's. With OMP_PROC_BIND=close, the OpenMP runtime that torch loads at
+import pins the Python main thread to its first place (CPU 0) before main()
+runs, so this process's own affinity said "node 0" even for an unpinned cron
+run whose 26 threads span both sockets. Binding all memory to node 0 then made
+that run 22 % slower (A/B, 2026-10-12). `taskset -c MASK bash cam_cycle.sh`
+puts the mask on the shell, which is the parent of every forecast.py it starts.
 """
 import ctypes
 import os
@@ -44,14 +52,22 @@ def cpu_nodes(cpus=None, sysfs="/sys/devices/system/node"):
     return nodes, all_nodes
 
 
-def bind_to_cpu_nodes(verbose=True):
+def launcher_cpus():
+    """CPUs the launching shell may use (the intended placement), else our own."""
+    try:
+        return os.sched_getaffinity(os.getppid())
+    except (OSError, AttributeError):
+        return os.sched_getaffinity(0)
+
+
+def bind_to_cpu_nodes(verbose=True, cpus=None):
     """Return a one-line description of what was done (for the run log)."""
     if os.environ.get("NWP_NUMA_BIND", "1") == "0":
         return "numa bind     : off (NWP_NUMA_BIND=0)"
     if not hasattr(os, "sched_getaffinity") or not os.path.isdir("/sys/devices/system/node"):
         return "numa bind     : not applicable on this system"
     try:
-        nodes, all_nodes = cpu_nodes()
+        nodes, all_nodes = cpu_nodes(launcher_cpus() if cpus is None else cpus)
     except OSError as e:
         return f"numa bind     : skipped ({e})"
     if len(all_nodes) < 2 or not nodes or nodes == all_nodes:
@@ -67,4 +83,4 @@ def bind_to_cpu_nodes(verbose=True):
     rc = libc.syscall(nr, _MPOL_BIND, buf, ctypes.c_ulong(128))
     if rc != 0:
         return f"numa bind     : set_mempolicy failed (errno {ctypes.get_errno()})"
-    return f"numa bind     : memory bound to node(s) {sorted(nodes)} (CPUs pinned there)"
+    return f"numa bind     : memory bound to node(s) {sorted(nodes)} (launcher pinned there)"

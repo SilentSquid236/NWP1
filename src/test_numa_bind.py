@@ -20,6 +20,8 @@ check("a range in cpulist is expanded (CPU 4 is in '3-5' on node 1 and '4' on no
 os.environ["NWP_NUMA_BIND"] = "0"
 check("NWP_NUMA_BIND=0 turns it off", "off" in numa_bind.bind_to_cpu_nodes())
 del os.environ["NWP_NUMA_BIND"]
+check("launcher_cpus() returns a non-empty set", bool(numa_bind.launcher_cpus())
+      if hasattr(os, "sched_getaffinity") else True)
 msg = numa_bind.bind_to_cpu_nodes()
 check("bind_to_cpu_nodes never raises and reports: " + msg, msg.startswith("numa bind"))
 print(f"{sum(res)}/{len(res)} passed")

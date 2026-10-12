@@ -74,3 +74,5 @@ date_utc,job,where,test,state,wait_before_start_min,run_h,threads_max,core_h_upp
 2026-10-11 00:26,e7 (manual),server,Test E7,done,0,31.1,52,1010.9,"tests 30/30 + 17/17; 21 x 24 h moist 3 km runs (one rerun by e7r), yields to cron; 2333 run-min; core-h from compute_hours.csv includes the e7r rerun","E7: moist 3 km campaign with the wt45s edge relaxation"
 2026-10-11 06:45,e7r (manual),server,Test E7 rerun,done,198,1.8,26,0,"waits for E7, then reruns 20260928_12 (cut at its deadline on remote memory, P-80) and rescores all 20 cycles","E7 follow-up: rerun one cycle with the NUMA bind and rescore"
 2026-10-12 07:40,e7s (manual),server,Test E7 moist scores,done,220,0.1,1,0.1,"dewpoint and hourly precipitation without the dry arm","E7 scoring without cam3L"
+2026-10-12 12:46,numa_ab (manual),server,P-80 regression A/B,done,0,0.14,26,3.64,"two 1 h 3 km dry runs set up like cron, with and without the bind","P-80: does the bind slow unpinned runs"
+2026-10-12 12:57,camtest (manual),server,moist cron cycle test,done,136,1.77,26,45.9,"waited for the 13:45Z cron cycle; cam_cycle moist mode on 2026-10-12T06 in a scratch data root","Moist 3 km cron cycle, end to end"

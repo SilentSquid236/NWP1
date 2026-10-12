@@ -15,8 +15,8 @@ f1ef58e483c0aef0      8830  docs/AI_COLLABORATION.md
 3b9037ba9d976848    283998  docs/cam_land_skill.png
 202791c3ffc8f422    197397  docs/cam_skill_by_lead.png
 b660cbbe87e8813c      6530  docs/CAPABILITIES.md
-8bf7482682ea8c08     20799  docs/COMPUTE_LEDGER.csv
-e9cc32ea62d77302      3094  docs/COMPUTE_LEDGER.md
+9275047df422168d     21207  docs/COMPUTE_LEDGER.csv
+3f01c62feb043e6a      3121  docs/COMPUTE_LEDGER.md
 8c86ac92be29b402      9686  docs/DATA_ASSIMILATION.md
 d28d6db08816ba24    202637  docs/diurnal_heating_skill.png
 1092b5370c8171fc    145142  docs/e6_edge_tradeoff.png
@@ -30,10 +30,10 @@ cd7d0f085e4d3284    173203  docs/nh2d_density_current.png
 8edbeb1f9f90e5b7     88994  docs/nh2d_mass_mountain_wave.png
 25bdef4fd9603cc4    116736  docs/nh3d_terrain_rest.png
 1eeb6616080945dd      6884  docs/POSTPROCESSING.md
-e0a34633552bec3c    114828  docs/PROBLEMS.md
-e3a167b2d0b12822     42767  docs/PROMPT_LOG.md
+9e8ddcfda372b809    115195  docs/PROBLEMS.md
+1716b88cbd41d27a     43248  docs/PROMPT_LOG.md
 9f2f3874c57a491c     19872  docs/REFERENCES.md
-453cb4321bb0ddf6    367946  docs/RESEARCH_LOG.md
+75574891137d9af6    371077  docs/RESEARCH_LOG.md
 bf17820767386e75     85879  docs/s3_backend_cost.png
 78c3574bb1b0dd88      4845  docs/STABILITY.md
 4384835c25e348d2     26657  docs/STRUCTURE.md
@@ -161,7 +161,7 @@ a0212cd6292269bc      7467  src/maps/geography.py
 7e98b9b141cffadc     14513  src/maps/test_maps.py
 240464bf554cb003     18753  src/maps/viewer.py
 fd1fd8225afc3864      8335  src/nest.py
-2fbabf4e36855f57      2919  src/numa_bind.py
+63e337c29a4c7512      3753  src/numa_bind.py
 dd33655f87aa1ed4       906  src/nwp_emulator_3d.py
 6889b97f7e3244f1       200  src/postproc/__init__.py
 7f55be875ea6eade      6545  src/postproc/bias_correction.py
@@ -169,7 +169,7 @@ c9aa9e9da814b9f4      6625  src/postproc/test_bias_correction.py
 099b4a4af331fd59     23422  src/test_forecast.py
 c7a4ca1a819cae0f      5436  src/test_hrrr_search.py
 e97fc2bfd2f6f907      3793  src/test_nest.py
-d220a7c1d975e113      1270  src/test_numa_bind.py
+0c7ce72c2ac5c46d      1404  src/test_numa_bind.py
 59d0b86a5b9008af     19680  src/test_verify.py
 c24c234b80125dff      8457  src/train_autoregressive.py
 6d691d9a89514345      1467  src/verification/__init__.py
@@ -198,7 +198,7 @@ bbcab71b446533ad      6866  tools/bench_stencil.py
 48f8c03c29375375      3488  tools/bench_threads.py
 ea8ab0134cf406a9      4032  tools/budget28.py
 dfaa17ed4a9d718f      9944  tools/cam_compare.py
-40f89735e6da3265      6627  tools/cam_cycle.sh
+d2e27ea02b80d9ab      8002  tools/cam_cycle.sh
 998c8421887ad230      2473  tools/check_backend.py
 2f18f61e62717a06      3663  tools/check_refs.py
 9781a61588be1648      4535  tools/checklayout.py

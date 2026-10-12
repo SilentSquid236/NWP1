@@ -5750,6 +5750,34 @@ Read-only diagnostics on existing runs, then a 1 h, 12 km run of 2026-09-28 06Z 
 
 ---
 
+## 2026-10-12 — Operations: the moist cron cycle, tested end to end
+
+`NWP_CAM_MOIST=1 bash tools/cam_cycle.sh 2026-10-12T06 24`. Set-up: dev33 = the deployed 4de8a60 plus the new `cam_cycle.sh` and `numa_bind.py`; a scratch data root linked to the real inputs; unpinned like cron; nice 19; `NWP_SKIP_12KM=1`, since the 12 km production run existed.
+
+| step | time |
+|---|---|
+| moist 12 km NH forecast for the edges (26 threads) | 2.1 min |
+| 3 km analysis | 1.5 min |
+| 3 km moist forecast, 24 h (24 of 24 edge frames with moisture; bind "not needed") | 90.5 min |
+| whole cycle | 105 min, status 0 (budget 150) |
+
+- Maximum 24 h point rainfall 188 mm. That is more than any E7 cycle (116 mm). It is to be checked against the gauges when that window closes.
+- The crontab has `NWP_CAM_MOIST=1` from 17:15Z. It takes effect at the first cycle after the user pulls the commit that carries the moist mode.
+- With the 12 km step (~15 min) the cron cycle should take about 2 h of its 6 h.
+
+---
+
+## 2026-10-12 — Operations: the memory bind slowed the unpinned cron 3 km run by 22 % (P-80 regression)
+
+- **Symptom.** The first cron cycles on 4de8a60 logged "memory bound to node(s) [0]", although cron does not pin the 3 km run. Its 26 OpenMP threads alternate between the sockets (OMP_PROC_BIND=close; S5f found this faster than one socket).
+- **Cause.** `numa_bind` read this process's affinity. By then the OpenMP runtime loaded with torch had pinned the main thread to its first place, CPU 0. So the bind put all memory on node 0, and half the threads read it remotely.
+- **A/B** (1 h, 3 km dry, cycle 2026-10-12T06, set up like cron): with the bind, 0.8 steps/s and 2.8 min; without, 1.0 steps/s and 2.3 min.
+- **Fix, 12:55Z.** `NWP_NUMA_BIND=0` added to the crontab environment (backup `data/logs/crontab_backup_20261012.txt`).
+- **Code fix.** `numa_bind` now takes the placement from the launching shell (`os.getppid()`), which is where `taskset -c MASK bash cam_cycle.sh` puts the mask. Tests 6/6 here and on the server; an unpinned launch now reports "not needed".
+- **Lesson** (for the AI-collaborator record). The P-80 fix was checked only for pinned runs, where the main thread's affinity happens to equal the mask. The unpinned case was never run until the cron log showed it.
+
+---
+
 ## 2026-10-12 — E7: the moist 3 km campaign with the new edges
 
 20 cycles (2026-09-26 00Z .. 09-30 18Z), 24 h, 3 km NH, `--moist`, start-up mirror + exact, edge relaxation wt45s, nested in E4 nhMb. Verified with the P1 observations and the model z0 operator.
@@ -5790,6 +5818,8 @@ Read-only diagnostics on existing runs, then a 1 h, 12 km run of 2026-09-28 06Z 
 
 **Not changed.** The operational 3 km stays dry: the moist run costs about 96 min per 24 h against 63 min dry, and the CAM budget is 150 min including the 12 km. Its measurable gains over the old dry run are wind and a trace of rain skill. The new operational dry run (new edges and start-up since 4de8a60) is not yet scored, so how much of the wind gain it keeps is open.
 
+**User decision (2026-10-12): make the cron 3 km moist anyway.** `cam_cycle.sh` gains `NWP_CAM_MOIST=1`: a moist 12 km NH forecast (the E4 nhMb set-up, which E7 nested in) is run first as the 3 km's boundary source, because the production 12 km forecast has no qv/qc/qr; `--moist` is added to the 3 km run; and the default budget becomes 150 min. Before cron uses it, it is tested end to end on cycle 2026-10-12T06 in a scratch data root.
+
 ---
 
 ## 2026-10-11 — Operations: the first cron cycle on the pulled code (4de8a60)
@@ -5803,8 +5833,8 @@ The user pulled 4de8a60 at about 19:00Z. The 18Z cycle (started 19:45Z) is the f
 | whole CAM cycle | 70.3 min | 83.8 min |
 
 - The 3 km log confirms the new start-up (max |div| 5.47 × 10⁻⁴ → 3.3 × 10⁻¹⁴ s⁻¹, exact, one pass; mirror filter) and the wt45s edge relaxation.
-- The 3 km run is pinned to node 0 in cron, so the memory bind (P-80) applies there too.
-- The wider 60-cell edge zone costs 29 % at 3 km in the dry operational run, more than the 18 % measured in E6. The cycle still uses 84 of its 150 min.
+- ~~The 3 km run is pinned to node 0 in cron, so the memory bind (P-80) applies there too.~~ **Corrected 2026-10-12:** the cron run is *not* pinned. The bind read the main thread's affinity after OpenMP had pinned that thread to CPU 0, and bound all memory to node 0 while the threads span both sockets.
+- ~~The wider 60-cell edge zone costs 29 % … The cycle still uses 84 of its 150 min.~~ **Corrected 2026-10-12:** most of the +29 % was that bind. In an A/B of 1 h runs set up like cron (cycle 2026-10-12T06), the bind took 2.8 min per forecast hour and no bind 2.3. Also, the cron budget is 90 min, not 150; the cycle used 84 of 90.
 - One cycle only; the timing comparison spans different weather.
 
 ---
