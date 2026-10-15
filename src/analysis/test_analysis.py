@@ -338,6 +338,25 @@ def test_slope_limit_reaches_target():
            f"{n} passes -> slope {s:.4f}, peak {ridge.max():.0f} -> {out.max():.0f} m")
 
 
+def test_upper_domain_only_drops_ring_soundings():
+    """Test J1: --upper-domain-only leaves soundings outside the domain out."""
+    ny, nx = geo.grid_shape(config.DOMAIN, 40_000)
+    lat, lon = geo.cell_centres(config.DOMAIN, ny, nx)
+    def bg0():
+        return {v: np.zeros((2, ny, nx)) for v in ("TMP", "RH", "UGRD", "VGRD")}
+    # one sounding 2 degrees west of the domain, wind 30 m/s more than the first guess
+    so = {"UGRD": [(0, "RING", 44.9, -84.7, 30.0, 2.5)]}
+    with_ring, _ = build.analyse_upper(bg0(), so, lat, lon, config.DOMAIN)
+    without, info = build.analyse_upper(bg0(), so, lat, lon, config.DOMAIN, domain_only=True)
+    inside = {"UGRD": [(0, "IN", 42.0, -75.0, 30.0, 2.5)]}
+    kept, _ = build.analyse_upper(bg0(), inside, lat, lon, config.DOMAIN, domain_only=True)
+    report("upper-air domain_only drops ring soundings and keeps inside ones (J1)",
+           with_ring["UGRD"][0].max() > 5.0 and np.abs(without["UGRD"]).max() == 0.0
+           and kept["UGRD"][0].max() > 5.0,
+           f"ring increment max {with_ring['UGRD'][0].max():.1f} m/s by default, "
+           f"{np.abs(without['UGRD']).max():.1f} with domain_only; inside kept {kept['UGRD'][0].max():.1f}")
+
+
 def test_verification_waits_for_the_window():
     import tempfile
     from verify_pending import pending
@@ -371,7 +390,8 @@ if __name__ == "__main__":
                test_forecast_stops_inside_the_hour_on_blowup,
                test_forecast_deadline_keeps_hours_reached,
                test_driving_frames_refuses_mixed_sources,
-               test_verification_waits_for_the_window, test_slope_limit_reaches_target):
+               test_verification_waits_for_the_window, test_slope_limit_reaches_target,
+               test_upper_domain_only_drops_ring_soundings):
         try:
             fn()
         except Exception as e:

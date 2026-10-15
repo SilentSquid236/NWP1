@@ -219,11 +219,23 @@ def first_guess_from_forecast(path, lead_hours, levels_pa, rh_default=None):
 # Analysis steps
 # ---------------------------------------------------------------------------
 
-def analyse_upper(bg, so, lat, lon, domain, L_km=450.0, lam=0.25):
-    """Level-by-level increments from the sounding superobs."""
+def analyse_upper(bg, so, lat, lon, domain, L_km=450.0, lam=0.25, domain_only=False):
+    """
+    Level-by-level increments from the sounding superobs.
+
+    domain_only=True (test J1, 2026-10-15) leaves out soundings outside the
+    domain. Their innovations are taken against the EDGE value of the first
+    guess (bilinear clip=True), which is not the atmosphere at the station, and
+    u and v increments of ~40 m/s from them spread L_km into the domain. The
+    default keeps them, as before.
+    """
     info = {}
+    inside = lambda x: (domain["lat_min"] <= x[2] <= domain["lat_max"]
+                        and domain["lon_min"] <= x[3] <= domain["lon_max"])
     for var in ("TMP", "RH", "UGRD", "VGRD"):
         rows = so.get(var, [])
+        if domain_only:
+            rows = [x for x in rows if inside(x)]
         per_level = {}
         for k in range(bg[var].shape[0]):
             r = [x for x in rows if x[0] == k]
@@ -381,7 +393,8 @@ def first_guess_from_analysis(features):
 def build_analysis(cycle, observations, terrain, domain, levels_hpa,
                    previous_forecast=None, previous_rh=None,
                    previous_analysis=None, surface_blend=True,
-                   below_ground="none", background=None, surface_aware=None):
+                   below_ground="none", background=None, surface_aware=None,
+                   upper_L_km=450.0, upper_domain_only=False):
     """
     Returns (features [C, L, Y, X] float32, meta dict).
 
@@ -427,7 +440,8 @@ def build_analysis(cycle, observations, terrain, domain, levels_hpa,
         if previous_forecast is not None:
             bg_label += " (previous forecast lacked the lead time)"
 
-    fields, upper_info = analyse_upper(bg, so, lat, lon, domain)
+    fields, upper_info = analyse_upper(bg, so, lat, lon, domain, L_km=upper_L_km,
+                                       domain_only=upper_domain_only)
 
     pmsl, n_p = analyse_pmsl(used, lat, lon)
     if pmsl is None:

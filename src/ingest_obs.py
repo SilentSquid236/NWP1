@@ -166,6 +166,10 @@ def main():
     p.add_argument("--max-slope", type=float, default=0.0086,
                    help="smooth terrain to at most this slope (P-56); "
                         "0 disables")
+    p.add_argument("--upper-L-km", type=float, default=450.0,
+                   help="length scale of the upper-air analysis (test J1; default 450)")
+    p.add_argument("--upper-domain-only", action="store_true",
+                   help="leave soundings outside the domain out of the upper-air analysis (test J1)")
     args = p.parse_args()
 
     cycle = None
@@ -245,6 +249,9 @@ def main():
         prev, prev_rh, prev_an, prev_msg = (None, None, None, "cold start requested") \
             if args.no_previous else previous_run(cycle)
     print(f"  previous run   : {prev_msg}")
+    if args.upper_L_km != 450.0 or args.upper_domain_only:
+        print(f"  upper air      : L {args.upper_L_km:g} km"
+              f"{', soundings inside the domain only' if args.upper_domain_only else ''} (test J1)")
     aware = None
     if args.gapfill:
         aware = {"H_m": args.gapfill_h, "coast_factor": args.gapfill_coast, "passes": 3,
@@ -259,7 +266,9 @@ def main():
                                            previous_rh=prev_rh,
                                            previous_analysis=prev_an,
                                            background=background,
-                                           surface_aware=aware)
+                                           surface_aware=aware,
+                                           upper_L_km=args.upper_L_km,
+                                           upper_domain_only=args.upper_domain_only)
     except ValueError as e:
         print(f"\n  ANALYSIS FAILED: {e}")
         json.dump({"cycle": cycle.isoformat(), "sources": table, "qc": qc,

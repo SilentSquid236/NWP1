@@ -5761,6 +5761,93 @@ Plan: 1 and 2 first (map set), 3 after P-81 settles.
 
 ---
 
+## 2026-10-15 — J1: leaving out the ring soundings lowers the analysed jet by about 20 m/s but does not stop it growing (P-82 mechanism refuted); the growth is at the 00/12Z analyses
+
+**J1** (`scratch/j1/j1_job.sh`, results `j1_result.txt`, md5 21025badb6d5a19b98daf551f0465002). 12 km cycling re-run of 13 cycles, 2026-10-12 00Z to 10-15 00Z: each cycle `ingest_obs.py --from-raw` on the production observation archive, first guess = the arm's own previous 6 h forecast, then a 6 h production 12 km forecast. All arms start from the production 10-11 18Z forecast. Code: 0e17989 plus two opt-in analysis options (defaults unchanged; `test_analysis.py` 22/22). Predictions in `j1_predictions.txt`, written before the run.
+
+| arm | Smax 10-12 00Z → 10-15 00Z (m/s) | growth | Smax / Rmax at 10-15 00Z | mean O−B aloft (m/s, 6 cycles) | mean withheld 2 m T (K) |
+|---|---|---|---|---|---|
+| production | 100.6 → 138.0 | +37 % | 2.02 | 25.27 | 1.696 |
+| A0 control | 100.6 → 138.0 | +37 % | 2.02 | 25.27 | 1.696 |
+| A1 `--upper-domain-only` | 76.0 → 115.4 | +52 % | 1.69 | 25.53 | 1.734 |
+| A2 `--upper-L-km 300` | 97.2 → 129.4 | +33 % | 1.89 | 23.11 | 1.718 |
+| A3 both | 77.8 → 109.5 | +41 % | 1.60 | 25.23 | 1.641 |
+
+Smax: analysis maximum wind speed at or above 400 hPa. Rmax: strongest in-domain sounding wind (68.4 m/s at 10-15 00Z). O−B: RMS vector difference between in-domain soundings at or above 400 hPa and the arm's 6 h first guess.
+
+**Predictions.**
+- **J1-P1 held.** A0 is identical to production in every cycle (Smax, O−B and withheld score to the printed digit); growth +37 %.
+- **J1-P2 refuted.** A1 ends at 115.4 m/s against the limit of 1.3 × 68.4 = 88.9. Without the ring soundings the jet still grows (+52 %). They add a nearly constant offset: 24.6 m/s on the first cycle, where every arm starts from the same first guess, and 22.6 m/s at the end. They are not the cause of the growth.
+- **J1-P3 held.** A1's mean O−B is +1.0 % of A0's.
+- **J1-P4 held.** A2 is 8.6 m/s below A0 and above 88.9.
+- **J1-P5 refuted narrowly, in the good direction.** A3's withheld score is 0.055 K better than A0 (limit 0.05); A1 +0.038, A2 +0.022.
+
+**Where the growth is** (`scratch/j1/fg_diag.py`, first-guess maximum → analysis maximum, same measure as Smax). At 06Z and 18Z there are no soundings and the analysis aloft equals the first guess. All the growth is at the 00Z and 12Z analyses:
+
+| arm | sum of 00/12Z analysis steps | sum of 6 h forecast steps | net, 10-12 06Z → 10-15 00Z |
+|---|---|---|---|
+| A0 | +80.0 | −18.6 | +61.4 |
+| A1 | +39.7 | +0.8 | +40.5 |
+| A3 | +64.7 | −31.9 | +32.8 |
+
+The clearest case: A3 at 10-14 00Z, first guess 73.1 → analysis 101.6 m/s, with no in-domain sounding stronger than 57.1 m/s.
+
+**O−B by level, production, 00/12Z cycles 10-12 12Z to 10-15 00Z** (`scratch/j1/ob_diag.py`): RMS vector O−B 25.6 / 28.4 / 29.2 / 22.8 m/s at 200 / 250 / 300 / 400 hPa; mean speed observed 35.4 / 35.0 / 32.0 / 23.3 against first guess 43.3 / 41.9 / 37.1 / 24.8 m/s. The first guess is too fast at the jet levels. The largest single differences (57–67 m/s) are at 10-12 12Z: KRNK, KPIT, KIAD and KBUF reported north-northwest flow of 20–40 m/s at 250–300 hPa where the first guess had southwest flow. The decoding was checked against the raw IEM rows (KPIT 250 hPa, 335° at 71 kt → (+15.4, −33.1) m/s, as decoded); between 00Z and 12Z the KPIT wind turned from 240° to 335° at every jet level, so a trough passed that the first guess did not have.
+
+**Reading.** The mechanism proposed in P-82 is refuted: the ring soundings raise the analysed jet by about 20 m/s, but the cycle-to-cycle growth happens without them. The alternative written in the predictions file fits what is seen: large in-domain innovations (a trough the first guess missed gives 50–60 m/s vector innovations) are spread as two independent scalars, u and v, and add onto a first-guess jet displaced from the observed one, giving a maximum stronger than either. Nothing limits an increment of that size: `ingest_obs.py` calls `run_qc(obs)` without backgrounds, so the 5σ gross-error check in `run_qc` (`src/verification/observations.py`) is skipped for every observation. Its backgrounds are keyed by station only, so soundings would need a per-level background before it could be used aloft. The ring-sounding comparison is wrong in principle (an observation against the first guess at a different place) and leaving it out costs nothing measurable (P3, P5), so A3's options remove a known error and about 28 m/s of the jet, but they are a partial mitigation, not a fix.
+
+**Next (proposed; the user decides).** J2 on top of A3: arms that bound the wind increments aloft, for example the gross-error check applied to upper-air winds (per level, against the first guess), and an analysis of wind speed and direction (or a multivariate wind analysis) instead of independent u and v. Measured with the same Smax, O−B and withheld scores, written predictions first.
+
+---
+
+## 2026-10-15 — R3: simple ice in the moist 3 km cron cycle runs clean and helps domain rain; the Bancroft maximum drops but the surrounding gauges get worse. Cron re-scored: the new dry 3 km ties the 12 km
+
+**R3** (`scratch/r3_job/r3_job.sh`). The moist cron cycle of 2026-10-13 00Z re-run with `NWP_CAM_ICE=1` (simple ice in both the 12 km moist NH edge run and the 3 km run), in a scratch data root with its own `tensors_3d` copy, verified against the same cached observations as the warm-rain cron run. The gate was written as "runs clean inside the budget, then cron". No numeric predictions were written for this one cycle: R2 had already measured ice over 24 cycles at 12 km, and one 3 km cycle cannot test a skill claim.
+
+- **Clean.** C tests 32/32; 12 km moist NH 2.1 min, 3 km forecast 91.5 min, whole cycle 108 min (budget 150); status 0. At +24 h max|u| 72.4 m/s, θ 273.0–362.3 K, max qc 1.55 g/kg.
+- **Domain rain, hourly, 8098 pairs** (observed mean 0.163 mm/h, 914 wet hours):
+
+| threshold (mm/h) | warm (cron) bias / ETS | ice bias / ETS |
+|---|---|---|
+| 0.25 | 0.29 / 0.077 | **0.48 / 0.116** |
+| 1.00 | 0.34 / 0.057 | 0.58 / 0.066 |
+| 2.50 | 0.54 / 0.042 | 0.94 / 0.049 |
+| 5.00 | 0.80 / 0.010 | 1.42 / 0.035 |
+
+  Mean forecast 0.096 → 0.130 mm/h; RMSE 1.071 → 0.956 mm/h.
+- **The extreme case.** 3 km rain maximum 411 → 307 mm. 24 h gauge totals near Bancroft, observed / warm / ice (mm):
+
+| gauge | observed | warm | ice |
+|---|---|---|---|
+| CWRK (6 km from the maximum) | 27.9 | 333.0 | **131.4** |
+| CTNK | 26.7 | 57.1 | 113.4 |
+| CWGH | 24.1 | 48.9 | 101.8 |
+| ART | 41.4 | 86.5 | 127.6 |
+| CXKE | 49.0 | 13.0 | 23.1 |
+| OGS | 28.2 | 12.5 | 39.5 |
+| CWQP | 29.5 | 10.6 | 42.3 |
+| MSS / PTD | 31.0 / 29.0 | 3.8 / 2.8 | 3.9 / 14.9 |
+
+**Reading.** On this cycle ice does what R2 found at 12 km: more hours with rain, better ETS at every threshold, nothing broken. It does not cure P-81. The worst gauge improves 2.5×, but the over-forecast spreads to CTNK, CWGH and ART, so the event is still concentrated far too strongly near Bancroft. This is one cycle; the domain numbers are not a skill result. Ice goes to cron (the user's decision, 2026-10-14), and the remaining P-81 suspect is still the 12 km run with no convection scheme.
+
+**Cron re-scoring** (`scratch/ops_job`, the 3 km minus the 12 km of the same cycles, paired matches, 24 h):
+
+| group | operator | 2 m T RMSE 3 km / 12 km (K) | u | v |
+|---|---|---|---|---|
+| old dry 3 km (before 38d15b5) | standard | 5.94 / 4.41 | | |
+| new dry, 5 cycles 10-11 18Z – 10-12 18Z | standard | **3.781 / 3.781** | 3.232 / 3.256 | **3.434 / 3.862** |
+| new dry | auto | 3.430 / 3.296 | 2.992 / 2.826 | 3.246 / 3.410 |
+| moist, 1 cycle (10-13 00Z) | standard | 3.469 / 4.078 | 2.481 / 2.327 | 2.695 / 2.774 |
+| moist | auto | 3.046 / 3.394 | 2.375 / 2.212 | 2.648 / 2.680 |
+
+- The old dry cron 3 km was 1.5 K worse than the 12 km in temperature; the new code removes all of it under the standard operator. Under the auto operator it is 0.13 K worse (worse in 4 of 5 cycles) and better only in v.
+- The moist group has one cycle because 10-13 06–18Z had no cached observations yet; it is re-run after the 10-15 verify.
+- Defect: the dewpoint section of the scorer printed its header and no numbers for either group. Not yet looked at.
+
+**Status.** Ice: adopted for cron after the user's commit 0e17989; the server is fast-forwarded and `NWP_CAM_ICE=1` added only after the C tests pass on the production tree (`scratch/ff_0e17989`). P-81 open.
+
+---
+
 ## 2026-10-14 — R2: simple ice improves September rain skill by half, but does not fix the extreme case; gauges confirm P-81
 
 Arms ice (`--ice`) and icefade6 (`--ice --moist-edge-fade-h 6`); ctl from R1. 12 km moist NH, 24 cycles; predictions in `r2/r2_predictions.txt`.

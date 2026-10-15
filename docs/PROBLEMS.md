@@ -39,6 +39,31 @@ hypothesis, **G** missing physics, **H** performance, **I** logistics.
 # OPEN
 
 
+## P-82 — The upper-air analysis inflates the jet from cycle to cycle
+
+**Category** B · **First seen** 2026-10-15 (found from the cron logs while the 3 km time step kept shrinking) · **Status** OPEN (J1: ring-sounding mechanism refuted; mitigation available)
+
+**Symptom.**
+- Analysis maximum wind speed at or above 400 hPa: 109 m/s (10-13 00Z), 130 (10-14 00Z), 137 (10-14 12Z), 138 (10-15 00Z).
+- The strongest radiosonde wind of each of those cycles: 57, 64, 70 and 69 m/s.
+- The core sits over the Ontario data gap (45–47° N, 77–80° W), with no sounding inside it; the Canadian sites CWMJ, CWQI and CYZV and others are often missing.
+- Model max|u| at +1 h rose from 60 m/s (10-12 00Z) to 116 m/s (10-15 00Z). The 3 km step is set by the wind, so it fell from 25.7 to 16.8 s. Three of the four moist cycles 10-14 00Z to 18Z hit the deadline (status 2) before 24 h.
+
+**Where the speed is added.** Not in the forecast: every 12 km forecast holds its maximum within +4 m/s over 24 h. At the analysis step:
+- 10-14 00Z: the first guess was 95.9 m/s at the eventual core; the analysis increment there was (+20, −28) m/s; the result was 130 m/s. The largest vector increment was 39 m/s.
+- The largest innovations that cycle came from soundings OUTSIDE the domain: KAPX (Gaylord, about 220 km west of the edge), 42.6 m/s at 250 hPa (observed +59.6, −16.0; first guess +34.3, +18.3), and KMHX (Newport NC, south of the edge), 38.9 m/s.
+
+**Mechanism (hypothesis).** For a sounding outside the domain, the innovation is taken against the first guess's EDGE value (`geo.bilinear(..., clip=True)` in `build.analyse_upper`), which is not the atmosphere at the station; the 12 km edges are moreover held at the previous analysis. u and v are analysed as two independent scalars with L = 450 km, so a 40 m/s vector increment spreads up to about 900 km and adds onto the first guess's own jet in the data gap, where nothing observes it. The next cycle starts from that jet.
+
+**Test.** J1 (`scratch/j1`): a 13-cycle 12 km cycling re-run, arms control / ring soundings left out / L 300 km / both. Predictions in `j1_predictions.txt`.
+
+**J1 result (2026-10-15; RESEARCH_LOG).** The mechanism above is refuted as the cause of the growth. Leaving out the ring soundings lowers the analysed maximum by about 20 m/s at every cycle (10-15 00Z: 138.0 → 115.4 m/s), but it still grows by 52 %. With both options (A3) the maximum is 109.5 m/s (1.60 × the strongest sounding), with no cost in O−B aloft and a withheld 2 m T 0.055 K better. All growth is at the 00Z and 12Z analyses: in A3 at 10-14 00Z the first guess was 73.1 m/s and the analysis 101.6 m/s, with no in-domain sounding above 57.1 m/s. The first guess is too fast at 200–250 hPa (mean 43 against 35 m/s observed) and individual vector innovations reach 57–67 m/s (10-12 12Z, a trough the first guess missed). No check bounds them: the gross-error check in `run_qc` is skipped in production (no backgrounds are passed).
+
+**Mechanism now suspected.** Large in-domain innovations spread as independent u and v increments onto a displaced first-guess jet. Next: J2 (proposed), on top of A3.
+
+**Possibly related.** P-81: the jet core is over the Bancroft rain maximum, and the 10-13 00Z analysis already had a 109 m/s maximum on the northern edge.
+
+
 ## P-81 — The moist NH runs put 4–10× too much rain in a tropical-remnant event
 
 **Category** G · **First seen** 2026-10-13 (first moist cron cycle, 00Z) · **Status** OPEN

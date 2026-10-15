@@ -191,6 +191,12 @@ def main():
     ref = labels[0]
     for var in vars_:
         print(f"\n{var}: RMSE by lead (paired), and {labels[1:]} minus {ref}")
+        if not any(k[0] == var for k in groups):
+            # Pairs are kept only when every arm has them, so one arm without
+            # the variable (e.g. the dry 12 km run has no DPT) empties the set.
+            have = ", ".join(f"{lab} {sum(1 for kk in d if kk[2] == var)}" for lab, d in zip(labels, per_arm))
+            print(f"  no {var} pairs held by every arm (matches per arm: {have})")
+            continue
         print("  lead      n  " + "  ".join(f"{l:>8s}" for l in labels))
         for L in sorted({k[1] for k in groups if k[0] == var and k[1] >= 0}):
             lists = groups[(var, L, "all", "all")]
