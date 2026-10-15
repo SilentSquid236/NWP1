@@ -61,6 +61,8 @@ hypothesis, **G** missing physics, **H** performance, **I** logistics.
 
 **Mechanism now suspected.** Large in-domain innovations spread as independent u and v increments onto a displaced first-guess jet. Next: J2 (proposed), on top of A3.
 
+**Root cause found (2026-10-15, later; RESEARCH_LOG).** The 12 km wind sponge (P-49) relaxes 206–299 hPa toward the INITIAL winds with e-folding 0.25–2.6 h, so no 12 km forecast can move the jet. Against in-domain soundings at and above 400 hPa (10 cycles), the forecast is worse than persistence: RMS vector error 24.2 against 21.1 m/s at +12 h and 28.1 against 25.8 at +24 h (analysis 5.7). The first guess keeps the old jet, and each 00/12Z analysis adds the increments from the observed (displaced) jet onto it.
+
 **Possibly related.** P-81: the jet core is over the Bancroft rain maximum, and the 10-13 00Z analysis already had a 109 m/s maximum on the northern edge.
 
 
@@ -486,6 +488,8 @@ days is what baroclinic waves actually do.
 
 **It is not yet usable**, because it destabilises tall terrain: see P-50. Off
 by default until that is resolved.
+
+**Real-data cost, 2026-10-15 (P-82).** On production cycles 10-10 to 10-14 the 12 km forecast at and above 400 hPa is worse than persistence (24.2 against 21.1 m/s RMS vector error at +12 h, 28.1 against 25.8 at +24 h), and the frozen jet levels drive the analysis jet ratchet of P-82. The estimate below no longer holds aloft.
 
 **How much this matters right now.** The target is 12-hour forecasts, and
 these curves diverge most after 24 h — at 12 h the sponge=3 run holds 2.1e+03

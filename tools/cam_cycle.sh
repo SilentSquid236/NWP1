@@ -40,6 +40,11 @@ LOCK="${NWP_CAM_LOCK:-$DATA/cam.lock}"   # a campaign running two cycles at once
 CAM_MOIST="${NWP_CAM_MOIST:-0}"
 # NWP_CAM_ICE=1 (P-81, test R2, 2026-10-14): simple ice (--ice) in both moist runs.
 CAM_ICE_ARG=""; [ "${NWP_CAM_ICE:-0}" = 1 ] && CAM_ICE_ARG="--ice"
+# NWP_UPPER_DOMAIN_ONLY=1, NWP_UPPER_L_KM (P-82, test J1, 2026-10-15): the same
+# upper-air analysis options as tools/daily.sh, for the 3 km analysis.
+UPPER_ARGS=""
+[ "${NWP_UPPER_DOMAIN_ONLY:-0}" = 1 ] && UPPER_ARGS="--upper-domain-only"
+[ -n "${NWP_UPPER_L_KM:-}" ] && UPPER_ARGS="$UPPER_ARGS --upper-L-km $NWP_UPPER_L_KM"
 if [ "$CAM_MOIST" = 1 ]; then BUDGET_MIN="${NWP_CYCLE_BUDGET_MIN:-150}"
 else BUDGET_MIN="${NWP_CYCLE_BUDGET_MIN:-90}"; fi
 RESERVE_MIN=6   # forecast set-up (~1 min) + output write (~1.3 min since S5e writes
@@ -131,7 +136,7 @@ fi
 # 2. The 3 km analysis
 step "3 km analysis" python -u "$ROOT/src/ingest_obs.py" --cycle "$RUN" --from-raw \
     --raw-from "$D12" --out-root "$T3" --spacing-km 3 \
-    --background-analysis "$D12/obs_analysis_f00.npz" --gapfill || exit "$STATUS"
+    --background-analysis "$D12/obs_analysis_f00.npz" --gapfill $UPPER_ARGS || exit "$STATUS"
 
 # 3. The 3 km forecast, inside what is left of the budget
 USED_MIN=$(( ($(date +%s) - T0) / 60 ))

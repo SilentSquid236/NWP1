@@ -5761,6 +5761,50 @@ Plan: 1 and 2 first (map set), 3 after P-81 settles.
 
 ---
 
+## 2026-10-15 (later) — P-82 traced to the 12 km sponge: the forecast aloft is worse than persistence, because the jet levels are held at the analysis (P-49 on real data)
+
+Read-only diagnostics on the J1 archives and the production archive (`scratch/j1/max_diag.py`, `fc_pers.py`).
+
+**1. Where the A3 analysis maximum comes from** (J1 arm A3, 00/12Z cycles). The maximum is always in the Ontario gap (45–47.5° N, 77–80° W), 270–330 km from Buffalo, the nearest sounding. There the first guess already has a strong jet; at KBUF it does not:
+
+| cycle | analysis max (m/s) | first guess there (u, v) | increment there | KBUF observed / first guess (u, v) |
+|---|---|---|---|---|
+| 10-14 00Z | 101.6 at 250 hPa | (+54.9, −41.1) = 68.6 | (+22.0, −25.3) | (+39.0, −32.7) / (+7.3, +3.7) |
+| 10-14 12Z | 108.3 at 300 hPa | (+57.8, −49.0) = 75.8 | (+29.6, −14.9) | (+56.4, −26.3) / (+13.2, −5.3) |
+| 10-15 00Z | 109.5 at 200 hPa | (+81.5, −47.3) = 94.2 | (+10.0, −12.9) | (+56.9, −26.5) / (+44.2, −3.6) |
+
+The observations put the jet over Buffalo; the first guess has it about 300 km north. The Barnes increment from KBUF lands on the first-guess jet (for a lone sounding the two passes carry 63 % of its innovation one length scale away: 300 km in A3, 450 km in production, where 83 % reaches 300 km; `barnes.barnes_increments`, checked 2026-10-15) and strengthens it, and nothing observes the gap to take it back. The first guess is also systematically too southerly aloft: innovations in v of −17 to −67 m/s at KBUF, KPIT, KGYX and KOKX.
+
+**2. The production 12 km forecast aloft against persistence** (10 cycles 10-10 00Z to 10-14 12Z, in-domain soundings at and above 400 hPa; persistence = the analysis at the start):
+
+| lead | n | model RMS vector error (m/s) | persistence | model mean speed error |
+|---|---|---|---|---|
+| 0 h | 419 | 5.7 | — | −0.6 |
+| 12 h | 416 | 24.2 | **21.1** | +3.2 |
+| 24 h | 382 | 28.1 | **25.8** | +3.0 |
+
+The analysis fits the soundings, and the forecast aloft is worse than doing nothing at both leads.
+
+**3. Why.** The wind sponge (`primitive_sigma`, 5 levels below the 200 hPa lid, rate 1/900 s, raised-cosine taper) relaxes u and v toward a FROZEN reference, the initial state (`set_reference` on the first step):
+
+| level | σ | p at p_s 1000 hPa | e-folding toward the initial wind |
+|---|---|---|---|
+| 0 | 0.0075 | 206 hPa | 0.25 h |
+| 1 | 0.0274 | 222 hPa | 0.28 h |
+| 2 | 0.0550 | 244 hPa | 0.38 h |
+| 3 | 0.0876 | 270 hPa | 0.72 h |
+| 4 | 0.1243 | 299 hPa | 2.6 h |
+
+Those are the jet levels. Every 12 km forecast holds its jet where the analysis put it, so the trough of 10-12 could not come through (KPIT turned from 240° to 335° in 12 h; the first guess stayed southwesterly), the 6 h first guess aloft is close to the previous analysis, and each 00/12Z analysis adds increments onto a jet that does not move: the ratchet. It also explains "every forecast holds its maximum within +4 m/s" (P-82): the sponge holds it. This is P-49 (the sponge turns growing weather into decaying weather, OPEN since 2026-09-05) measured on real data for the first time. P-49's own estimate, "at 12 h ... current forecasts are affected but not invalidated", does not hold aloft.
+
+**Caveats.** One regime (a trough passage and northwest flow), 10 cycles; pairs from one sounding are correlated. The 3 km model has no wind sponge of this kind, but takes its first guess and edges from the 12 km run.
+
+**What the record already says about fixes** (P-49, P-50): shallower sponges and slower rates do not restore development in the idealised test; a running reference was tried and removed; the radiative upper boundary (Klemp–Durran, `radiation.py`) preserves development but died over 2500 m terrain (P-50). Production terrain has since been smoothed to 881 m at slope 0.0086 (P-56), which P-50 did not test.
+
+**Next.** J2 redirected (the user decides): the upper boundary, not an increment limiter.
+
+---
+
 ## 2026-10-15 — J1: leaving out the ring soundings lowers the analysed jet by about 20 m/s but does not stop it growing (P-82 mechanism refuted); the growth is at the 00/12Z analyses
 
 **J1** (`scratch/j1/j1_job.sh`, results `j1_result.txt`, md5 21025badb6d5a19b98daf551f0465002). 12 km cycling re-run of 13 cycles, 2026-10-12 00Z to 10-15 00Z: each cycle `ingest_obs.py --from-raw` on the production observation archive, first guess = the arm's own previous 6 h forecast, then a 6 h production 12 km forecast. All arms start from the production 10-11 18Z forecast. Code: 0e17989 plus two opt-in analysis options (defaults unchanged; `test_analysis.py` 22/22). Predictions in `j1_predictions.txt`, written before the run.
@@ -5795,6 +5839,8 @@ The clearest case: A3 at 10-14 00Z, first guess 73.1 → analysis 101.6 m/s, wit
 **O−B by level, production, 00/12Z cycles 10-12 12Z to 10-15 00Z** (`scratch/j1/ob_diag.py`): RMS vector O−B 25.6 / 28.4 / 29.2 / 22.8 m/s at 200 / 250 / 300 / 400 hPa; mean speed observed 35.4 / 35.0 / 32.0 / 23.3 against first guess 43.3 / 41.9 / 37.1 / 24.8 m/s. The first guess is too fast at the jet levels. The largest single differences (57–67 m/s) are at 10-12 12Z: KRNK, KPIT, KIAD and KBUF reported north-northwest flow of 20–40 m/s at 250–300 hPa where the first guess had southwest flow. The decoding was checked against the raw IEM rows (KPIT 250 hPa, 335° at 71 kt → (+15.4, −33.1) m/s, as decoded); between 00Z and 12Z the KPIT wind turned from 240° to 335° at every jet level, so a trough passed that the first guess did not have.
 
 **Reading.** The mechanism proposed in P-82 is refuted: the ring soundings raise the analysed jet by about 20 m/s, but the cycle-to-cycle growth happens without them. The alternative written in the predictions file fits what is seen: large in-domain innovations (a trough the first guess missed gives 50–60 m/s vector innovations) are spread as two independent scalars, u and v, and add onto a first-guess jet displaced from the observed one, giving a maximum stronger than either. Nothing limits an increment of that size: `ingest_obs.py` calls `run_qc(obs)` without backgrounds, so the 5σ gross-error check in `run_qc` (`src/verification/observations.py`) is skipped for every observation. Its backgrounds are keyed by station only, so soundings would need a per-level background before it could be used aloft. The ring-sounding comparison is wrong in principle (an observation against the first guess at a different place) and leaving it out costs nothing measurable (P3, P5), so A3's options remove a known error and about 28 m/s of the jet, but they are a partial mitigation, not a fix.
+
+**Cost to production (a slip of mine).** J1 (4 × 6 threads, nice 19) ran alongside the 10-15 00Z cron cycle. Its 3 km forecast ran at 0.5 steps/s and stopped at its deadline at 18.93 h (18 snapshots), against 23.4–23.8 h for the deadline cycles before it. Low priority does not protect memory-bound kernels (P-80); J2 waits for gaps between cycles.
 
 **Next (proposed; the user decides).** J2 on top of A3: arms that bound the wind increments aloft, for example the gross-error check applied to upper-air winds (per level, against the first guess), and an analysis of wind speed and direction (or a multivariate wind analysis) instead of independent u and v. Measured with the same Smax, O−B and withheld scores, written predictions first.
 

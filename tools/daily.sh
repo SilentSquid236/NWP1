@@ -56,6 +56,13 @@ RESERVE_MIN=8                       # after the forecast: writing, archiving, ma
 # tools/check_backend.py shows round-off agreement on this machine.
 BACKEND="${NWP_BACKEND:-numpy}"
 THREADS="${NWP_THREADS:-8}"
+# P-82, test J1 (2026-10-15, user decision "adopt A3, then J2"): upper-air
+# analysis options. NWP_UPPER_DOMAIN_ONLY=1 leaves soundings outside the domain
+# out of the upper air (their innovations were taken against edge values);
+# NWP_UPPER_L_KM sets its length scale (build.py default 450 km). Unset = as before.
+UPPER_ARGS=""
+[ "${NWP_UPPER_DOMAIN_ONLY:-0}" = 1 ] && UPPER_ARGS="--upper-domain-only"
+[ -n "${NWP_UPPER_L_KM:-}" ] && UPPER_ARGS="$UPPER_ARGS --upper-L-km $NWP_UPPER_L_KM"
 
 mkdir -p "$LOGDIR" "$DATA"
 
@@ -136,7 +143,7 @@ if [ "$SOURCE" = "hrrr" ]; then
         --start "$RUN" --hours "$(( HOURS + 1 ))" --stride 4 || true
 else
     RUNDIR="$TENSORS/obs_$STAMP"
-    step ingest python -u "$ROOT/src/ingest_obs.py" --cycle "$RUN" || true
+    step ingest python -u "$ROOT/src/ingest_obs.py" --cycle "$RUN" $UPPER_ARGS || true
 fi
 echo "rundir $RUNDIR" >> "$LOG"
 
