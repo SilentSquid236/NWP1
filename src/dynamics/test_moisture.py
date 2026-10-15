@@ -166,5 +166,52 @@ report("the PAV adjustment mixes qv over the adjusted block (column water conser
        f"q (g/kg) {np.round(qv8.ravel() * 1e3, 2)} -> {np.round(q_.ravel() * 1e3, 3)}; "
        f"theta {np.round(th_.ravel(), 2)}")
 
+# 9. Simple ice (P-81): off is the warm scheme; on conserves, slows snow, melts, saturates over ice
+from nh2d import P0 as _P0, KAPPA as _KAP
+_rng = np.random.default_rng(1)
+_nz, _ny, _nx = 30, 5, 6
+_p = np.linspace(2.5e4, 1.0e5, _nz)[:, None, None] * np.ones((1, _ny, _nx))
+_T = np.linspace(225.0, 295.0, _nz)[:, None, None] + _rng.normal(0, 1, (_nz, _ny, _nx))
+_th = _T * (_P0 / _p) ** _KAP
+_rho = _p / (287.05 * _T)
+_dz = np.full_like(_p, 300.0)
+_qs = mo.EPS * mo.es_bolton(_T) / (_p - mo.es_bolton(_T))
+_qv = _qs * _rng.uniform(0.8, 1.1, _p.shape); _qc = _rng.uniform(0, 2e-3, _p.shape); _qr = _rng.uniform(0, 3e-3, _p.shape)
+warm = _T > mo.T_ICE + 5.0
+_a = mo.kessler(_th, _qv, _qc, _qr, _p, _rho, _dz, 20.0)
+_b = mo.kessler(_th, _qv, _qc, _qr, _p, _rho, _dz, 20.0, ice=True)
+W0 = (_rho * _dz * (_qv + _qc + _qr)).sum(0); W1 = (_rho * _dz * (_b[1] + _b[2] + _b[3])).sum(0) + _b[4]
+_Tw = np.full_like(_p, 290.0); _thw = _Tw * (_P0 / _p) ** _KAP
+_aw = mo.kessler(_thw, _qv, _qc, _qr, _p, _p / (287.05 * _Tw), _dz, 20.0)
+_bw = mo.kessler(_thw, _qv, _qc, _qr, _p, _p / (287.05 * _Tw), _dz, 20.0, ice=True)
+report("simple ice: in an all-warm column ice=True equals ice=False exactly; with cold layers water + surface "
+       "precipitation is conserved to 1e-14",
+       all(np.array_equal(x, y) for x, y in zip(_aw, _bw)) and np.abs(W1 / W0 - 1).max() < 1e-14,
+       f"water change {np.abs(W1 / W0 - 1).max():.1e}")
+_qr2 = np.where(_T < 263.0, 2e-3, 0.0); _z0 = np.zeros_like(_qv)
+_w = mo.kessler(_th, _z0, _z0, _qr2, _p, _rho, _dz, 20.0, warm_rain=False)
+_i = mo.kessler(_th, _z0, _z0, _qr2, _p, _rho, _dz, 20.0, warm_rain=False, ice=True)
+_below = _qr2 == 0
+report("simple ice: snow from the cold layers moves down more slowly than rain would (one 20 s step)",
+       (_i[3] * _below).sum() < 0.7 * (_w[3] * _below).sum(),
+       f"moved below the cold layers: rain {(_w[3] * _below).sum():.4f}, snow {(_i[3] * _below).sum():.4f} (kg/kg summed)")
+# melting: one cold layer of snow above warm layers; the warm layer that receives it cools by LF/cp per kg
+_pm = np.array([6.0e4, 6.5e4, 7.0e4])[:, None, None]; _Tm = np.array([265.0, 275.0, 280.0])[:, None, None]
+_thm = _Tm * (_P0 / _pm) ** _KAP; _rhom = _pm / (287.05 * _Tm); _dzm = np.full_like(_pm, 500.0)
+_qrm = np.array([2e-3, 0.0, 0.0])[:, None, None]; _zm = np.zeros_like(_qrm)
+_m = mo.kessler(_thm, _zm, _zm, _qrm, _pm, _rhom, _dzm, 60.0, warm_rain=False, ice=True)
+_dT = (_m[0][1] - _thm[1]) * (_pm[1] / _P0) ** _KAP
+report("simple ice: snow falling into the layer above freezing cools it (melting), the layers below are untouched by melting",
+       float(_dT[0, 0]) < 0 and float(_dT[0, 0]) > -1.0,
+       f"temperature change of the first warm layer {float(_dT[0, 0]):+.4f} K")
+_ad = mo.kessler(_th, _qv * 1.2, _qc, _z0, _p, _rho, _dz, 20.0, warm_rain=False, ice=True)
+_Tn = (_p / _P0) ** _KAP * _ad[0]
+_cold = (_T < mo.T_ICE - 5.0) & (_ad[2] > 1e-6)
+_rhi = _ad[1] / (mo.EPS * mo.es_ice(_Tn) / (_p - mo.es_ice(_Tn)))
+# one Newton step, as in the warm scheme: from 20 % supersaturation it lands within ~1 %
+report("simple ice: 20 %-supersaturated cold cloud is adjusted to saturation over ice (one Newton step, within 2 %)",
+       _cold.any() and np.abs(_rhi[_cold] - 1).max() < 2e-2,
+       f"RH over ice after the step: {float(_rhi[_cold].min()):.4f}-{float(_rhi[_cold].max()):.4f}")
+
 print(f"\n{sum(results)}/{len(results)} passed")
 raise SystemExit(0 if all(results) else 1)

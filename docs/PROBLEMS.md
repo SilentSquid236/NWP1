@@ -39,6 +39,60 @@ hypothesis, **G** missing physics, **H** performance, **I** logistics.
 # OPEN
 
 
+## P-81 — The moist NH runs put 4–10× too much rain in a tropical-remnant event
+
+**Category** G · **First seen** 2026-10-13 (first moist cron cycle, 00Z) · **Status** OPEN
+
+**Symptom.**
+- The 3 km moist run gave 411 mm in 24 h at 45.03° N 77.68° W (near Bancroft, 349 m), with 1,583 cells over 100 mm and 101 over 300 mm. That point rained a steady 15–23 mm/h from +2 h to +24 h.
+- The moist 12 km NH parent gave 217 mm at the same place, at a steady 9 mm/h.
+- Environment Canada's special weather statement for Cobourg–Kingston–Bancroft called for 40–60 mm (tropical remnants and a warm front). The location is right; the amount is 4–10× too high.
+- The 10-12 06Z test cycle (188 mm) is likely the same tendency.
+
+**Ruled out.**
+- The 3 km edges and the nesting: the maximum is 273 km from the edge, and the 12 km parent does the same.
+- Persistent supersaturation: RH above 102 % at under 0.01 % of points at +13 h, all inside cloud.
+- A single-grid-point storm: the heavy rain covers about 14,000 km².
+
+**Suspects.**
+1. No ice phase: all condensate rains out through warm-rain Kessler autoconversion.
+2. No convection scheme in the 12 km NH run, so convection is resolved on a 12 km grid. Grid-scale latent-heating feedback is a known cause of runaway rain, and it feeds the 3 km edges.
+3. A stalled forcing: the rain rate barely varies for 22 h, while the real system passed in about 18 h.
+
+**Water-vapour budget, 12 km moist parent** (interior inside the 15-cell zone, 730,000 km², box means, +1 to +24 h):
+- Vapour imported across the zone edge: 8.7 mm. Net outflow only in the first hour (−0.04 mm/h), then inflow of 0.08–0.74 mm/h for every hour after.
+- Rain: 5.5 mm. Precipitable water rose 25.8 → 29.9 mm.
+- So the edges, held at the 00Z analysis because the model is observation-only, keep importing the tropical airmass for 24 h. In reality it passed in about 18 h.
+- At the maximum, precipitable water is only 29–34 mm. The 217 mm comes from moisture convergence focused on one place: explicit convection at 12 km with no convection scheme.
+- 0.8 mm (15 % of the rain) is not accounted for, and the model has no surface moisture source. Suspect non-conservative moisture advection or positivity filling.
+- The land surface has no evaporation into the air (its evaporative fraction only partitions the ground energy budget).
+
+**In-model water budget** (new opt-in counter `NWP_WATER_BUDGET=1`; 12 km moist, 10-13 00Z, cumulative domain-mean mm at +21 h):
+
+| term | mm |
+|---|---|
+| change of water in the air | +2.23 |
+| edge relaxation | −1.52 |
+| rain | −2.38 |
+| hole filling | +0.04 |
+| residual = net inflow through the outer faces | **+6.09** |
+
+- `grid.shift` repeats the edge cell, and mass and moisture share the same flux-form operators. So the residual is the advective inflow of water across the domain boundary; the test suite already shows the core conserving water to 10⁻¹² on closed domains.
+- The relaxation *removes* water: the model's edge air is wetter than the frames.
+- The 12 km moist run is not nested, so its edge winds and humidity stay at the 00Z analysis for 24 h. The tropical inflow therefore never stops, and the inflow is 2.5× the domain rain.
+- The offline budget's "0.8 mm unexplained" was this edge inflow plus the diagnostic's own error. No conservation bug is indicated.
+
+**Tests.**
+- R1, edge-qv fade: refuted. My design supersaturated the cold edges.
+- R1b, edge-RH fade: mixed. 10-13 00Z 217 → 93 mm, but 10-12 18Z 222 → 605 mm; not adopted.
+- R2, simple ice: September ETS +52 %, neutral for T, dewpoint and wind; the extreme case only −12 % (domain rain +70 %).
+- Gauge check: CWRK, 6 km from the maximum, 27.9 mm observed against 333 mm forecast by the cron 3 km run.
+- Remaining suspect: no convection scheme at 12 km.
+
+**Contrast.** Over E7's 20 September cycles the same physics gave about 6× too little rain. The error depends on the regime, not a simple scale factor.
+
+**Next.** Score against the stations in the area (CYPQ, CYTR, CYOW, CTNK and others) once the window closes; then a moisture budget at the maximum (precipitable water, moisture-flux convergence, surface evaporation).
+
 ## P-80 — A run pinned to one socket used the other socket's memory
 
 **Category** H · **First seen** 2026-10-11 (test E7) · **Status** FIXED for pinned runs (`src/numa_bind.py`)

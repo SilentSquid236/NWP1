@@ -509,6 +509,8 @@ def run_forecast(model, driver, relax, duration, dt=None, output_every=None,
     xp = xp_of(model.u)
     torch_run = xp.name == "torch"
 
+    if getattr(model, "water_budget", False) and getattr(model, "moist", False):
+        model.water0 = model._water_total()          # P-81 water budget (NWP_WATER_BUDGET=1)
     for k in range(n_steps):
         model.step(dt)
         if hasattr(model, "relax_with_driver"):
@@ -592,6 +594,14 @@ def run_forecast(model, driver, relax, duration, dt=None, output_every=None,
                       + (f"  max qc {float(info['q'][-1][1].max()) * 1e3:.2f} g/kg"
                          f"  rain max {float(model.rain.max()):.1f} mm"
                          if getattr(model, "moist", False) else ""))
+            if progress and getattr(model, "water_budget", False) and getattr(model, "water0", None) is not None:
+                # domain-mean mm: change of water in the air = edge relaxation
+                # - rain + hole filling + residual (outer-edge flux + numerics)
+                ncol = float(np.asarray(model.rain).size)
+                dW = (model._water_total() - model.water0) / ncol
+                rel, rn, fil = model.water_relax / ncol, float(np.sum(model.rain)) / ncol, model.q_lost / ncol
+                print(f"           water (domain-mean mm): change {dW:+.3f}  edge relaxation {rel:+.3f}  "
+                      f"rain {-rn:+.3f}  hole filling {fil:+.3f}  residual {dW - rel + rn - fil:+.3f}")
             if not (np.isfinite(snap[0]).all() and np.isfinite(snap[1]).all()):
                 print("  FORECAST DIVERGED -- stopping")
                 info["stopped"] = f"diverged at {model.time/3600:.2f} h"
@@ -760,6 +770,15 @@ def main():
     p.add_argument("--init-winds-weight", type=float, default=1.0,
                    help="with --init-winds geostrophic: the geostrophic share above 1500 m "
                         "(1 = replace the analysed wind, 0.5 = half and half; test E4)")
+    p.add_argument("--ice", action="store_true", default=False,
+                   help="with --moist: simple ice (P-81; Dudhia 1989 / WSM3 style) -- below 0 C cloud "
+                        "water is cloud ice and rain is snow (saturation over ice, slow snow fall, "
+                        "melting at the freezing level). Default off (warm rain only)")
+    p.add_argument("--moist-edge-fade-h", type=float, default=None,
+                   help="P-81: in a run that is not nested, fade the edge frames' water vapour from "
+                        "the analysis toward its domain-mean profile (per level) with this e-folding "
+                        "time in hours, so the inflow stops carrying the cycle-time humidity all day. "
+                        "Default: off (the analysis vapour is held for the whole run)")
     p.add_argument("--moist", action="store_true",
                    help="CAM stage S7: carry water vapour, cloud and rain (warm-rain Kessler "
                         "microphysics) in the NH core; vapour from the analysis RH, "
@@ -883,7 +902,35 @@ def main():
         times.append(i * 3600.0)
         states.append(state_to_boundary(u, v, th, pi_b))
         if args.moist:
-            states[-1]["qv"] = qv_from_rh_sigma(rh_on_sigma(fl, lev, pi_b), th, pi_b, lev)
+            rh_last = rh_on_sigma(fl, lev, pi_b)
+            states[-1]["qv"] = qv_from_rh_sigma(rh_last, th, pi_b, lev)
+    if args.moist and args.moist_edge_fade_h and not args.boundary_forecast:
+        # P-81 (2026-10-13): the edges of an observation-only run hold the
+        # analysis, so a moist inflow (a tropical plume at 00Z) is imported at
+        # full strength for the whole run; the 12 km water budget had the outer
+        # faces bringing in 2.5x the domain's rain. The frames' qv now relaxes
+        # toward the analysis's domain-mean RELATIVE HUMIDITY, level by level,
+        # with each frame column's own temperature and pressure.
+        # (Test R1, 2026-10-13: fading the mixing ratio instead supersaturated
+        # every edge column colder than the domain mean, and the relaxation
+        # injected vapour that rained out: 217 -> 1306 mm. RH cannot exceed
+        # 100 % this way.)
+        H = float(args.moist_edge_fade_h) * 3600.0
+        rh0 = np.clip(np.asarray(rh_last, dtype=float), 0.0, 100.0)
+        rm = rh0.reshape(rh0.shape[0], -1).mean(axis=1)[:, None, None]
+        base = dict(states[-1])
+        t_last = times[-1]
+        new_t, new_s = [], []
+        for h in range(1, args.hours + 1):
+            t = t_last + h * 3600.0
+            s = dict(base)
+            rh_t = rm + (rh0 - rm) * np.exp(-(t - t_last) / H)
+            s["qv"] = qv_from_rh_sigma(rh_t, th, pi_b, lev)
+            new_t.append(t); new_s.append(s)
+        times += new_t; states += new_s
+        assert float(np.max(rh_t)) <= 100.0 + 1e-9
+        print(f"  edge vapour    : RH fades toward the analysis domain-mean RH per level, e-folding "
+              f"{args.moist_edge_fade_h:g} h (P-81); level means {float(rm.min()):.0f}-{float(rm.max()):.0f} %")
     if args.boundary_forecast:
         # NESTED RUN (CAM stage S5): the edges follow a coarser forecast of the
         # same cycle, hour by hour, instead of the analysis held fixed. Hour 0
@@ -1037,7 +1084,8 @@ def main():
             # S7: vapour from the analysis RH at the prepared temperature
             qv0 = qv_from_rh_sigma(rh0, th0, pi0, lev)
             model.set_state(u0, v0, th0, pi0, q={"qv": qv0})
-            print(f"  moisture       : qv, qc, qr (Kessler warm rain); initial qv "
+            model.ice = bool(args.ice)
+            print(f"  moisture       : qv, qc, qr (Kessler warm rain{' + simple ice' if args.ice else ''}); initial qv "
                   f"{qv0.min() * 1e3:.2f}-{qv0.max() * 1e3:.2f} g/kg from RH "
                   f"{rh0.min():.0f}-{rh0.max():.0f} %")
         else:

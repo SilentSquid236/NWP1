@@ -5750,6 +5750,151 @@ Read-only diagnostics on existing runs, then a 1 h, 12 km run of 2026-09-28 06Z 
 
 ---
 
+## 2026-10-14 — Planned (user idea): temperature change with the day–night cycle removed, to show fronts
+
+User: "add a way to see temperature changes minus heating and cooling done by diurnal cycles to better see fronts." Three products, in order of cost:
+1. **24 h temperature change** (same hour, a day apart): analysis minus the previous day's analysis, and the 24 h forecast minus its analysis. The diurnal cycle cancels; a cold front is a band of strong cooling. It shows where the front has been over a day, not exactly where it is.
+2. **Temperature advection** −V·∇T at 850 hPa and near the ground, from one snapshot: no diurnal signal at all; warm advection ahead of a front, cold behind. Map code only (`src/maps/derive.py`, `render.py`).
+3. **Model tendency split.** Accumulate each hour's temperature change from the surface and boundary-layer heating, latent heating, and the dynamics (advection plus adiabatic) separately in the NH core. Map the hourly change minus the surface-driven heating, which is the user's request taken literally. It doubles as a diagnostic of whether a model front is dynamical or a surface-heating artefact. This needs instrumenting the core.
+
+Plan: 1 and 2 first (map set), 3 after P-81 settles.
+
+---
+
+## 2026-10-14 — R2: simple ice improves September rain skill by half, but does not fix the extreme case; gauges confirm P-81
+
+Arms ice (`--ice`) and icefade6 (`--ice --moist-edge-fade-h 6`); ctl from R1. 12 km moist NH, 24 cycles; predictions in `r2/r2_predictions.txt`.
+
+| September, 20 cycles | ctl | ice | icefade6 |
+|---|---|---|---|
+| hourly rain ETS ≥ 0.25 mm | 0.023 | **0.035** | 0.036 |
+| frequency bias / POD | 0.10 / 0.04 | 0.16 / 0.06 | 0.16 / 0.06 |
+| mean forecast rain (mm/h; observed 0.143) | 0.012 | 0.020 | 0.019 |
+| 2 m T RMSE (K) | 3.334 | 3.330 | 3.330 |
+| 2 m dewpoint RMSE / bias (K) | 2.724 / −1.47 | 2.714 / −1.46 | 2.508 / −1.02 |
+| 10 m u / v (m/s) | 1.921 / 2.125 | 1.923 / 2.124 | 1.930 / 2.126 |
+
+| October rain max (mm) | ctl | ice | icefade6 |
+|---|---|---|---|
+| 20261013_00 | 217 | 190 | 119 |
+| 20261013_06 | 224 | 200 | 130 |
+| 20261012_06 | 114 | 98 | 116 |
+| 20261012_18 | 222 | 254 | 362 |
+
+**Predictions.**
+- **G1 refuted.** On 10-13 00Z the maximum fell only 12 %, and the domain-mean precipitation *rose* 70 % (2.74 → 4.65 mm): saturation over ice condenses more aloft, the risk stated in advance.
+- **G2 held, and better than required.** ETS +52 %; frequency bias and POD up.
+- **G3 held.** T and dewpoint within 0.01 K.
+- **G4 held.** No measurable cost; the run times (1.9 / 2.6 min) follow the stream, not the arm.
+
+**Gauges, 10-13 00Z cycle** (cron 3 km moist forecast, warm rain; `verification_3km`, hourly precipitation summed over 24 h):
+- **CWRK** (45.07° N 77.88° W), 6 km from the model maximum: **27.9 mm observed, 333.0 mm forecast**.
+- CTNK 26.7 / 57.1 mm. CXKE 49.0 / 13.0, MSS 31.0 / 3.8 and CWQP 29.5 / 10.6 mm were under-forecast.
+- So the model collapsed a widespread 15–50 mm event onto one stationary spot.
+- Caveat: several Canadian airports (CYOW, CYPQ, CYND, CYQA) report exactly 0.0 mm for all 24 h, although rain was reported at Ottawa. Their METARs may not carry an hourly precipitation group; the zeros are probably missing values scored as "no rain" (a verification issue to fix).
+
+**Reading.** Ice is a clear gain for ordinary (too-light) rain and costs nothing elsewhere. The extreme-event collapse is not microphysics. It points to convection resolved on the 12 km grid (no convection scheme), with the 12 km run also feeding the 3 km edges: the remaining suspect.
+
+---
+
+## 2026-10-14 — R1b: fading the edge *relative humidity* fixes the target case but makes others worse (mixed; not adopted)
+
+Arms rhfade6 and rhfade12: the frames' RH relaxes toward the analysis domain-mean RH per level (30–87 %); vapour from each frame column's own T and p. Predictions in `r1/r1b_predictions.txt`. Sanity gate passed (rhfade6 on 10-13 00Z: 93 mm against the 325 mm limit). 12 km moist NH, 24 h; ctl is R1's.
+
+| 12 km rain max (mm) / domain-mean rain at +21 h (mm) | ctl | rhfade6 | rhfade12 |
+|---|---|---|---|
+| 20261013_00 | 217 / 2.74 | **93 / 1.52** | 125 / 1.75 |
+| 20261013_06 | 224 / 2.18 | 121 / 1.43 | 143 / 1.57 |
+| 20261012_06 | 114 / 3.49 | 164 / 4.16 | 186 / 3.82 |
+| 20261012_18 | 222 / 1.91 | **605 / 3.76** | 514 / 3.24 |
+
+**Predictions.**
+- **F1b held** on its case (10-13 00Z): rain maximum 217 → 93 mm; domain rain −44 %; outer-face inflow (budget residual) 6.80 → 3.31 mm, −51 %.
+- **F2b refuted.** September ETS (0.023) and frequency bias (0.10) are unchanged, but on 20260928_18 the rain maximum went from 58 to 118 mm, above the limit of 1.5× ctl.
+- **F3b refuted, in the good direction.** 2 m T is unchanged (3.334 K). Dewpoint RMSE went 2.724 → 2.519 K and its bias −1.47 → −1.03 K. The fade moves the dry-biased edge air toward the domain mean.
+
+**Reading.** The fade toward the domain-mean RH is a statistical relaxation, not a physical one. It dries humid edges, which cut 10-13 00Z and 06Z, but moistens dry ones: on 10-12 18Z the outer faces went from a net outflow (−3.3 mm) to an inflow (+3.7 mm) and the rain doubled. **Not adopted.** In an observation-only model the edge inflow after the analysis time is unknown; the honest fix is in the physics (rain efficiency, convection), not the edges.
+
+**Side finding.** The September dewpoint gain (−0.2 K RMSE, +0.44 K bias) says the edge humidity contributes to the dewpoint dry bias. It is worth a separate test of the analysis RH at the edges.
+
+---
+
+## 2026-10-13 — Viewer: the skew-T was over-skewed, so soundings leaned the wrong way (user report)
+
+- **Report.** "Why is the temperature and dew point going the wrong way in the soundings?" — the lines leaned the wrong way.
+- **Data checked first** (12 km viewer files, 10-13 18Z, hours 0 and 12). Temperature falls with height above 700 hPa in 99 % of level pairs. Dew point never exceeds temperature, and RH never exceeds 100.5 %. The rest is a frontal warm layer near 900–850 hPa.
+- **Cause: drawing.** `viewer.py` skewed the isotherms by 0.95 px per px of height, about 55 K per unit of ln p. The standard skew-T (SPC, SHARPpy: 45° over 1050–100 hPa and 100 K) uses 42.5 K. A normal profile therefore leaned up and to the right, as if it warmed with height.
+- **Fix.** `SKEW_K_PER_LNP = 42.5`, written in physical units. `test_maps.py` 15/15.
+- The 23 viewer pages of the last 4 days were patched in place on the server (display only; originals in `index.html.pre_skew`). New cycles get the fix once it is pulled.
+
+---
+
+## 2026-10-13 — Simple ice in the moist NH core (P-81; opt-in `--ice`)
+
+- **What.** The same three species, read by temperature in each layer (after Dudhia 1989 and WRF's WSM3). Below 0 °C, qc is cloud ice and qr is snow:
+  - saturation over ice (Murray 1967) with the latent heat of sublimation, in the same one-step Newton adjustment as the warm scheme;
+  - snow falling at 1 m/s × √(ρ₀/ρ);
+  - ice-to-snow aggregation and accretion with Lin et al. (1983)'s efficiency e^(0.025(T−T₀)) (rate 10⁻³ s⁻¹, threshold 10⁻⁴ kg/kg);
+  - snow melting into rain, cooling the air by Lf, as it falls into a layer above freezing;
+  - snow sublimating below cloud by the Kessler evaporation formula with ice saturation.
+- **Where.** `moisture.kessler(..., ice=True)` (NumPy reference) and the C kernel `moist_col` (flag bit 1; 20 constants), through `NHModel.ice` and `forecast.py --ice`. Off by default; the off path is bit-identical to before.
+- **Tests.**
+  - `test_moisture.py` 12/12, with 4 new: in an all-warm column ice equals no ice exactly; water plus surface precipitation is conserved to 2 × 10⁻¹⁶; snow moves down slower than rain (0.004 against 0.025); melting cools; 20 %-supersaturated cold cloud ends within 2 % of ice saturation after one Newton step, like the warm scheme.
+  - `test_nh3d_c.py` 32/32, with 2 new: C matches NumPy with ice to under 10⁻¹¹, and ice changes the step.
+  - `test_forecast.py` 17/17.
+- **Test R2** (`r2/r2_predictions.txt`) runs after R1b: ice, and ice with the RH-space edge fade, on the same 24 cycles.
+
+---
+
+## 2026-10-13 — R1: fading the edge *mixing ratio* made the rain far worse (refuted; design flaw)
+
+Predictions F1–F3 are in `r1/r1_predictions.txt`. Arms: ctl, fade6 and fade12 (the frames' qv relaxed toward the analysis domain-mean qv profile per level). 12 km moist NH, 24 h, 4 October + 20 September cycles.
+
+| rain maximum (mm) | ctl | fade12 | fade6 |
+|---|---|---|---|
+| 20261013_00 | 217 | 875 | 1306 |
+| 20261012_18 | 222 | 401 | 574 |
+| 20260929_06 | 6 | 400 | 539 |
+| 20260930_06 | 8 | 423 | 565 |
+
+**F1 refuted.** Every cycle with rain got more. The largest jump was about 96× (20260929_06: 5.6 → 538.7 mm for fade6).
+
+**Cause: my design.** Holding each frame column's own temperature while moving its vapour toward the domain-mean *mixing ratio* supersaturates every edge column colder than the domain mean (the north edge, high terrain, aloft). The relaxation then injects vapour that condenses on arrival. A relative-humidity fade cannot exceed 100 %. That is how it should have been written, and how it is now written (`--moist-edge-fade-h`, with an assert that no frame exceeds 100 %).
+
+**The water budget confirms it.** On 20261013_00 by +21 h (domain-mean mm), the edge relaxation went from −1.87 (ctl) to **+52.98** (fade6) and the rain from −2.74 to −56.68. The edges were injecting vapour that rained out. The outer-face inflow was about the same in every arm (+5.1 to +6.8).
+
+**A script bug of mine.** The September comparison ran before the verifications had finished ("0 cycles in all arms"). The verifications ran in the background inside the run streams, and the final `wait` does not wait for those. R1b's script now waits inside each stream and for every `verify.py` of the run. R1's ctl archives completed afterwards and serve as R1b's control.
+
+**Lesson** (AI-collaborator record). A one-line sanity check (the frames' maximum RH) before the campaign would have caught the design flaw. R1b has that gate built in.
+
+---
+
+## 2026-10-13 — Operations: a 4-day-old job submission started by itself and was stopped
+
+- **What happened.** At 13:06Z all four job submissions from 2026-10-09/10 whose approval cards never reached the user started on the server together; when the session resumed, their approvals had apparently been released. E4 had been run by hand on 10-10.
+  - `80bd4101` (E4-quick) ran its 1 h check in its own job folder.
+  - `ab5b21ed` and `cd6a2fe3` (E4) failed their own entry check ("GATE FAIL: campaign not run") and stopped after about 40 s.
+  - `4a7b07d5` (E4) passed it and started the campaign; that is the one described below.
+- **What it did in its 3 min.**
+  - Rebuilt `scratch/dev25` from dev24 plus the E4 patch, which is how dev25 was made.
+  - Ran the 1 h quick check in its own job folder.
+  - Started the campaign, which first deletes and refills each arm's verification folder. It deleted `matches.jsonl` for four nhMb cycles (20260926_00, 20260927_18, 20260929_12, 20260930_06) and two nhMgb cycles (20260926_18, 20260928_12). No forecast file was touched (40 of 40, none newer).
+- **Stopped** at 13:09Z (cancelled; no processes left).
+- **Restored.** The six archives were re-verified from the unchanged forecasts with the same dev25 code and cached observations: 31.5–32.7 k pairs each, against 32.4 k for an untouched cycle. Both arms are back to 20 of 20. E4's results, and the P1, P2 and E7 archives (separate folders), are unchanged.
+- **Ledger.** No other submitted job is live. All 40 E4 forecast files still date from the original run (10-10 02:18–03:32Z), so E7's boundary forecasts were never touched. The jobs started over the command channel are not in the approval system.
+- **Lesson** (AI-collaborator record). A submission whose approval card never surfaced is not dead: it can still start later, against data that moved on. Cancel such submissions as soon as the work is done another way.
+
+---
+
+## 2026-10-13 — The first moist cron cycle: clean run, far too much rain in a real event (P-81)
+
+- The 10-13 00Z cycle ran in 123.7 min, status 0: 12 km 15.4 min, moist 12 km NH 2.1 min, 3 km analysis 1.5 min, 3 km moist forecast 90.8 min (moisture at 24 of 24 edge frames).
+- **Rain.** 411 mm in 24 h near Bancroft, Ontario (45.03° N 77.68° W), where Environment Canada called for 40–60 mm. The moist 12 km parent gave 217 mm at the same place. Diagnosis so far, the suspects and the next steps are in P-81.
+- **A slip of mine, caught at once.** My first diagnostic picked the `terrain` array because "rain" is a substring of it, and reported terrain heights as rainfall. Selecting the exact key fixed it.
+- **Baseline for scoring the cron 3 km** (re-verified with one surface operator, report-only, 3 cycles 10-10 12Z to 10-11 00Z): the old-code dry 3 km had 2 m T RMSE 5.94 K against 4.41 for the 12 km production run (standard operator), and a daytime bias of −1.84 K; it had no land surface. Winds were about equal (u 2.98 against 3.05). Cycles cut at their deadline cannot be re-verified from the cache; that excluded 10-10 06Z.
+
+---
+
 ## 2026-10-12 — Operations: the moist cron cycle, tested end to end
 
 `NWP_CAM_MOIST=1 bash tools/cam_cycle.sh 2026-10-12T06 24`. Set-up: dev33 = the deployed 4de8a60 plus the new `cam_cycle.sh` and `numa_bind.py`; a scratch data root linked to the real inputs; unpinned like cron; nice 19; `NWP_SKIP_12KM=1`, since the 12 km production run existed.

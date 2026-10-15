@@ -1443,9 +1443,14 @@ EXPORT void FN(moist_col)(int nz, int ny, int nx, int nq, REAL dt,
     const REAL EPS_ = cst[0], LV_ = cst[1], SVP1_ = cst[2], SVP2_ = cst[3], SVP3_ = cst[4];
     const REAL SVPT0_ = cst[5], KC1_ = cst[6], KC2_ = cst[7], KC3_ = cst[8], KC4_ = cst[9];
     const REAL MAXCR = cst[10];
+    /* simple ice (P-81): bit 1 of warm_rain; constants 11..19 as moisture.py */
+    const int warm = warm_rain & 1, ice = (warm_rain >> 1) & 1;
+    const REAL LF_ = cst[11], SVPI2_ = cst[12], SVPI3_ = cst[13], SVPIT0_ = cst[14], TICE_ = cst[15];
+    const REAL VS0_ = cst[16], KI1_ = cst[17], KI2_ = cst[18], ICEX_ = cst[19];
     #pragma omp parallel
     {
-        REAL p[nz], rho[nz], dz[nz], th[nz], qv[nz], qc[nz], qr[nz], vt[nz], flux[nz];
+        REAL p[nz], rho[nz], dz[nz], th[nz], qv[nz], qc[nz], qr[nz], vt[nz], flux[nz], pii[nz];
+        int cold[nz];
         #pragma omp for schedule(static)
         for (size_t c2 = 0; c2 < N; c2++) {
             const REAL m = mu[c2];
@@ -1483,9 +1488,13 @@ EXPORT void FN(moist_col)(int nz, int ny, int nx, int nq, REAL dt,
             lost[c2] = lsum;
             /* sedimentation */
             const REAL rb = rho[nz - 1];
+            for (int k = 0; k < nz; k++) {
+                pii[k] = pow(p[k] / P0_, KAPPA_);
+                cold[k] = ice && (pii[k] * th[k] < TICE_);
+            }
             REAL crmax = 0;
             for (int k = 0; k < nz; k++) {
-                vt[k] = FN(_vt)(qr[k], rho[k], rb);
+                vt[k] = cold[k] ? VS0_ * sqrt(rb / rho[k]) : FN(_vt)(qr[k], rho[k], rb);
                 const REAL cr = vt[k] * dt / dz[k];
                 if (cr > crmax) crmax = cr;
             }
@@ -1499,27 +1508,49 @@ EXPORT void FN(moist_col)(int nz, int ny, int nx, int nq, REAL dt,
                     const REAL dv = (k == 0) ? flux[0] : flux[k] - flux[k - 1];
                     qr[k] = qr[k] - dtf * dv / (rho[k] * dz[k]);
                 }
+                if (ice)    /* snow from a frozen layer melts in the layer above freezing it enters */
+                    for (int k = 1; k < nz; k++)
+                        if (cold[k - 1] && !cold[k])
+                            th[k] = th[k] - LF_ / (CP_ * pii[k]) * (flux[k - 1] * dtf / (rho[k] * dz[k]));
                 rn = rn + flux[nz - 1] * dtf;
-                for (int k = 0; k < nz; k++) vt[k] = FN(_vt)(qr[k], rho[k], rb);
+                for (int k = 0; k < nz; k++)
+                    vt[k] = cold[k] ? VS0_ * sqrt(rb / rho[k]) : FN(_vt)(qr[k], rho[k], rb);
             }
             rain[c2] = rn;
             const REAL f5 = SVP2_ * (SVPT0_ - SVP3_) * LV_ / CP_;
             for (int k = 0; k < nz; k++) {
-                if (warm_rain) {
+                if (warm) {
                     const REAL qrp = qr[k] > 0 ? qr[k] : (REAL)0;
-                    const REAL factorn = (REAL)1.0 / ((REAL)1.0 + KC3_ * dt * pow(qrp, KC4_));
-                    const REAL ex = qc[k] - KC2_ > 0 ? qc[k] - KC2_ : (REAL)0;
-                    const REAL qrprod = qc[k] * ((REAL)1.0 - factorn) + factorn * KC1_ * dt * ex;
+                    REAL qrprod;
+                    if (cold[k]) {      /* ice -> snow: aggregation and accretion, Lin et al. efficiency */
+                        const REAL E = exp(ICEX_ * (pii[k] * th[k] - TICE_));
+                        const REAL fi = (REAL)1.0 / ((REAL)1.0 + KC3_ * E * dt * pow(qrp, KC4_));
+                        const REAL ex = qc[k] - KI2_ > 0 ? qc[k] - KI2_ : (REAL)0;
+                        qrprod = qc[k] * ((REAL)1.0 - fi) + fi * E * KI1_ * dt * ex;
+                    } else {
+                        const REAL factorn = (REAL)1.0 / ((REAL)1.0 + KC3_ * dt * pow(qrp, KC4_));
+                        const REAL ex = qc[k] - KC2_ > 0 ? qc[k] - KC2_ : (REAL)0;
+                        qrprod = qc[k] * ((REAL)1.0 - factorn) + factorn * KC1_ * dt * ex;
+                    }
                     REAL a = qc[k] - qrprod; qc[k] = a > 0 ? a : (REAL)0;
                     REAL b = qr[k] + qrprod; qr[k] = b > 0 ? b : (REAL)0;
                 }
-                const REAL pii = pow(p[k] / P0_, KAPPA_);
-                const REAL temp = pii * th[k];
-                const REAL gam = LV_ / (CP_ * pii);
-                const REAL es = SVP1_ * exp(SVP2_ * (temp - SVPT0_) / (temp - SVP3_));
+                const REAL temp = pii[k] * th[k];
+                REAL gam, es, f5k, tt;
+                if (cold[k]) {          /* saturation over ice, latent heat of sublimation */
+                    const REAL LS = LV_ + LF_;
+                    gam = LS / (CP_ * pii[k]);
+                    es = SVP1_ * exp(SVPI2_ * (temp - SVPIT0_) / (temp - SVPI3_));
+                    f5k = SVPI2_ * (SVPIT0_ - SVPI3_) * LS / CP_;
+                    tt = temp - SVPI3_;
+                } else {
+                    gam = LV_ / (CP_ * pii[k]);
+                    es = SVP1_ * exp(SVP2_ * (temp - SVPT0_) / (temp - SVP3_));
+                    f5k = f5;
+                    tt = temp - SVP3_;
+                }
                 const REAL qvs = EPS_ * es / (p[k] - es);
-                const REAL tt = temp - SVP3_;
-                const REAL prod = (qv[k] - qvs) / ((REAL)1.0 + p[k] / (p[k] - es) * qvs * f5 / (tt * tt));
+                const REAL prod = (qv[k] - qvs) / ((REAL)1.0 + p[k] / (p[k] - es) * qvs * f5k / (tt * tt));
                 const REAL rcgs = (REAL)0.001 * rho[k];
                 const REAL rq = rcgs * qr[k];
                 const REAL sub = qvs - qv[k] > 0 ? qvs - qv[k] : (REAL)0;

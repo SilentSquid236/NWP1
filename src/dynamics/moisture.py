@@ -53,6 +53,18 @@ LV = 2.5e6           # J/kg, latent heat of vaporisation
 SVP1, SVP2, SVP3, SVPT0 = 611.2, 17.67, 29.65, 273.15     # Bolton (1980), Pa and K
 KC1, KC2, KC3, KC4 = 1.0e-3, 1.0e-3, 2.2, 0.875           # Kessler autoconversion / accretion
 MAX_CR_SED = 0.75    # largest fall Courant number per sedimentation substep
+# Simple ice (P-81, 2026-10-13; after Dudhia 1989 / WRF WSM3): the same three
+# species, read by temperature. Below T_ICE, qc is cloud ice and qr is snow:
+# saturation over ice with the latent heat of sublimation, snow falling at
+# VS0 sqrt(rho_0 / rho), ice-to-snow aggregation and accretion with Lin et al.
+# (1983)'s efficiency exp(ICE_EXP (T - T_ICE)), and snow melting (cooling by LF)
+# as it falls into a layer above freezing. Off unless kessler(..., ice=True).
+LF = 3.34e5                                   # J/kg, latent heat of fusion
+SVPI2, SVPI3, SVPIT0 = 21.8745584, 7.66, 273.16   # saturation over ice (Murray 1967), with SVP1
+T_ICE = 273.15
+VS0 = 1.0            # m/s, snow fall speed at the ground density
+KI1, KI2 = 1.0e-3, 1.0e-4                     # ice -> snow aggregation rate (1/s) and threshold
+ICE_EXP = 0.025      # 1/K, Lin et al. (1983) aggregation efficiency
 
 
 def es_bolton(T):
@@ -109,7 +121,12 @@ def _vt(qr, rho, rho_bottom):
     return 36.34 * np.maximum(0.001 * rho * qr, 0.0) ** 0.1364 * np.sqrt(rho_bottom / rho)
 
 
-def kessler(theta, qv, qc, qr, p, rho, dz, dt, warm_rain=True):
+def es_ice(T):
+    """Saturation vapour pressure over ice (Pa), Murray (1967)."""
+    return SVP1 * np.exp(SVPI2 * (T - SVPIT0) / (T - SVPI3))
+
+
+def kessler(theta, qv, qc, qr, p, rho, dz, dt, warm_rain=True, ice=False):
     """
     One Kessler step on columns (index 0 = lid). theta: potential temperature
     (K); p (Pa), rho (kg/m^3, of the whole air) and dz (m, layer depth) as
@@ -117,12 +134,21 @@ def kessler(theta, qv, qc, qr, p, rho, dz, dt, warm_rain=True):
     reaching the ground in this step. Inputs are not modified.
     warm_rain=False turns autoconversion and accretion off (saturation
     adjustment only: the reversible case of Bryan and Fritsch 2002).
+    ice=True: the simple-ice reading of qc and qr below T_ICE (module notes).
     """
+    from nh2d import CP, P0, KAPPA
     theta, qv, qc, qr = (np.array(a, dtype=float, copy=True) for a in (theta, qv, qc, qr))
     nz = qr.shape[0]
     rho_b = rho[-1]
+    pii = (p / P0) ** KAPPA
+    # phase of each layer, from the temperature at the start of the step
+    cold = (pii * theta < T_ICE) if ice else np.zeros(qr.shape, dtype=bool)
+    vsnow = VS0 * np.sqrt(rho_b[None] / rho)
+    def fallspeed(q):
+        v = _vt(q, rho, rho_b[None])
+        return np.where(cold, vsnow, v) if ice else v
     # --- sedimentation (first, as in WRF) -----------------------------------
-    vt = _vt(qr, rho, rho_b[None])
+    vt = fallspeed(qr)
     crmax = (vt * dt / dz).max(axis=0)
     nfall = np.maximum(1, np.floor(0.5 + crmax / MAX_CR_SED).astype(int))
     dtf = dt / nfall
@@ -133,23 +159,38 @@ def kessler(theta, qv, qc, qr, p, rho, dz, dt, warm_rain=True):
         div = flux.copy()
         div[1:] -= flux[:-1]
         qr = np.where(act[None], qr - dtf[None] * div / (rho * dz), qr)
+        if ice:
+            # snow from a frozen layer entering a layer above freezing melts there
+            melt = np.zeros_like(qr)
+            melt[1:] = np.where(cold[:-1] & ~cold[1:], flux[:-1], 0.0) * dtf[None] / (rho[1:] * dz[1:])
+            theta = np.where(act[None], theta - LF / (CP * pii) * melt, theta)
         rain = rain + np.where(act, flux[-1] * dtf, 0.0)
-        vt = _vt(qr, rho, rho_b[None])
+        vt = fallspeed(qr)
     # --- autoconversion and accretion ----------------------------------------
     if warm_rain:
         factorn = 1.0 / (1.0 + KC3 * dt * np.maximum(qr, 0.0) ** KC4)
         qrprod = qc * (1.0 - factorn) + factorn * KC1 * dt * np.maximum(qc - KC2, 0.0)
+        if ice:
+            E = np.exp(ICE_EXP * (pii * theta - T_ICE))
+            fi = 1.0 / (1.0 + KC3 * E * dt * np.maximum(qr, 0.0) ** KC4)
+            qsprod = qc * (1.0 - fi) + fi * E * KI1 * dt * np.maximum(qc - KI2, 0.0)
+            qrprod = np.where(cold, qsprod, qrprod)
         qc = np.maximum(qc - qrprod, 0.0)
         qr = np.maximum(qr + qrprod, 0.0)
     # --- saturation adjustment and rain evaporation ---------------------------
-    from nh2d import CP, P0, KAPPA
-    pii = (p / P0) ** KAPPA
     temp = pii * theta
     gam = LV / (CP * pii)
     es = es_bolton(temp)
-    qvs = EPS * es / (p - es)
     f5 = SVP2 * (SVPT0 - SVP3) * LV / CP
-    prod = (qv - qvs) / (1.0 + p / (p - es) * qvs * f5 / (temp - SVP3) ** 2)
+    den = (temp - SVP3) ** 2
+    if ice:
+        LS = LV + LF
+        gam = np.where(cold, LS / (CP * pii), gam)
+        es = np.where(cold, es_ice(temp), es)
+        f5 = np.where(cold, SVPI2 * (SVPIT0 - SVPI3) * LS / CP, f5)
+        den = np.where(cold, (temp - SVPI3) ** 2, den)
+    qvs = EPS * es / (p - es)
+    prod = (qv - qvs) / (1.0 + p / (p - es) * qvs * f5 / den)
     rcgs = 0.001 * rho
     rq = rcgs * qr
     ern = np.minimum.reduce([

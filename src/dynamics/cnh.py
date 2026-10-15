@@ -281,19 +281,22 @@ class Kernels:
         self._sadd(ctypes.c_size_t(x.size), self._r(a_), self._a(x), self._a(y), self._a(out))
 
     def moist_col(self, dt, P0, RD, GAMMA, CP, KAPPA, G, ds, mu, phi, Th, Q, rain, lost,
-                  warm_rain=True, consts=None):
+                  warm_rain=True, consts=None, ice=False):
         """NHModel._step_moisture in place on Th and Q (3, nz, ny, nx); rain
         and lost (2-D) overwritten. consts: moisture.py's EPS, LV, SVP1, SVP2,
-        SVP3, SVPT0, KC1, KC2, KC3, KC4, MAX_CR_SED."""
+        SVP3, SVPT0, KC1, KC2, KC3, KC4, MAX_CR_SED, then (simple ice, P-81) LF, SVPI2,
+        SVPI3, SVPIT0, T_ICE, VS0, KI1, KI2, ICE_EXP; ice=True reads qc/qr below
+        T_ICE as cloud ice and snow."""
         nq, nz, ny, nx = Q.shape
         if nq != 3 or Th.shape != (nz, ny, nx) or phi.shape != (nz + 1, ny, nx):
             raise ValueError("moist_col: Q must be (3, nz, ny, nx) with Th (nz, ...) and phi (nz+1, ...)")
         cst = np.ascontiguousarray(consts, dtype=self.dtype)
-        if cst.size != 11:
-            raise ValueError("moist_col: 11 constants")
+        if cst.size != 20:
+            raise ValueError("moist_col: 20 constants")
         a, r = self._a, self._r
         self._moist(nz, ny, nx, nq, r(dt), r(P0), r(RD), r(GAMMA), r(CP), r(KAPPA), r(G), a(ds),
-                    a(mu), a(phi), a(Th), a(Q), a(rain), a(lost), int(bool(warm_rain)), a(cst))
+                    a(mu), a(phi), a(Th), a(Q), a(rain), a(lost),
+                    int(bool(warm_rain)) | (int(bool(ice)) << 1), a(cst))
 
     # --- after the step (CAM stage S5e) ---------------------------------------
     def pav_col(self, xm1, ym1, tol, mix, dsigma, mu, U, V, Th, Qm=None):

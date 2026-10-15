@@ -233,7 +233,12 @@ function sounding(g, sd, hd){
   ctx.fillStyle = "#000"; ctx.fillRect(0, 0, c.width, c.height);
   const X0 = 55, X1 = 600, Y0 = 20, Y1 = 600, PB = 105000, PT = 20000;
   const yOf = p => Y1 - (Math.log(PB / p) / Math.log(PB / PT)) * (Y1 - Y0);
-  const xOf = (Tc, p) => X0 + (Tc + 40) / 90 * (X1 - X0) + (Y1 - yOf(p)) * 0.95;
+  /* Skew of the standard skew-T (SPC / SHARPpy: isotherms at 45 deg over 1050-100 hPa
+     and 100 K) = 42.5 K of shift per unit of ln p. It was 0.95 px per px here, about
+     55 K per ln p: a normal profile leaned to the right, as if it warmed with height
+     (user report, 2026-10-13). */
+  const SKEW_K_PER_LNP = 42.5;
+  const xOf = (Tc, p) => X0 + (Tc + 40 + SKEW_K_PER_LNP * Math.log(PB / p)) / 90 * (X1 - X0);
   ctx.save(); ctx.beginPath(); ctx.rect(X0, Y0, X1 - X0, Y1 - Y0); ctx.clip();
   ctx.lineWidth = 1; ctx.font = "11px sans-serif";
   for (let p = 100000; p >= PT; p -= 10000){ ctx.strokeStyle = "#444"; ctx.beginPath(); ctx.moveTo(X0, yOf(p)); ctx.lineTo(X1, yOf(p)); ctx.stroke(); }

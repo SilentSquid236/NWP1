@@ -681,6 +681,12 @@ class NHModel:
             self.rain = np.zeros(c.mu.shape)          # mm since the start
             self.rain_step = np.zeros(c.mu.shape)     # mm in the last step
             self.q_lost = 0.0                         # kg/m^2 summed over the grid (hole filling)
+            # P-81 water budget (opt-in, NWP_WATER_BUDGET=1): water the edge
+            # relaxation added, kg/m^2 summed over the grid like q_lost.
+            import os as _os
+            self.water_budget = _os.environ.get("NWP_WATER_BUDGET", "0") == "1"
+            self.water_relax = 0.0
+            self.water0 = None
 
     def set_q(self, q):
         """Set the mixing ratios (Theta is not touched)."""
@@ -734,7 +740,21 @@ class NHModel:
             phi[k] = phi[k + 1] + alpha[k] * mu * c.ds[k]
         return phi
 
+    def _water_total(self):
+        """Total water qv + qc + qr in the air, kg/m^2 summed over the grid
+        (the units of rain.sum() and q_lost)."""
+        c = self.core
+        return float((np.asarray(c.Q).sum(axis=0) * np.asarray(c.ds)[:, None, None]).sum()) / G
+
     def relax_with(self, relax, ext):
+        if getattr(self, "water_budget", False) and self.core.Q is not None:
+            w0 = self._water_total()
+            out = self._relax_with(relax, ext)
+            self.water_relax += self._water_total() - w0
+            return out
+        return self._relax_with(relax, ext)
+
+    def _relax_with(self, relax, ext):
         """Davies relaxation of the NH state toward the driving (hydrostatic) frame."""
         c = self.core
         a2 = np.asarray(relax.alpha2d, dtype=float)
@@ -904,6 +924,15 @@ class NHModel:
         A, B, wa, wb = driver.bracket(t)
         if not all(k in A for k in ("u", "v", "theta", "pi")):
             return self.relax_with(relax, driver.at(t))
+        if getattr(self, "water_budget", False) and c.Q is not None:
+            w0 = self._water_total()
+            self._relax_with_driver_c(relax, A, B, wa, wb)
+            self.water_relax += self._water_total() - w0
+            return None
+        return self._relax_with_driver_c(relax, A, B, wa, wb)
+
+    def _relax_with_driver_c(self, relax, A, B, wa, wb):
+        c = self.core
         C = np.ascontiguousarray
         a2 = np.asarray(relax.alpha2d, dtype=float)
         a2n = getattr(relax, "alpha2d_thermo", None)
@@ -1112,22 +1141,24 @@ class NHModel:
             q[i], lost = fill_negative(q[i], w)
             self.q_lost += float((lost * mu).sum()) / G
         th, qv, qc, qr, rain = kessler(th, q[0], q[1], q[2], p, rho, dz, dt,
-                                       warm_rain=self.warm_rain)
+                                       warm_rain=self.warm_rain, ice=getattr(self, "ice", False))
         c.Q = np.stack([qv, qc, qr]) * mu[None, None]
         c.Th = mu[None] * th * rho_factor(qv, qc, qr)
         self.rain_step = rain
         self.rain = self.rain + rain
 
     def _step_moisture_c(self, dt):
-        from moisture import (EPS, LV, SVP1, SVP2, SVP3, SVPT0, KC1, KC2, KC3, KC4, MAX_CR_SED)
+        from moisture import (EPS, LV, SVP1, SVP2, SVP3, SVPT0, KC1, KC2, KC3, KC4, MAX_CR_SED,
+                              LF, SVPI2, SVPI3, SVPIT0, T_ICE, VS0, KI1, KI2, ICE_EXP)
         c = self.core
         C = np.ascontiguousarray
         c.Th, c.Q, c.mu, c.phi = C(c.Th), C(c.Q), C(c.mu), C(c.phi)
         rain = np.zeros_like(c.mu)
         lost = np.zeros_like(c.mu)
         c._ck.moist_col(dt, P0, RD, GAMMA, CP, KAPPA, G, c._cref()["ds"], c.mu, c.phi, c.Th, c.Q,
-                        rain, lost, warm_rain=self.warm_rain, consts=(EPS, LV, SVP1, SVP2, SVP3, SVPT0, KC1, KC2, KC3, KC4,
-                                            MAX_CR_SED))
+                        rain, lost, warm_rain=self.warm_rain, ice=getattr(self, "ice", False),
+                        consts=(EPS, LV, SVP1, SVP2, SVP3, SVPT0, KC1, KC2, KC3, KC4, MAX_CR_SED,
+                                LF, SVPI2, SVPI3, SVPIT0, T_ICE, VS0, KI1, KI2, ICE_EXP))
         self.q_lost += float((lost * c.mu).sum()) / G
         self.rain_step = rain
         self.rain = self.rain + rain

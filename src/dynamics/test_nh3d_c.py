@@ -384,6 +384,25 @@ for warm in (True, False):
            f"Th {dTh:.1e}, Q {dQ:.1e}, rain {dr:.1e} (max {a.rain_step.max():.3f} mm); "
            f"hole-filling loss {a.q_lost:.3e} vs {b.q_lost:.3e} kg/m^2")
 
+# P-81 simple ice: the C kernel matches moisture.kessler(ice=True), and ice changes the step
+for warm in (True, False):
+    a, b = moist_pair("replicate", rain=True)
+    a0, _ = moist_pair("replicate", rain=True)
+    for m in (a, b):
+        m.warm_rain = warm
+        m.ice = True
+        m._step_moisture(20.0)
+    a0.warm_rain = warm
+    a0._step_moisture(20.0)
+    dTh = float(np.abs(a.core.Th - b.core.Th).max() / np.abs(a.core.Th).max())
+    dQ = float(np.abs(a.core.Q - b.core.Q).max() / np.abs(a.core.Q).max())
+    dr = float(np.abs(a.rain_step - b.rain_step).max() / max(np.abs(a.rain_step).max(), 1e-30))
+    eff = float(np.abs(a.core.Q - a0.core.Q).max() / np.abs(a0.core.Q).max())
+    report(f"P-81 simple ice: moist_col in C matches NHModel._step_moisture with ice (warm_rain={warm}) (< 1e-11), "
+           f"and ice changes the step (> 1e-6)",
+           max(dTh, dQ, dr) < 1e-11 and eff > 1e-6,
+           f"Th {dTh:.1e}, Q {dQ:.1e}, rain {dr:.1e}; ice vs no ice {eff:.1e}")
+
 a, b = moist_pair("replicate", rain=True)
 rng = np.random.default_rng(9)
 fr = []

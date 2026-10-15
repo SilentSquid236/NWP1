@@ -38,6 +38,8 @@ LOCK="${NWP_CAM_LOCK:-$DATA/cam.lock}"   # a campaign running two cycles at once
 # (E4's nhMb set-up), because the production 12 km forecast has no qv/qc/qr. The
 # moist 3 km takes ~96 min per 24 h, so the default budget rises to 150 min.
 CAM_MOIST="${NWP_CAM_MOIST:-0}"
+# NWP_CAM_ICE=1 (P-81, test R2, 2026-10-14): simple ice (--ice) in both moist runs.
+CAM_ICE_ARG=""; [ "${NWP_CAM_ICE:-0}" = 1 ] && CAM_ICE_ARG="--ice"
 if [ "$CAM_MOIST" = 1 ]; then BUDGET_MIN="${NWP_CYCLE_BUDGET_MIN:-150}"
 else BUDGET_MIN="${NWP_CYCLE_BUDGET_MIN:-90}"; fi
 RESERVE_MIN=6   # forecast set-up (~1 min) + output write (~1.3 min since S5e writes
@@ -113,13 +115,13 @@ done
 # bounded start-up is the forecast.py default). Same threads as the 3 km run.
 CAM_MOIST_ARGS=""
 if [ "$CAM_MOIST" = 1 ]; then
-    CAM_MOIST_ARGS="--moist"
+    CAM_MOIST_ARGS="--moist $CAM_ICE_ARG"
     if [ -z "${NWP_CAM_BOUNDARY:-}" ]; then
         BFM="$D12/forecast_nhm.npz"
         rm -f "$BFM"          # never nest in a stale file from an earlier attempt
         step "12 km moist NH forecast (3 km edges)" python -u "$ROOT/src/forecast.py" --run-dir "$D12" \
             --hours "$HOURS" --output-every 1 --core nh --nh-backend c --advection upwind3 \
-            --nh-physics step --levels 40 --threads "$CAM_THREADS" --moist --out "$BFM" \
+            --nh-physics step --levels 40 --threads "$CAM_THREADS" --moist $CAM_ICE_ARG --out "$BFM" \
             --deadline-min 30 || true
         if [ -f "$BFM" ]; then BFC="$BFM"
         else echo "=== moist 12 km forecast missing: 3 km edges from $BFC (no moisture at the edges)" >> "$LOG"; fi
