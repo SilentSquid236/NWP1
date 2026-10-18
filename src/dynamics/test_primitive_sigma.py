@@ -269,6 +269,38 @@ def test_mixing_knobs_are_connected():
            f"{turbulence.K_MAX:.0f}")
 
 
+def test_sponge_reference_can_follow_the_wind():
+    """Test J2 (P-82/P-49): with sponge_ref_tau the reference drifts toward
+    the wind, so a wind change in the sponge layer is kept instead of being
+    relaxed back to the initial state. Default: frozen, unchanged."""
+    def run(tau):
+        gr = CGrid(16, 16, 1.0e4, 1.0e4, f0=0.0, beta=0.0, edge_mode="periodic")
+        lev = SigmaLevels(10)
+        m = PrimitiveSigma(gr, lev, sponge_levels=3, mixing=False, drag=False,
+                           convection=False, sponge_ref_tau=tau)
+        isothermal(m)
+        m.step(10.0)                      # sets the reference: the state at rest
+        m.u[:] = 10.0                     # the flow changes after the start
+        for _ in range(180):              # 30 min
+            m.step(10.0)
+        return float(m.u[0].mean()), float(np.abs(m._u_ref[0]).max())
+
+    u_frozen, ref_frozen = run(None)
+    u_follow, ref_follow = run(1800.0)
+    # Analytic: top-level rate r = 1/900 s. Frozen: u = 10 exp(-r t). Following:
+    # d = u - ref decays at r + 1/tau, so u = 10 - 10 r/(r + 1/tau) (1 - exp(-(r + 1/tau) t))
+    # and ref = 10 (1/tau)/(r + 1/tau) (1 - exp(-(r + 1/tau) t)).
+    r, s, t = 1 / 900.0, 1 / 1800.0, 1800.0
+    e = 1 - np.exp(-(r + s) * t)
+    uf_exp, uq_exp, rq_exp = 10 * np.exp(-r * t), 10 - 10 * r / (r + s) * e, 10 * s / (r + s) * e
+    ok = (ref_frozen == 0.0 and abs(u_frozen - uf_exp) < 0.05
+          and abs(u_follow - uq_exp) < 0.05 and abs(ref_follow - rq_exp) < 0.05)
+    report("sponge reference: frozen by default, follows the wind with tau (J2)", ok,
+           f"top-level u after 30 min: frozen {u_frozen:.3f} (analytic {uf_exp:.3f}), "
+           f"tau 0.5 h {u_follow:.3f} ({uq_exp:.3f}); reference {ref_frozen:.2f} / "
+           f"{ref_follow:.3f} ({rq_exp:.3f})")
+
+
 if __name__ == "__main__":
     print("\nSigma-coordinate 3D core\n" + "=" * 66)
     for fn in (test_rest_over_flat_ground,
@@ -277,6 +309,7 @@ if __name__ == "__main__":
                test_mass_conservation,
                test_thermal_wind_balance,
                test_mixing_knobs_are_connected,
+               test_sponge_reference_can_follow_the_wind,
                test_realistic_noisy_state_is_stable):
         try:
             fn()

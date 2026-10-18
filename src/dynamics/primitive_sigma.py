@@ -48,8 +48,16 @@ class PrimitiveSigma:
                  drag=True, z0=0.1, theta_surface=None,
                  convection=True, radiative_top=False,
                  radiation_sign=-1.0, radiation_tau=3 * 3600.0,
-                 k_max=None, ri_crit=None, mixing_length=None):
+                 k_max=None, ri_crit=None, mixing_length=None,
+                 sponge_ref_tau=None):
         self.grid = grid
+        # sponge_ref_tau (s; test J2, P-82/P-49, 2026-10-15): if set, the sponge
+        # reference follows the wind with this time constant instead of staying
+        # frozen at the initial state, so the sponge damps fast departures
+        # (reflected waves) but no longer holds the jet where the analysis put it.
+        # None = frozen, as before.
+        self.sponge_ref_tau = (float(sponge_ref_tau)
+                               if sponge_ref_tau is not None and sponge_ref_tau > 0 else None)
         self.lev = levels
 
         shape = (levels.nz, grid.ny, grid.nx)
@@ -469,6 +477,11 @@ class PrimitiveSigma:
             else:
                 self._phi_top_ref += a * (phi_top - self._phi_top_ref)
                 self._pi_ref += a * (self.pi - self._pi_ref)
+
+        if self.sponge_ref_tau is not None and self._u_ref is not None:
+            a = min(dt / self.sponge_ref_tau, 1.0)
+            self._u_ref = self._u_ref + a * (self.u - self._u_ref)
+            self._v_ref = self._v_ref + a * (self.v - self._v_ref)
 
         self.time += dt
         self.step_count += 1

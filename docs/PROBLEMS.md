@@ -39,9 +39,25 @@ hypothesis, **G** missing physics, **H** performance, **I** logistics.
 # OPEN
 
 
+## P-83 — The exact start-up pushes each level's net divergence out through the north and east edges
+
+**Category** B · **First seen** 2026-10-15 (test J2 diagnostics) · **Status** FIX AVAILABLE (J4: `--init-balance exact-free`, opt-in)
+
+**Symptom.** Every 12 km forecast departs from its own analysis by 15–20 m/s RMS (vector, at and above 400 hPa) by +1 h and then hardly changes (J2 control: 19.5 m/s at +1 h, 20.4 at +24 h, 10-13 00Z). At 250 hPa the +1 h domain-mean wind is du −4.8, dv +16.0 m/s off the analysis. Above 400 hPa the forecast is worse than persistence at +12 h and +24 h (J2: 26.3 against 22.3 m/s; production, 10 cycles: 24.2 against 21.1).
+
+**Cause.** `remove_divergence_exact` (P-76, `--init-balance exact`, default since E4) zeroes the divergence of every cell while keeping the western and southern boundary-face winds. A level's net divergence over the domain (−0.9 to −1.9 × 10⁻⁵ 1/s at 200–300 hPa on 10-13 00Z) then leaves through the northern and eastern faces. Applied to the analysis it reproduces the forecast: mean dv +15.3 m/s at 250 hPa, +31 m/s along the north row at 300 hPa, the south row and west column unchanged.
+
+**Consequences.** The first guess is too southerly at every sounding; each 00/12Z analysis adds large increments to correct it, and in the Ontario data gap they build up (P-82).
+
+**Ruled out.** The upper boundary: in J2 a 2-level sponge, a drifting sponge reference and a radiative lid all scored 1–8 % worse than the control aloft.
+
+**J3 (2026-10-17; RESEARCH_LOG).** The start-up is confirmed as the main source: the hybrid start-up comes within 3–6 % of persistence aloft (exact: 18–24 % worse), with a +1 h departure of 6.3 m/s against 12.9, but it brings back the P-76 ring (3.50 against 2.29) and a +2.4 hPa inner MSLP bias at +12 h. Removing the net divergence evenly first (`exact-sym`) changes little (departure 11.8 m/s, aloft −1.5 %), so the channel is not the net divergence alone: the exact solve keeps the western and southern face winds for any divergence pattern and builds its correction outward from them.
+
+**J4 (2026-10-17; RESEARCH_LOG).** `--init-balance exact-free`, the minimum-norm correction with no face fixed, gives persistence-level winds aloft (22.00 against 22.02 m/s at +12 h; exact 25.99), keeps the jet, and keeps exact's edge ring (2.37 against 2.29) and pressure (inner MSLP bias −0.52 hPa); 2 m T −0.06 K, 10 m u −0.19 m/s, 10 m v +0.12 m/s. **K1 (2026-10-18).** In the 3 km forecast (one cycle) exact-free is stable, starts 8.8 instead of 11.2 m/s from the analysis aloft, and leaves surface scores and the ring within 0.05 and 6 %. Status: fix available; both crontab switches (`NWP_INIT_BALANCE`, `NWP_CAM_INIT_BALANCE`) go in after the user's commit.
+
 ## P-82 — The upper-air analysis inflates the jet from cycle to cycle
 
-**Category** B · **First seen** 2026-10-15 (found from the cron logs while the 3 km time step kept shrinking) · **Status** OPEN (J1: ring-sounding mechanism refuted; mitigation available)
+**Category** B · **First seen** 2026-10-15 (found from the cron logs while the 3 km time step kept shrinking) · **Status** OPEN (J1: ring-sounding mechanism refuted, mitigation A3 in cron since 2026-10-15 18Z; J2: sponge refuted; cause attributed to P-83)
 
 **Symptom.**
 - Analysis maximum wind speed at or above 400 hPa: 109 m/s (10-13 00Z), 130 (10-14 00Z), 137 (10-14 12Z), 138 (10-15 00Z).
@@ -61,7 +77,9 @@ hypothesis, **G** missing physics, **H** performance, **I** logistics.
 
 **Mechanism now suspected.** Large in-domain innovations spread as independent u and v increments onto a displaced first-guess jet. Next: J2 (proposed), on top of A3.
 
-**Root cause found (2026-10-15, later; RESEARCH_LOG).** The 12 km wind sponge (P-49) relaxes 206–299 hPa toward the INITIAL winds with e-folding 0.25–2.6 h, so no 12 km forecast can move the jet. Against in-domain soundings at and above 400 hPa (10 cycles), the forecast is worse than persistence: RMS vector error 24.2 against 21.1 m/s at +12 h and 28.1 against 25.8 at +24 h (analysis 5.7). The first guess keeps the old jet, and each 00/12Z analysis adds the increments from the observed (displaced) jet onto it.
+**Sponge hypothesis (2026-10-15, later; refuted the same day by J2, see P-83).** The 12 km wind sponge (P-49) relaxes 206–299 hPa toward the INITIAL winds with e-folding 0.25–2.6 h, so no 12 km forecast can move the jet. Against in-domain soundings at and above 400 hPa (10 cycles), the forecast is worse than persistence: RMS vector error 24.2 against 21.1 m/s at +12 h and 28.1 against 25.8 at +24 h (analysis 5.7). The first guess keeps the old jet, and each 00/12Z analysis adds the increments from the observed (displaced) jet onto it.
+
+**J2 (2026-10-15).** Changing the upper boundary did not help (all arms 1–8 % worse aloft than the control). The forecast's departure from the analysis is made in the first hour by the exact start-up, which adds about +15 m/s of southerly wind at the jet levels (P-83). That systematic first-guess error is what each analysis corrects; with the jet in the Ontario gap the corrections accumulate. Status: cause now attributed to P-83; J3 proposed.
 
 **Possibly related.** P-81: the jet core is over the Bancroft rain maximum, and the 10-13 00Z analysis already had a 109 m/s maximum on the northern edge.
 
@@ -489,7 +507,7 @@ days is what baroclinic waves actually do.
 **It is not yet usable**, because it destabilises tall terrain: see P-50. Off
 by default until that is resolved.
 
-**Real-data cost, 2026-10-15 (P-82).** On production cycles 10-10 to 10-14 the 12 km forecast at and above 400 hPa is worse than persistence (24.2 against 21.1 m/s RMS vector error at +12 h, 28.1 against 25.8 at +24 h), and the frozen jet levels drive the analysis jet ratchet of P-82. The estimate below no longer holds aloft.
+**Checked on real data, 2026-10-15 (J2).** The 12 km forecast at and above 400 hPa is worse than persistence, but the sponge is not why: a 2-level sponge, a drifting reference and the radiative lid (which completed all six 24 h forecasts on the smoothed production terrain) all scored 1–8 % worse than the 5-level sponge aloft, with no surface change over 0.05. The error is made at start-up (P-83).
 
 **How much this matters right now.** The target is 12-hour forecasts, and
 these curves diverge most after 24 h — at 12 h the sponge=3 run holds 2.1e+03

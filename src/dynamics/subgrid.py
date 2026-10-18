@@ -361,8 +361,103 @@ def _bounded_poisson_solver(grid):
     return solve
 
 
-def remove_divergence_exact(u, v, grid):
+def _remove_mean_divergence(u, v, grid):
     """
+    Subtract each level's domain-mean divergence with a potential flow centred
+    on the domain (test J3, P-83): u -= (D/2)(x - xc), v -= (D/2)(y - yc), with
+    D the mean of the model's own divergence. The change has zero domain mean
+    and is antisymmetric about the centre, so the net inflow or outflow is taken
+    evenly from all four edges (about D L / 4 at each face) instead of being
+    carried out through the northern and eastern faces by the exact solve.
+    """
+    u = np.array(u, dtype=float)
+    v = np.array(v, dtype=float)
+    ny, nx = grid.ny, grid.nx
+    x = (np.arange(nx) - 0.5 * (nx - 1)) * float(grid.dx)      # u points (west faces)
+    y = (np.arange(ny) - 0.5 * (ny - 1)) * float(grid.dy)      # v points (south faces)
+    one = u.ndim == 2
+    if one:
+        u, v = u[None], v[None]
+    for k in range(u.shape[0]):
+        # The x (y) divergence of the last column (row) is zero by the replicate
+        # edges, so a linear field adds -D/2 to the others; scale to remove D exactly
+        # from the domain mean.
+        d = float(np.mean(grid.dx_forward(u[k]) + grid.dy_forward(v[k])))
+        fx, fy = (nx - 1) / nx, (ny - 1) / ny
+        u[k] = u[k] - (d / (2 * fx)) * x[None, :]
+        v[k] = v[k] - (d / (2 * fy)) * y[:, None]
+    return (u[0], v[0]) if one else (u, v)
+
+
+_FREE_SOLVERS = {}
+
+
+def remove_divergence_free(u, v, grid):
+    """
+    The SMALLEST wind correction that makes the model's divergence zero in
+    every cell of the bounded domain, with no boundary face held fixed (test J4,
+    P-83).
+
+    remove_divergence_exact keeps the western and southern face winds and builds
+    its correction outward from them; on real analyses that shifts the
+    large-scale wind by 6-15 m/s aloft (J2, J3). Here the correction is
+    delta = -D^T lam with (D D^T) lam = D(u, v), D the model's own divergence
+    (dx_forward + dy_forward with replicate edges). This is the minimum-norm
+    solution, so it may change the normal wind on all four faces.
+
+    With replicate edges D D^T separates into three independent problems:
+      - cells (j < ny-1, i < nx-1): Kronecker sum of the two Dirichlet
+        tridiagonal matrices tridiag(-1, 2, -1)/h^2, by fast diagonalisation;
+      - the last column (j < ny-1): its cells have no x divergence, so a 1D
+        Dirichlet problem in y;
+      - the last row (i < nx-1): likewise in x;
+      - the north-east corner: no divergence at all, lam = 0.
+    """
+    if getattr(grid, "edge_mode", "replicate") == "periodic":
+        return remove_divergence_spectral(u, v, grid)
+    ny, nx = grid.ny, grid.nx
+    dx, dy = float(grid.dx), float(grid.dy)
+    key = (ny, nx, dx, dy)
+    if key not in _FREE_SOLVERS:
+        def tri(m, h):
+            a = np.zeros((m, m)); i = np.arange(m)
+            a[i, i] = 2.0; a[i[:-1], i[:-1] + 1] = -1.0; a[i[1:], i[1:] - 1] = -1.0
+            return a / (h * h)
+        Tx, Ty = tri(nx - 1, dx), tri(ny - 1, dy)
+        lx, Qx = np.linalg.eigh(Tx)
+        ly, Qy = np.linalg.eigh(Ty)
+        _FREE_SOLVERS[key] = (Qx, Qy, ly[:, None] + lx[None, :], np.linalg.inv(Tx), np.linalg.inv(Ty))
+    Qx, Qy, denom, Tx_inv, Ty_inv = _FREE_SOLVERS[key]
+
+    def one(u2, v2):
+        d = grid.dx_forward(u2) + grid.dy_forward(v2)
+        lam = np.zeros((ny, nx))
+        lam[:-1, :-1] = Qy @ ((Qy.T @ d[:-1, :-1] @ Qx) / denom) @ Qx.T
+        lam[:-1, -1] = Ty_inv @ d[:-1, -1]
+        lam[-1, :-1] = Tx_inv @ d[-1, :-1]
+        # D^T lam: x part uses lam with the last column removed (those cells have
+        # no x divergence), y part with the last row removed; zero outside.
+        lx_ = lam.copy(); lx_[:, -1] = 0.0
+        ly_ = lam.copy(); ly_[-1, :] = 0.0
+        dxt = (np.concatenate([np.zeros((ny, 1)), lx_[:, :-1]], 1) - lx_) / dx
+        dyt = (np.concatenate([np.zeros((1, nx)), ly_[:-1, :]], 0) - ly_) / dy
+        return u2 - dxt, v2 - dyt
+
+    u = np.array(u, dtype=float)
+    v = np.array(v, dtype=float)
+    if u.ndim == 2:
+        return one(u, v)
+    for k in range(u.shape[0]):
+        u[k], v[k] = one(u[k], v[k])
+    return u, v
+
+
+def remove_divergence_exact(u, v, grid, symmetric=False):
+    """
+    symmetric=True (test J3, P-83): first remove each level's domain-mean
+    divergence evenly through all four edges (_remove_mean_divergence), then
+    solve exactly. The default keeps the behaviour below.
+
     Remove the divergent part of a wind field exactly on the BOUNDED domain
     (P-76, test E4).
 
@@ -384,6 +479,8 @@ def remove_divergence_exact(u, v, grid):
     solve = _bounded_poisson_solver(grid)
     u = np.array(u, dtype=float)
     v = np.array(v, dtype=float)
+    if symmetric:
+        u, v = _remove_mean_divergence(u, v, grid)
     div = grid.dx_forward(u) + grid.dy_forward(v)
     if u.ndim == 2:
         chi = solve(div)
@@ -424,10 +521,16 @@ def balance_initial_state(u, v, grid, target_div=2e-5, max_iter=400,
     d0 = maxdiv(u, v)
     speed0 = float(np.abs(u).max())
 
-    if method == "exact":
+    if method == "exact-free":
+        # Minimum-norm bounded solve, no face held fixed (test J4, P-83).
+        u, v = remove_divergence_free(u, v, grid)
+        it = 1
+    elif method in ("exact", "exact-sym"):
         # Bounded-domain solve (P-76, test E4): exact in every cell, so no
-        # polish -- the polish spreads edge residuals inward.
-        u, v = remove_divergence_exact(u, v, grid)
+        # polish -- the polish spreads edge residuals inward. "exact-sym"
+        # (test J3, P-83) takes each level's net divergence evenly from all
+        # four edges first.
+        u, v = remove_divergence_exact(u, v, grid, symmetric=(method == "exact-sym"))
         it = 1
     elif method in ("spectral", "hybrid"):
         # Exact in one shot. Applied per level for a 3D field.
@@ -477,7 +580,7 @@ def balance_initial_state(u, v, grid, target_div=2e-5, max_iter=400,
               f"({method}, {it} pass{'es' if it > 1 else ''})"
               + ("" if info["converged"] else "  (did not reach target)"))
         print(f"                   interior max|div| {d_interior:.2e} 1/s"
-              + ("" if method == "exact" else
+              + ("" if method.startswith("exact") else
                  " (edge cells keep the periodic solve's error; P-76)"))
         print(f"                   implied omega {info['omega_before_Pa_s']:.1f}"
               f" -> {d_interior * 80000:.2f} Pa/s interior; "

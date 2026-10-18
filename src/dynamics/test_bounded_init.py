@@ -104,5 +104,63 @@ report("exact removal on the 3 km grid (389 x 439, 3 levels): residual < 1e-9 of
        d3 < 1e-9 * d0 and np.abs(u3e).max() < 10 * np.abs(u3k).max() and t3 < 10.0,
        f"max|div| {d0:.2e} -> {d3:.2e} 1/s; max|u| {np.abs(u3k).max():.0f} -> {np.abs(u3e).max():.0f} m/s; {t3:.2f} s")
 
+# J3 (2026-10-15/17, P-83): a level with NET convergence. The exact solve keeps
+# the western and southern faces, so the whole net inflow leaves through the
+# northern and eastern ones and the mean wind shifts; exact-sym takes it evenly
+# from all four edges and keeps the mean wind.
+D0 = -1.5e-5                                    # 1/s, the size seen at 250-300 hPa
+xs = (I - 0.5 * (nx - 1)) * 12000.0; ys = (J - 0.5 * (ny - 1)) * 12000.0
+psi = 2e6 * np.sin(np.pi * (J + 3) / 70.0) * np.cos(np.pi * I / 90.0)
+u_rot = -(np.roll(psi, -1, 0) - psi) / 12000.0; v_rot = (np.roll(psi, -1, 1) - psi) / 12000.0
+u_rot[-1] = u_rot[-2]; v_rot[:, -1] = v_rot[:, -2]
+u_in = 20.0 + 0.5 * D0 * xs + u_rot; v_in = 10.0 + 0.5 * D0 * ys + v_rot
+mean_div = float(np.mean(gr.dx_forward(u_in) + gr.dy_forward(v_in)))
+ue_, ve_ = subgrid.remove_divergence_exact(u_in, v_in, gr)
+us_, vs_ = subgrid.remove_divergence_exact(u_in, v_in, gr, symmetric=True)
+ds = np.abs(gr.dx_forward(us_) + gr.dy_forward(vs_)).max()
+# Reference: the same flow WITHOUT the net convergence, through the exact solve
+# (the discrete rotational part has edge divergence of its own, handled the same way).
+ur_, vr_ = subgrid.remove_divergence_exact(20.0 + u_rot, 10.0 + v_rot, gr)
+shift_e = (float((ue_ - ur_).mean()), float((ve_ - vr_).mean()))
+shift_s = (float((us_ - ur_).mean()), float((vs_ - vr_).mean()))
+err_s = float(np.sqrt(np.mean((us_ - ur_) ** 2 + (vs_ - vr_) ** 2)))
+err_e = float(np.sqrt(np.mean((ue_ - ur_) ** 2 + (ve_ - vr_) ** 2)))
+report("exact-sym removes a net convergence evenly: divergence ~0, and the result equals the "
+       "flow without the convergence (< 0.05 m/s); exact shifts the mean wind",
+       ds < 1e-12 and err_s < 0.05 and max(map(abs, shift_e)) > 2.0,
+       f"mean div {mean_div:.2e} 1/s; against the no-convergence flow: exact mean (du, dv) "
+       f"({shift_e[0]:+.2f}, {shift_e[1]:+.2f}), rms {err_e:.2f} m/s; exact-sym "
+       f"({shift_s[0]:+.3f}, {shift_s[1]:+.3f}), rms {err_s:.3f} m/s; exact-sym max|div| {ds:.1e}")
+
+# J4 (2026-10-17, P-83): the minimum-norm solve with no face held fixed.
+rng4 = np.random.default_rng(4)
+u4 = 20.0 + 8.0 * np.sin(2 * np.pi * J / 61.0) + 5.0 * np.cos(2 * np.pi * I / 47.0) + rng4.standard_normal((ny, nx))
+v4 = 5.0 + 6.0 * np.cos(2 * np.pi * (I + J) / 53.0) + rng4.standard_normal((ny, nx))
+uf4, vf4 = subgrid.remove_divergence_free(u4, v4, gr)
+ue4, ve4 = subgrid.remove_divergence_exact(u4, v4, gr)
+df4 = np.abs(gr.dx_forward(uf4) + gr.dy_forward(vf4)).max()
+uf5, vf5 = subgrid.remove_divergence_free(uf4, vf4, gr)
+n_free = float(np.sqrt(np.sum((uf4 - u4) ** 2 + (vf4 - v4) ** 2)))
+n_exact = float(np.sqrt(np.sum((ue4 - u4) ** 2 + (ve4 - v4) ** 2)))
+report("exact-free: |div| < 1e-13 in every cell, a projection (twice = once), and its correction is no "
+       "larger than exact's (minimum norm)",
+       df4 < 1e-13 and max(np.abs(uf5 - uf4).max(), np.abs(vf5 - vf4).max()) < 1e-10 and n_free <= n_exact * (1 + 1e-12),
+       f"max|div| {df4:.1e} 1/s; second pass changes {max(np.abs(uf5 - uf4).max(), np.abs(vf5 - vf4).max()):.1e} m/s; "
+       f"correction norm free {n_free:.1f} vs exact {n_exact:.1f} m/s")
+uf6, vf6 = subgrid.remove_divergence_free(u_in, v_in, gr)
+shift_f = (float((uf6 - u_in).mean()), float((vf6 - v_in).mean()))
+moved = max(np.abs(uf6[:, 0] - u_in[:, 0]).max(), np.abs(vf6[0, :] - v_in[0, :]).max())
+report("exact-free on a net convergence: the mean wind is kept (< 0.5 m/s, exact shifts it by several), "
+       "and the western and southern faces are allowed to change",
+       max(map(abs, shift_f)) < 0.5 and moved > 0.1 and max(map(abs, shift_e)) > 2.0,
+       f"mean (du, dv): exact-free ({shift_f[0]:+.2f}, {shift_f[1]:+.2f}), exact ({shift_e[0]:+.2f}, {shift_e[1]:+.2f}) m/s; "
+       f"largest W/S face change {moved:.2f} m/s")
+t0 = time.time()
+u3f, v3f = subgrid.remove_divergence_free(np.stack([u3k] * 3), np.stack([v3k] * 3), g3)
+t3f = time.time() - t0
+d3f = np.abs(g3.dx_forward(u3f) + g3.dy_forward(v3f)).max()
+report("exact-free on the 3 km grid (389 x 439, 3 levels): residual < 1e-9 of the divergence, < 10 s",
+       d3f < 1e-9 * d0 and t3f < 10.0, f"max|div| {d0:.2e} -> {d3f:.2e} 1/s; {t3f:.2f} s")
+
 print(f"\n{sum(results)}/{len(results)} passed")
 raise SystemExit(0 if all(results) else 1)

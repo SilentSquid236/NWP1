@@ -716,6 +716,13 @@ def main():
                    help="Levels below the lid in the wind sponge (P-60 test R); "
                         "default 5 at 20 levels (the measured choice), scaled with "
                         "--levels to keep the same depth in sigma")
+    p.add_argument("--sponge-ref-tau-h", type=float, default=None,
+                   help="Let the sponge reference follow the wind with this time "
+                        "constant (h) instead of holding the initial state (test J2, "
+                        "P-82/P-49). Default: frozen, as before")
+    p.add_argument("--radiative-top", action="store_true",
+                   help="Radiative upper boundary (src/dynamics/radiation.py, P-49/P-50; "
+                        "test J2). NumPy backend only. Default off")
     p.add_argument("--levels", type=int, default=None,
                    help="Number of sigma levels (default: the analysis's pressure-level "
                         "count, 20). CAM stage S5 uses 40")
@@ -730,8 +737,11 @@ def main():
                    help="lowpass of the initial state and frames: mirror = FFT of the even "
                         "reflection, no wrap-around ringing at the edges (default since "
                         "2026-10-10, P-76 test E4); periodic = plain FFT (the behaviour before)")
-    p.add_argument("--init-balance", choices=("hybrid", "exact"), default="exact",
-                   help="divergence removal of the initial state and frames: exact = sparse "
+    p.add_argument("--init-balance", choices=("hybrid", "exact", "exact-sym", "exact-free"), default="exact",
+                   help="divergence removal of the initial state and frames: exact-free = "
+                        "minimum-norm bounded solve, no boundary face held fixed (test J4, P-83); exact-sym = "
+                        "exact, after taking each level's net divergence evenly from all four "
+                        "edges (test J3, P-83); exact = sparse "
                         "solve on the bounded grid, zero divergence in every cell (default since "
                         "2026-10-10, P-76 test E4); hybrid = periodic FFT plus 60 polish passes "
                         "(the behaviour before)")
@@ -1008,7 +1018,10 @@ def main():
     model = PrimitiveSigma(grid, lev, terrain=terrain, stochastic=stoch,
                            sponge_levels=args.sponge_levels, hyper=hyper,
                            ri_crit=args.ri_crit, mixing=not args.no_mixing,
-                           drag=not args.no_drag, z0=z0)
+                           drag=not args.no_drag, z0=z0,
+                           radiative_top=args.radiative_top,
+                           sponge_ref_tau=(args.sponge_ref_tau_h * 3600.0
+                                           if args.sponge_ref_tau_h else None))
     if args.hyper_factor != 1.0:
         print(f"  hyperdiffusion : x{args.hyper_factor:g} ({model.hyper:.3g})")
     if not args.z0 > 0:
@@ -1019,7 +1032,11 @@ def main():
           + ("off" if args.no_mixing else f"on below Ri {model.ri_crit:g}"))
     print(f"  drag           : "
           + ("off" if args.no_drag else f"on, {z0_note}"))
-    print(f"  sponge         : {args.sponge_levels} levels below the lid")
+    print(f"  sponge         : {args.sponge_levels} levels below the lid"
+          + (f", reference follows the wind (tau {args.sponge_ref_tau_h:g} h; test J2)"
+             if args.sponge_ref_tau_h else ""))
+    if args.radiative_top:
+        print("  upper boundary : radiative (radiation.py; test J2)")
     if args.surface_heating:
         from diurnal import DiurnalHeating
         if not all(k in meta0 for k in ("lat", "lon", "run_time")):

@@ -63,6 +63,12 @@ THREADS="${NWP_THREADS:-8}"
 UPPER_ARGS=""
 [ "${NWP_UPPER_DOMAIN_ONLY:-0}" = 1 ] && UPPER_ARGS="--upper-domain-only"
 [ -n "${NWP_UPPER_L_KM:-}" ] && UPPER_ARGS="$UPPER_ARGS --upper-L-km $NWP_UPPER_L_KM"
+# NWP_INIT_BALANCE (P-83, tests J2-J4, 2026-10-17): the start-up divergence removal
+# of the 12 km forecast (forecast.py --init-balance; unset = its default, exact).
+# exact-free (J4) holds no boundary face fixed. tools/cam_cycle.sh reads the same
+# switch for its 12 km moist run, and NWP_CAM_INIT_BALANCE for the 3 km run.
+INIT_ARGS=""
+[ -n "${NWP_INIT_BALANCE:-}" ] && INIT_ARGS="--init-balance $NWP_INIT_BALANCE"
 
 mkdir -p "$LOGDIR" "$DATA"
 
@@ -158,7 +164,7 @@ else
     # hours reached, and both count as the run's status.
     step forecast python -u "$ROOT/src/forecast.py" \
         --run-dir "$RUNDIR" --hours "$HOURS" --output-every 1 \
-        --backend "$BACKEND" --threads "$THREADS" \
+        --backend "$BACKEND" --threads "$THREADS" $INIT_ARGS \
         --deadline-min "$LEFT_MIN" || true
 fi
 

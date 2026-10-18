@@ -5761,6 +5761,124 @@ Plan: 1 and 2 first (map set), 3 after P-81 settles.
 
 ---
 
+## 2026-10-18 — K1: the exact-free start-up in the 3 km forecast is stable and starts closer to the analysis (one cycle)
+
+**K1** (`scratch/k1/k1_job.sh`; predictions `k1_predictions.txt`, written first). The production 3 km forecast of 2026-10-16 12Z (moist, ice, 40 levels, C kernels, 26 threads, the production edge relaxation) rerun with `--init-balance exact-free` and nothing else changed: the same 3 km analysis and the same 12 km moist edge file (made with exact), the same 124 min deadline, code 5ca4c57 + J2–J4 patches. It waited for the 19:45Z cycle to start and finish (a first launch at 19:34Z was stopped before its forecast: "nothing running" eleven minutes before a cycle is not a gap) and ended at 00:51Z.
+
+| 10-16 12Z, 3 km | production (exact) | K1 (exact-free) |
+|---|---|---|
+| hours reached in ~124 min | 19.68 | 19.89 |
+| initial max\|u\| / time step | 126.8 m/s / 16.6 s | 118.5 m/s / 17.7 s |
+| departure from the analysis aloft, RMS (mean dv) at +1 / +6 / +12 h | 11.2 (−5.7) / 11.0 / 11.0 | **8.8 (−2.6)** / 9.4 / 9.4 |
+| MSLP edge ring (inner 60 cells) at +6 / +12 h (analysis 1.37 / 1.31) | 1.23 / 1.23 | 1.26 / 1.30 |
+| inner MSLP RMSE / bias at +12 h (hPa) | 6.32 / +1.46 | 6.15 / +1.47 |
+| 2 m T RMSE / bias (K; 6601 pairs, 19 h) | 5.443 / +2.20 | 5.471 / +2.30 |
+| 10 m u / v RMSE (m/s) | 3.201 / 3.811 | 3.184 / 3.759 |
+
+**Predictions.** K1-P1 held (stable, 19.89 h ≥ 19.5). K1-P2 held (departure 8.8 against 11.2 m/s). K1-P3 held (every surface score within 0.05). K1-P4 held (ring within 6 %).
+
+**Reading.** At 3 km the minimum-norm start-up removes most of the start-up shift, lowers the initial maximum by 8 m/s (the time step lengthens by 7 %) and changes nothing else measurably. One cycle only. Per the user's decision of 2026-10-17 ("12 km now, 3 km after a test") both switches go into cron with the commit. **Side observation, not investigated:** on this cycle the 3 km 2 m T RMSE is 5.4 K with a +2.2 K bias in both arms, far above the 12 km production scores of earlier cycles (4.2 K).
+
+---
+
+## 2026-10-17 — J4: a start-up that holds no boundary face fixed gives persistence-level winds aloft and keeps the clean edges (P-83)
+
+**J4** (`scratch/j4/j4_job.sh`, `j4_result.txt` md5 987b86383ee3b3089cea1b1ce07d27fa, `j4_ring.txt`, `j4_surface.txt`). New opt-in `--init-balance exact-free` (`subgrid.remove_divergence_free`): the minimum-norm correction δ = −Dᵀλ, (DDᵀ)λ = D(u, v), with D the model's own divergence. Every cell becomes non-divergent and the normal wind may change on all four faces. With replicate edges DDᵀ splits into a Kronecker sum of two Dirichlet tridiagonal matrices (fast diagonalisation, as the exact solver) plus 1D problems for the last column and row. Tests first: `test_bounded_init.py` 10/10, including: |div| 4.8e-17, a projection, a correction norm 442 against exact's 744 on the same field, the mean wind kept (0.00, 0.00) on a net convergence where exact shifts it by (+4.9, +4.3), and 0.04–0.24 s on the 3 km grid; `test_primitive_sigma.py` 8/8. Same six starts as J2/J3; G0 (exact) and G2 (hybrid) reused. Predictions in `j4_predictions.txt`.
+
+| | persistence | G0 exact | G2 hybrid | **H1 exact-free** |
+|---|---|---|---|---|
+| aloft, RMS vector error +12 / +24 h (m/s; n 260 / 254) | 22.02 / 21.13 | 25.99 / 26.13 | 22.76 / 22.39 | **22.00 / 22.05** |
+| 500–850 hPa, +12 / +24 h | 11.11 / 13.95 | 12.71 / 15.57 | 11.94 / 14.93 | 11.91 / 15.02 |
+| +1 h departure aloft: RMS / mean dv | — | 12.9 / +7.1 | 6.3 / −0.7 | 6.7 / −1.0 |
+| jet maximum at +24 h (analysis 88.5) | — | 82.4 | 88.1 | 88.0 |
+| MSLP edge ring at +1 / +12 h (analysis 1.22) | — | 2.02 / 2.29 | 3.22 / 3.50 | 1.97 / 2.37 |
+| MSLP inner RMSE / bias at +12 h (hPa) | — | 4.87 / −0.47 | 6.60 / +2.37 | 4.83 / −0.52 |
+| 2 m T RMSE (K; better than G0 in) | — | 4.182 | 4.178 | **4.119** (5 of 6 cycles) |
+| 10 m u / v RMSE (m/s) | — | 2.868 / 2.820 | 2.629 / 2.889 | 2.678 / 2.941 |
+
+**Predictions.**
+- **J4-P1 held.** Departure 6.7 m/s (limit 8.3), mean dv −1.0 (limit ±2).
+- **J4-P2 held.** H1 is 3.3 % / 1.5 % better than hybrid and 15.4 % / 15.6 % better than exact aloft; at +12 h it equals persistence.
+- **J4-P3 held.** Ring 2.37 against exact's 2.29 (limit 2.63).
+- **J4-P4 held.** Inner MSLP bias −0.52 hPa.
+- **J4-P5 refuted narrowly.** 2 m T −0.063 K and 10 m u −0.19 m/s (better in 5 of 6 cycles), but 10 m v +0.121 m/s against the 0.1 limit (G0 better in 5 of 6 cycles; the v bias falls from +0.62 to +0.41).
+
+**Reading.** The wind error aloft and the edge ring are separable: the trade-off between exact and hybrid came from the boundary treatment of the solve, not from the edge relaxation. The minimum-norm start-up keeps hybrid's winds aloft and the jet, and exact's edges and pressure. The 10 m v cost is small but consistent and is not explained yet.
+
+**The 3 km start-up** (read-only, `startup3km.py`, the 3 km analyses of 10-17 06Z and 12Z). exact-free removes the shift there too (12Z: mean dv −15.9 → 0.0 m/s at 250 hPa, RMS change 20.2 → 7.9). But the 3 km analysis itself already carries 124–125 m/s at 300 hPa near the south-east corner (row 18 of 389, column 410–412), untouched by either solve. The 3 km time step is set by the analysed wind, so this start-up alone will not end the deadline cutoffs (P-82 continues).
+
+**Next (proposed; the user decides).** Opt-in crontab switches for the start-up of the 12 km runs and of the 3 km run, so it can go into cron in steps; then follow the analysed jet and the soundings' O−B in production.
+
+---
+
+## 2026-10-17 — J3: the start-up makes most of the error aloft, but not through the net divergence alone; hybrid is near persistence aloft and worse at the edges (P-83 refined)
+
+**J3** (`scratch/j3/j3_job.sh`, `j3_result.txt` md5 eb5e7580c81f158d14a91a63d17ed868, `j3_ring.txt`, `j3_surface.txt`). As J2: six 24 h 12 km forecasts from the J1 arm-A3 analyses, waiting for cron gaps. Code: 5ca4c57 + the J2 patch + the J3 patch: `--init-balance exact-sym` (each level's domain-mean divergence removed with a potential flow centred on the domain, evenly through all four edges, then the exact solve; defaults unchanged). Tests first: `test_bounded_init.py` 7/7 (new: on a field with net convergence −1.5e-5 1/s, exact-sym equals the no-convergence flow to 0.026 m/s RMS; exact is off by 6.5 m/s RMS, mean shift (+4.9, +4.3)), `test_primitive_sigma.py` 8/8. Arms: G0 = exact (J2's F0, reused), G1 = exact-sym, G2 = hybrid (the pre-E4 start-up). Predictions in `j3_predictions.txt`.
+
+| | persistence | G0 exact | G1 exact-sym | G2 hybrid |
+|---|---|---|---|---|
+| aloft (≤ 400 hPa), RMS vector error +12 h / +24 h (m/s; n 260 / 254) | **22.02 / 21.13** | 25.99 / 26.13 | 25.61 / 25.69 | 22.76 / 22.39 |
+| 500–850 hPa, +12 h / +24 h (n 253 / 255) | 11.11 / 13.95 | 12.71 / 15.57 | 12.84 / 15.22 | 11.94 / 14.93 |
+| +1 h departure from the analysis aloft: RMS / mean dv / mean du (6 starts) | — | 12.9 / +7.1 / −1.8 | 11.8 / +6.0 / −3.4 | **6.3 / −0.7 / −0.4** |
+| jet maximum aloft at +24 h (analysis 88.5) | — | 82.4 | 82.1 | 88.1 |
+| MSLP edge ring at +12 h, peak band / inner gradient (analysis 1.22) | — | 2.29 | 2.22 | 3.50 |
+| MSLP inner RMSE / bias at +12 h (hPa) | — | 4.87 / −0.47 | 4.84 / −0.11 | 6.60 / +2.37 |
+| 2 m T RMSE (K, 47,224 pairs) | — | 4.182 | 4.149 | 4.178 |
+| 10 m u / v RMSE (m/s) | — | 2.868 / 2.820 | 2.841 / 2.891 | **2.629** / 2.889 |
+
+**Predictions.**
+- **J3-P1 refuted.** G1's +1 h departure is 11.8 m/s against G0's 12.9 (limit 6.45), and its mean dv change is +6.0 (limit ±3).
+- **J3-P2 refuted.** G1 is 1.5 % better than G0 aloft, not 15 %, and does not beat persistence.
+- **J3-P3 held.** G2's departure is half of G0's, and its ring is the largest (3.50 against 2.29 and 2.22).
+- **J3-P4 held.** G1's ring is 3 % below G0's.
+- **J3-P5 held.** G1 against G0: 2 m T −0.033 K, u −0.027, v +0.071 m/s.
+
+**Reading.** The start-up is confirmed as the main source of the forecast's error aloft: the hybrid start-up, which holds no boundary face fixed, comes within 3–6 % of persistence aloft (G0 is 18–24 % worse), keeps the jet maximum, and is 0.24 m/s better in 10 m u (better in 6 of 6 cycles). But P-83's mechanism as written is incomplete. Removing the net divergence evenly first (G1) leaves most of the shift, so the channel is the exact solve's boundary treatment as a whole: it keeps the western and southern face winds for ANY divergence pattern, and its correction is built outward from those faces, which shifts the large-scale wind (dv +6 to +7 m/s on average aloft, +15 m/s at 250 hPa on 10-13 00Z). Hybrid pays at the edges and in pressure: the P-76 ring (3.50) and a +2.4 hPa inner MSLP bias at +12 h, and v is 0.07 m/s worse. Neither existing start-up is right: exact protects the edges and spoils the wind aloft; hybrid does the opposite.
+
+**Next (proposed; the user decides).** J4: a bounded solve that does not hold any face fixed (the smallest correction that makes every cell non-divergent: χ = 0 outside the domain, so the correction may change the normal wind on all four faces), against G0 and G2 on the same six starts, with the same scores.
+
+---
+
+## 2026-10-15 — J2: the upper boundary is not the cause (sponge refuted); the forecast's error aloft is made at start-up, by the exact divergence removal (P-83)
+
+**J2** (`scratch/j2/j2_job.sh`, result `j2_result.txt` md5 66657cb039514e69ea3b4773126c53cf, surface `j2_surface.txt`). Forecast-only: six 24 h 12 km forecasts from the J1 arm-A3 analyses (10-12 00Z to 10-14 12Z), four arms. Code: 650ac76 plus two opt-in forecast options, `--sponge-ref-tau-h` and `--radiative-top` (defaults unchanged; core tests 8/8 on the server, including a new test against the analytic solution of the drifting reference). Predictions in `j2_predictions.txt`, written first. The job waited for gaps between cron cycles.
+
+| aloft (soundings at and above 400 hPa), RMS vector error, m/s (mean speed error) | n | persistence | F0 control | F1 sponge 2 levels | F2 reference follows, τ 6 h | F3 radiative lid, no sponge |
+|---|---|---|---|---|---|---|
+| +12 h | 251 | **22.30** (−1.8) | 26.29 (−4.1) | 26.85 (−3.1) | 26.64 (−3.5) | 28.45 (−1.9) |
+| +24 h | 244 | **21.40** (−2.5) | 26.47 (−6.2) | 26.97 (−5.3) | 27.26 (−5.1) | 27.62 (−4.2) |
+
+Every arm completed 24 h from all six starts, the radiative lid included. Surface (paired, 24 h, auto operator; 47,224 T pairs): 2 m T RMSE F0 4.182, F1 4.200, F2 4.194, F3 4.206 K; 10 m u 2.868 / 2.897 / 2.889 / 2.905; v 2.820 / 2.856 / 2.838 / 2.865 m/s. F0 is best in 4–6 of 6 cycles for every variable. Mid levels (500–850 hPa) were not assessed: the sounding reader reused from J1 keeps only levels at and above 400 hPa.
+
+**Predictions.**
+- **J2-P1 held.** F0 is worse than persistence at +12 h and +24 h.
+- **J2-P2 refuted.** F2 is 1–3 % worse than F0, not 10 % better.
+- **J2-P3 refuted.** F1 is 2 % worse than F0.
+- **J2-P4 split.** F3 completed all six 24 h forecasts (P-50's failure does not appear on the smoothed production terrain), but it is the worst arm aloft at +12 h.
+- **J2-P5 held.** No surface difference reaches 0.1 K or 0.1 m/s (largest 0.024 K, 0.047 m/s).
+
+By the refutation criterion written in advance, the sponge is not why the forecast aloft is worse than persistence. **The earlier entry today ("P-82 traced to the 12 km sponge") is therefore wrong in its conclusion**; its measurements stand.
+
+**Where the error comes from instead** (`drift_diag.py`, `startup_chk.py`, `div_chk.py`). RMS vector difference between each F0 forecast and its own analysis at and above 400 hPa: 19.5 m/s at +1 h, then 20.3–21.0 for the rest of the day (10-13 00Z); 15.2 at +1 h, then 15.5–16.0 (10-14 12Z). The forecast departs from the analysis in the first hour and hardly changes after. At 250 hPa on 10-13 00Z the +1 h forecast correlates 0.976 (u) and 0.879 (v) with the analysis, so nothing is flipped or misplaced, but its domain-mean wind differs by du −4.8, dv +16.0 m/s, and its maximum is 68.6 against 86.1 m/s.
+
+Applying the start-up's `remove_divergence_exact` (P-76, `--init-balance exact`, default since E4) to the same analysis reproduces this:
+
+| level (hPa) | domain-mean divergence (1/s) | mean du | mean dv | RMS change | max change | dv, south row / north row | du, west / east column |
+|---|---|---|---|---|---|---|---|
+| 850 | −9.4e-06 | +2.8 | +2.9 | 6.8 | 17.0 | 0.0 / +0.8 | 0.0 / +11.5 |
+| 500 | −7.8e-06 | −3.8 | +8.7 | 11.4 | 21.9 | 0.0 / +10.6 | 0.0 / −1.7 |
+| 300 | −1.85e-05 | −7.1 | +16.1 | 20.6 | 37.3 | 0.0 / +31.0 | 0.0 / −10.7 |
+| 250 | −1.34e-05 | −4.6 | +15.3 | 17.9 | 29.0 | 0.0 / +22.2 | 0.0 / −7.4 |
+| 200 | −8.9e-06 | −6.5 | +13.7 | 17.1 | 27.9 | 0.0 / +18.8 | 0.0 / −9.5 |
+
+The solve makes every cell's divergence zero while keeping the western and southern boundary-face winds (its docstring). A level's net divergence over the box cannot vanish that way unless the net flux through the boundary changes, so all of it is carried out through the northern and eastern faces: up to +31 m/s of southerly wind along the north edge at 300 hPa and a domain-mean +15 m/s at the jet levels. That is the systematic southerly first guess seen at every sounding (J1 O−B, the KBUF/KPIT/KGYX innovations), and the analysis then spends every 00/12Z cycle correcting it.
+
+**Reading.** The forecast aloft is worse than persistence mainly because the start-up rewrites the analysed wind by 15–20 m/s RMS before the first step. The sponge, a radiative lid or a drifting reference cannot help with that. The timing is consistent with P-82: `exact` reached cron with the user's pull of 4de8a60 (2026-10-11 19:45Z cycle), and the J1 re-run already starts on 10-12 00Z from an analysed jet 1.45 times the strongest sounding. Whether the ratchet existed before E4 has not been checked. New problem P-83.
+
+**Next (proposed; the user decides).** J3: start-up variants that keep the divergence removal but not the net-flux shift, e.g. removing only the departure from each level's domain-mean divergence, or spreading the boundary correction over all four faces; scored like J2, plus the 1 h departure from the analysis and the ring measure of P-76, which `exact` was adopted to fix.
+
+---
+
 ## 2026-10-15 (later) — P-82 traced to the 12 km sponge: the forecast aloft is worse than persistence, because the jet levels are held at the analysis (P-49 on real data)
 
 Read-only diagnostics on the J1 archives and the production archive (`scratch/j1/max_diag.py`, `fc_pers.py`).

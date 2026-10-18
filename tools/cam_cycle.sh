@@ -45,6 +45,11 @@ CAM_ICE_ARG=""; [ "${NWP_CAM_ICE:-0}" = 1 ] && CAM_ICE_ARG="--ice"
 UPPER_ARGS=""
 [ "${NWP_UPPER_DOMAIN_ONLY:-0}" = 1 ] && UPPER_ARGS="--upper-domain-only"
 [ -n "${NWP_UPPER_L_KM:-}" ] && UPPER_ARGS="$UPPER_ARGS --upper-L-km $NWP_UPPER_L_KM"
+# NWP_INIT_BALANCE / NWP_CAM_INIT_BALANCE (P-83, tests J2-J4, 2026-10-17): start-up
+# divergence removal (forecast.py --init-balance) of the 12 km moist run and of the
+# 3 km run. Unset = forecast.py's default (exact).
+INIT12_ARGS=""; [ -n "${NWP_INIT_BALANCE:-}" ] && INIT12_ARGS="--init-balance $NWP_INIT_BALANCE"
+INIT3_ARGS=""; [ -n "${NWP_CAM_INIT_BALANCE:-}" ] && INIT3_ARGS="--init-balance $NWP_CAM_INIT_BALANCE"
 if [ "$CAM_MOIST" = 1 ]; then BUDGET_MIN="${NWP_CYCLE_BUDGET_MIN:-150}"
 else BUDGET_MIN="${NWP_CYCLE_BUDGET_MIN:-90}"; fi
 RESERVE_MIN=6   # forecast set-up (~1 min) + output write (~1.3 min since S5e writes
@@ -127,7 +132,7 @@ if [ "$CAM_MOIST" = 1 ]; then
         step "12 km moist NH forecast (3 km edges)" python -u "$ROOT/src/forecast.py" --run-dir "$D12" \
             --hours "$HOURS" --output-every 1 --core nh --nh-backend c --advection upwind3 \
             --nh-physics step --levels 40 --threads "$CAM_THREADS" --moist $CAM_ICE_ARG --out "$BFM" \
-            --deadline-min 30 || true
+            $INIT12_ARGS --deadline-min 30 || true
         if [ -f "$BFM" ]; then BFC="$BFM"
         else echo "=== moist 12 km forecast missing: 3 km edges from $BFC (no moisture at the edges)" >> "$LOG"; fi
     fi
@@ -154,7 +159,7 @@ CAM_RELAX="${NWP_CAM_RELAX---relax-width-km 180 --relax-thermo-width-km 45 --rel
 step "3 km forecast" python -u "$ROOT/src/forecast.py" --run-dir "$D3" --hours "$HOURS" \
     --output-every 1 --core nh --nh-backend c --threads "$CAM_THREADS" \
     --nh-physics step --levels 40 --boundary-forecast "$BFC" \
-    --deadline-min "$LEFT_MIN" $CAM_RELAX $CAM_MOIST_ARGS ${NWP_CAM_ARGS:-} || true
+    --deadline-min "$LEFT_MIN" $CAM_RELAX $CAM_MOIST_ARGS $INIT3_ARGS ${NWP_CAM_ARGS:-} || true
 
 # Compute ledger (docs/COMPUTE_LEDGER.md): one line per run, kept with the logs.
 log_compute() {   # script, threads
