@@ -56,6 +56,24 @@ def cell_centres(domain, ny, nx):
     return lat2, lon2
 
 
+def domain_of(lat, lon):
+    """The box whose cell centres are lat, lon (1-D, or 2-D with row 0 south).
+    Inverse of cell_centres, to rounding (test N1: files on another domain)."""
+    la, lo = np.asarray(lat, float), np.asarray(lon, float)
+    la = la[:, 0] if la.ndim == 2 else la
+    lo = lo[0, :] if lo.ndim == 2 else lo
+    dla = (la[-1] - la[0]) / (la.size - 1)
+    dlo = (lo[-1] - lo[0]) / (lo.size - 1)
+    return {"lat_min": la[0] - 0.5 * dla, "lat_max": la[-1] + 0.5 * dla,
+            "lon_min": lo[0] - 0.5 * dlo, "lon_max": lo[-1] + 0.5 * dlo}
+
+
+def same_domain(a, b, tol=1e-4):
+    """True when two boxes agree to tol degrees (about 10 m)."""
+    return all(abs(float(a[k]) - float(b[k])) <= tol
+               for k in ("lat_min", "lat_max", "lon_min", "lon_max"))
+
+
 def spacing_m(domain, ny, nx):
     """(dy, dx) exactly as forecast.build_grid computes them."""
     lat0 = 0.5 * (domain["lat_min"] + domain["lat_max"])

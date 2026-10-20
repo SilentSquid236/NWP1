@@ -5761,6 +5761,33 @@ Plan: 1 and 2 first (map set), 3 after P-81 settles.
 
 ---
 
+## 2026-10-20 — N1 designed: a larger 12 km domain for the 3 km edges (running)
+
+**Context.** Prompt 225 asked whether a larger 12 km domain would give the 3 km grid better edges. Prompt 227 chose a three-arm test.
+
+The two grids now cover the same box, 37–47.5 N, 82–66 W. The 3 km relaxation zone (180 km for wind and pressure, 45 km for low-level θ and q) therefore takes its values from the outer cells of the 12 km grid's own 180 km zone, which is the most frozen part of the 12 km forecast (P-53). The archived raw observations already reach 33.9–58.5 N and 94.4–57.2 W: about 250 extra ASOS stations to the west and 80 to the south, 48 to the north, 38 to the east, and 5 soundings in the ring.
+
+**Hypothesis.** A margin of about 330 km keeps the frozen 12 km edge away from the 3 km edges for about 6–9 h near the ground (10–15 m/s) but only 2–3 h at jet level. The edge-band gain should therefore show at 7–24 h near the ground and be smaller aloft. Predictions P1–P7 are in `scratch/n1/n1_predictions.txt` (md5 fa8d29e0…), written before any test forecast.
+
+**Method.**
+- Arms: C (97×110, as now), P (34–50.5 N, 86–62 W, 153×165) and U (34–50.5 N, 88–64 W, 153×165).
+- The 3 km box is unchanged in every arm. The grid spacing is the same (11,985 m) and so is the centre latitude (42.25 N).
+- Code: `NWP_DOMAIN` overrides `config.DOMAIN` for one process. `nest.py` and `build.regrid_features` take a 12 km box larger than the 3 km one, with the box read from the file's lat/lon. With the boxes equal, the code takes the old path, bit for bit.
+- Tests: `src/test_nest_domain.py` 5/5 locally and on the server; `src/test_nest.py` 4/4 on the server.
+- Chain: 16 cycles, 10-16 00Z to 10-19 18Z, each arm on its own first guess from a cold start. The first 4 cycles are spin-up; 12 starts are scored.
+- Per cycle: analysis; a 6 h hydrostatic run for the next first guess; the 24 h moist NH run that drives the 3 km edges.
+- Scoring: ASOS inside the 3 km box, in the edge band (≤ 180 km from the edge) and the interior.
+- Execution: gap-aware, with dev tree cbe50b9 + `n1.patch`.
+
+**Smoke run** (arm P, 10-20 12Z, cold start, 1 h runs; not part of the test).
+- Every step ran. The terrain for 153×165 was fetched from ERDDAP on the server and slope-limited to 0.0083 in 14 passes.
+- The 3 km run nested in the 153×165 file; its 1 h took 4.1 min.
+- **Side observation (P-82).** This cold-start 12 km analysis had max|u| 19.4 m/s, with a sounding-mean first guess. The cycled production analysis of the same time had 115.5 m/s, against a strongest sounding of 30.4 m/s. With the cold-start background the 3 km step was 25.7 s, at the acoustic cap, against 18.2 s in production. This is one cycle on a different box, but it points to the cycled first guess as the carrier of the data-void maximum.
+
+**Status.** Stage 1 running since 2026-10-20 17:44Z.
+
+---
+
 ## 2026-10-20 — Status check: a wind maximum on the southern ocean edge sets the 3 km time step (P-82)
 
 **Context.** Prompt 224 asked for a status check of what needs to be improved. The full ranking is in docs/STATUS_CHECK_2026-10-20.md.

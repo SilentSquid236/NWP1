@@ -7,7 +7,7 @@ fd97c1bd78429370       353  .gitattributes
 d3c1dbcae80f46f8       322  .gitignore
 40f410355ef0eaef     12563  CLAUDE.md
 67def43f12d8438c      5508  CLAUDE_SCIENCE.md
-138b83b8dd106874      3339  config.py
+a694aa7d2b6a2583      4008  config.py
 e066f001a5a7f149      3870  diagnose_herbie.py
 f1ef58e483c0aef0      8830  docs/AI_COLLABORATION.md
 14fe2ff3b32b6029    220068  docs/am_skill_by_lead.png
@@ -31,9 +31,9 @@ cd7d0f085e4d3284    173203  docs/nh2d_density_current.png
 25bdef4fd9603cc4    116736  docs/nh3d_terrain_rest.png
 1eeb6616080945dd      6884  docs/POSTPROCESSING.md
 3e43ecbf2873a820    132521  docs/PROBLEMS.md
-f748fd8eeb1cbaa6     52691  docs/PROMPT_LOG.md
+0c4b74a565f41de4     53707  docs/PROMPT_LOG.md
 d920f1c36b550a3f     21087  docs/REFERENCES.md
-cecce1800fab0bc4    428022  docs/RESEARCH_LOG.md
+7643ba7a4995ab2d    430918  docs/RESEARCH_LOG.md
 bf17820767386e75     85879  docs/s3_backend_cost.png
 2ad8f171b4d38426    226489  docs/skew_compare.png
 78c3574bb1b0dd88      4845  docs/STABILITY.md
@@ -50,8 +50,8 @@ fd9669f1ba1bc850     10612  preflight.py
 365bc385c5748861      2253  skills/nwp-record-session/SKILL.md
 47aa4cc3ad27488e      5656  skills/nwp-sync/SKILL.md
 5d9c26ad60ded877      7738  src/analysis/barnes.py
-a953c5b85d408b51     22163  src/analysis/build.py
-a4b05dc0b266d8d1      7680  src/analysis/geo.py
+a9174134f9b46bfc     22424  src/analysis/build.py
+c597c6174b2cbcd6      8465  src/analysis/geo.py
 b6393b189c4acceb      5162  src/analysis/probe_obs_blowup.py
 50cc15ad137812aa      3642  src/analysis/probe_terrain_b.py
 8980442caaca38b6     24037  src/analysis/sources.py
@@ -153,9 +153,9 @@ f2ade9ddf327f9ec      4662  src/dynamics/test_sigma_levels.py
 084a3dad35f43163      7189  src/dynamics/turbulence.py
 0912dc3ca37c39e5      4669  src/dynamics/vertical.py
 11ea32d1050e29c3      7067  src/dynamics/visualize_instability.py
-0da628233a89bdfe     72464  src/forecast.py
+d8153973b29f975d     72490  src/forecast.py
 72920dad90f90394     21010  src/ingest_hrrr.py
-18bcf5517003de73     13358  src/ingest_obs.py
+7273d3af38e5ece0     13571  src/ingest_obs.py
 6907fa3c46f6c97c     17128  src/make_maps.py
 c57b6b9d4f57b3e8        77  src/maps/__init__.py
 eddb7f9e2307ff50     10800  src/maps/derive.py
@@ -163,7 +163,7 @@ a0212cd6292269bc      7467  src/maps/geography.py
 8927e4f2ba7f7de4     22473  src/maps/render.py
 7e98b9b141cffadc     14513  src/maps/test_maps.py
 a75dd5c57fd09649     19091  src/maps/viewer.py
-fd1fd8225afc3864      8335  src/nest.py
+0b94d99cffafa126     10696  src/nest.py
 63e337c29a4c7512      3753  src/numa_bind.py
 dd33655f87aa1ed4       906  src/nwp_emulator_3d.py
 6889b97f7e3244f1       200  src/postproc/__init__.py
@@ -172,6 +172,7 @@ c9aa9e9da814b9f4      6625  src/postproc/test_bias_correction.py
 099b4a4af331fd59     23422  src/test_forecast.py
 c7a4ca1a819cae0f      5436  src/test_hrrr_search.py
 e97fc2bfd2f6f907      3793  src/test_nest.py
+f6dc336081fe3954      4450  src/test_nest_domain.py
 0c7ce72c2ac5c46d      1404  src/test_numa_bind.py
 59d0b86a5b9008af     19680  src/test_verify.py
 c24c234b80125dff      8457  src/train_autoregressive.py

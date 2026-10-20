@@ -961,7 +961,7 @@ def main():
         # is this run's own initial state; later hours come from nest.py.
         import nest
         nf = nest.frames_from_forecast(args.boundary_forecast, terrain, lev.sigma, args.hours,
-                                       moist=args.moist)
+                                       moist=args.moist, dst_domain=config.DOMAIN)
         times, states = times[:1], states[:1]
         # Only the relaxation zone (plus one cell) ever reads a frame.
         zone = Relaxation3D(grid, width=args.relax_width, alpha_max=args.relax_alpha).alpha2d > 0

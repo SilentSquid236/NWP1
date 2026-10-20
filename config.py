@@ -47,6 +47,16 @@ DOMAIN = {
     "lat_min": 37.0, "lat_max": 47.5,
     "lon_min": -82.0, "lon_max": -66.0,
 }
+# NWP_DOMAIN="lat_min,lat_max,lon_min,lon_max" replaces the box for one
+# process (test N1, 2026-10-20: a larger 12 km domain around the unchanged
+# 3 km one). Unset in production, where DOMAIN is the box above.
+if os.environ.get("NWP_DOMAIN"):
+    _b = [float(x) for x in os.environ["NWP_DOMAIN"].split(",")]
+    if len(_b) != 4 or not (_b[0] < _b[1] and _b[2] < _b[3]):
+        raise ValueError("NWP_DOMAIN must be lat_min,lat_max,lon_min,lon_max; got "
+                         f"{os.environ['NWP_DOMAIN']!r}")
+    DOMAIN = {"name": "northeast-" + "_".join(f"{x:g}" for x in _b),
+              "lat_min": _b[0], "lat_max": _b[1], "lon_min": _b[2], "lon_max": _b[3]}
 
 # Index of temperature, used by the control-variable loss weighting.
 TEMP_CHANNEL_IDX = 0

@@ -311,6 +311,9 @@ phase breaks.
 | 222 | "What if we increase levels" | **DIR** | 40 ground-concentrated levels give a ~42 m lowest level with jet layers as fine as now (599 against 651 m at 250 hPa) at twice the 12 km cost, which comes out of the 3 km budget; 30 levels give 38 m with 902 m jet layers |
 | 223 | "Yes" | **DIR** | L1 launched (4 arms x 6 starts, predictions first, gap-aware so no forecast overlaps a cron cycle). `forecast.py --sigma-form/--sigma-stretch`, the mixing limit in `max_dt` (default dt bit-identical, tested), `test_sigma_levels.py` 7/7 |
 | 224 | "Now that we have made decent progress can we get a status check on what needs to be improved" | ADM | Status check (docs/STATUS_CHECK_2026-10-20.md): the 3 km time step is set by an unsupported 119–125 m/s analysis maximum on the southern ocean edge (0.7·dx/max\|u\| matches every logged step to within 0.1 s), which explains the deadline stops; ranked P-82, P-53, MSLP drift, spin-up, P-84, P-81 |
+| 225 | "Can we expand the area covered by the 12km model to help the 3km bounds" | **DIR** | Measured first: the 3 km and 12 km grids cover the same box, so the 3 km edge zone sits in the outer 4 cells of the 12 km 180 km relaxation zone. The archived observations already reach 34–58.5 N, 94.4–57.2 W, so a hindcast test needs no new fetching. Margins of 165–494 km sized; the low-level gain is about 330 km / 10–15 m/s, i.e. 6–9 h. Test design put to the user |
+| 226 | "git has been pushed" | ADM | cbe50b9 verified on origin. ff_sb.sh deployed it at 17:25Z: md5s match the tested copies, tests 11/11, status page installed, verify cron 10 5,11,17,23, first scoreboard 1180 rows |
+| 227 | (option pick) "Test N1: 3 arms (Recommended)" | **DIR** | N1 built and launched: `NWP_DOMAIN`, a nest and first-guess regrid from a larger box (tests 5/5 and 4/4), smoke run passed, predictions P1–P7 written first. Side observation: the cold-start analysis had max\|u\| 19 m/s against 115 m/s cycled |
 
 **Observation.** Prompt 53 is 17 words (corrected 2026-10-18; previously 18) and is the most consequential
 instruction in the project. Before it, nine candidate causes had been patched
@@ -332,28 +335,28 @@ more than its origin. Prompt 201, which proposed a new diagnostic unprompted,
 is the exception in the same stretch. For the study's main measurement (where
 direction came from), option picks should be counted apart from free-text
 directions. Rows before 200 do not record whether the pick was the recommended
-option, so this cannot yet be checked further back. Prompt 220 is another such pick, and again the recommended option.
+option, so this cannot yet be checked further back. Prompts 220 and 227 are other such picks, and again the recommended option.
 
 ---
 
 ## Aggregate
 
-| tag | prompts 1-60 | share | all prompts 1-224 | share |
+| tag | prompts 1-60 | share | all prompts 1-227 | share |
 |---|---|---|---|---|
-| DIR direction-setting | 19 | 32% | 73 | 33% |
+| DIR direction-setting | 19 | 32% | 75 | 33% |
 | OBS observation / pasted output | 13 | 22% | 60 | 27% |
-| ADM administrative | 8 | 14% | 57 | 26% |
+| ADM administrative | 8 | 14% | 58 | 26% |
 | MET methodological | 9 | 15% | 20 | 9% |
 | CON constraint | 7 | 12% | 13 | 6% |
 | COR correction | 2 | 3% | 5 | 2% |
-| prompts counted | 59 | | 223 | |
+| prompts counted | 59 | | 226 | |
 
 How these counts were made:
-- They were computed from the table rows on 2026-10-18 and updated through prompt 224 on 2026-10-20. A row that groups
+- They were computed from the table rows on 2026-10-18 and updated through prompt 227 on 2026-10-20. A row that groups
   several prompts (28-30, 32 and 34, 153-158) counts once per prompt.
 - Shares are of prompts. They add to slightly more than 100 % because seven
   rows carry two tags.
-- Prompt 40 has no row, so 223 prompts are counted. Prompt 24 is untagged.
+- Prompt 40 has no row, so 226 prompts are counted. Prompt 24 is untagged.
   Prompt 143 is tagged **Q**, which is not in the classification.
 - The earlier version of this table (DIR 22, OBS 13, ADM 10, MET 9, CON 8,
   COR 3, over prompts 1-60) was a hand count and does not match the rows. The

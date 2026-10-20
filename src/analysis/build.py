@@ -492,16 +492,20 @@ def build_analysis(cycle, observations, terrain, domain, levels_hpa,
     return feats, meta
 
 
-def regrid_features(features, domain, ny, nx):
+def regrid_features(features, domain, ny, nx, src_domain=None):
     """
     An analysis [C, L, Y, X] on one grid of the domain, bilinearly
     interpolated to the cell centres of an (ny, nx) grid of the same domain
     (the 12 km analysis as the 3 km first guess; CAM stage S5).
+
+    src_domain (test N1): the box the analysis itself covers, when it is
+    larger than `domain`. None, or a box equal to `domain`, is the old path.
     """
     f = np.asarray(features, float)
     lat, lon = geo.cell_centres(domain, ny, nx)
+    src = domain if (src_domain is None or geo.same_domain(src_domain, domain)) else src_domain
     out = np.empty(f.shape[:2] + (ny, nx))
     for c in range(f.shape[0]):
         for k in range(f.shape[1]):
-            out[c, k] = geo.bilinear(f[c, k], lat, lon, domain, clip=True)
+            out[c, k] = geo.bilinear(f[c, k], lat, lon, src, clip=True)
     return out

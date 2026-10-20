@@ -240,7 +240,10 @@ def main():
     background = None
     if args.background_analysis:
         zb = np.load(args.background_analysis, allow_pickle=False)
-        fb = build.regrid_features(zb["features"], domain, ny, nx)
+        # Test N1: the background may cover a larger box than this grid.
+        src_dom = (geo.domain_of(zb["lat"], zb["lon"])
+                   if {"lat", "lon"} <= set(zb.files) else None)
+        fb = build.regrid_features(zb["features"], domain, ny, nx, src_domain=src_dom)
         background = (build.first_guess_from_analysis(fb),
                       f"analysis:{args.background_analysis} regridded "
                       f"{zb['features'].shape[-2]}x{zb['features'].shape[-1]} -> {ny}x{nx}")
