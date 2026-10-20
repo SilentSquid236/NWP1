@@ -73,7 +73,11 @@ Deardorff, J. W., 1978: Efficient prediction of ground surface temperature and m
 
 Dowell, D. C., and Coauthors, 2022: The High-Resolution Rapid Refresh (HRRR): An hourly updating convection-allowing forecast model. Part I: Motivation and system description. *Wea. Forecasting*, **37**, 1371–1395, https://doi.org/10.1175/WAF-D-21-0151.1.
 
+Dudhia, J., 1989: Numerical study of convection observed during the Winter Monsoon Experiment using a mesoscale two-dimensional model. *J. Atmos. Sci.*, **46**, 3077–3107, https://doi.org/10.1175/1520-0469(1989)046<3077:NSOCOD>2.0.CO;2.
+
 ECMWF, 2026: cfgrib. GitHub repository, accessed 26 September 2026, https://github.com/ecmwf/cfgrib.
+
+Emanuel, K. A., 1994: *Atmospheric Convection*. Oxford University Press, https://doi.org/10.1093/oso/9780195066302.001.0001.
 
 Harris, C. R., and Coauthors, 2020: Array programming with NumPy. *Nature*, **585**, 357–362, https://doi.org/10.1038/s41586-020-2649-2.
 
@@ -108,6 +112,10 @@ Louis, J.-F., 1979: A parametric model of vertical eddy fluxes in the atmosphere
 Manabe, S., J. Smagorinsky, and R. F. Strickler, 1965: Simulated climatology of a general circulation model with a hydrologic cycle. *Mon. Wea. Rev.*, **93**, 769–798, https://doi.org/10.1175/1520-0493(1965)093<0769:SCOAGC>2.3.CO;2.
 
 Miles, J. W., 1961: On the stability of heterogeneous shear flows. *J. Fluid Mech.*, **10**, 496–508, https://doi.org/10.1017/S0022112061000305.
+
+Murphy, A. H., 1988: Skill scores based on the mean square error and their relationships to the correlation coefficient. *Mon. Wea. Rev.*, **116**, 2417–2424, https://doi.org/10.1175/1520-0493(1988)116<2417:SSBOTM>2.0.CO;2.
+
+Murray, F. W., 1967: On the computation of saturation vapor pressure. *J. Appl. Meteor.*, **6**, 203–204, https://doi.org/10.1175/1520-0450(1967)006<0203:OTCOSV>2.0.CO;2.
 
 Natural Earth, 2026: Natural Earth 1:50m cultural and physical vectors (natural-earth-vector repository). Accessed 26 September 2026, https://github.com/nvkelso/natural-earth-vector.
 
@@ -180,7 +188,9 @@ Zhang, J., and Coauthors, 2016: Multi-Radar Multi-Sensor (MRMS) quantitative pre
 | Davies (1976) | lateral boundary relaxation zone | `src/dynamics/boundaries.py`, `src/forecast.py` |
 | Deardorff (1978) | force-restore ground temperature | `src/dynamics/land_surface.py` |
 | Dowell et al. (2022); NOAA (2026a) | HRRR, which may seed a forecast but never verify one | `src/ingest_hrrr.py` |
+| Dudhia (1989) | simple ice: cloud water and rain read as ice and snow below 0 °C | `src/dynamics/moisture.py`, `src/forecast.py` |
 | ECMWF (2026); Hoyer and Hamman (2017) | reading HRRR GRIB2 | `src/ingest_hrrr.py` |
+| Emanuel (1994) | density potential temperature (sec. 4.3) | `src/dynamics/moisture.py`, `docs/EQUATIONS.md` |
 | Harris et al. (2020) | NumPy, the numerical base of the whole code | throughout |
 | Hunter (2007) | Matplotlib, all maps and figures | `src/maps/render.py`, `src/make_maps.py` |
 | Iowa Environmental Mesonet (2026a, b) | surface (ASOS) and upper-air (RAOB) observations | `src/analysis/sources.py`, `src/verification/fetchers.py` |
@@ -193,6 +203,8 @@ Zhang, J., and Coauthors, 2016: Multi-Radar Multi-Sensor (MRMS) quantitative pre
 | Louis (1979) | shape of the Richardson-number stability functions | `src/dynamics/turbulence.py`, `src/dynamics/surface.py`, `src/dynamics/land_surface.py` |
 | Manabe et al. (1965) | dry convective adjustment | `src/dynamics/convection.py` |
 | Miles (1961); Howard (1961) | Ri < 0.25 as the shear-instability criterion; the mixing threshold | `src/dynamics/turbulence.py`, P-60 |
+| Murphy (1988) | mean-square-error skill score against a reference (persistence) forecast | `tools/scoreboard.py` |
+| Murray (1967) | saturation vapour pressure over ice | `src/dynamics/moisture.py` |
 | Natural Earth (2026) | state, coast and lake lines on the maps | `src/maps/geography.py` |
 | NOAA (2026b); Zhang et al. (2016) | MRMS radar products | `src/analysis/sources.py`, `src/verification/fetchers.py` |
 | NOAA National Data Buoy Center (2026) | buoy and C-MAN observations | `src/analysis/sources.py` |

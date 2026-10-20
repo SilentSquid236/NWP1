@@ -5,8 +5,21 @@ wrong.
 
 | | what it is | current figure |
 |---|---|---|
-| **BILLED** | money that left the account — the subscription, prorated over the months the project has run | **$400** (2 months × $200) |
-| **API-EQUIV** | what the same tokens would cost at list API prices | **$79**, uncertain by ~2× ($40–$158) |
+| **BILLED** | money that left the account — the subscription, prorated over the months the project has run | **$40** (2 months × $20) |
+| **API-EQUIV** | what the same tokens would cost at list API prices | **$117**: $79 estimated (uncertain by ~2×, $40–$158) + $37 measured, so $77–$196 |
+
+*Corrected 2026-10-18.* The subscription is **$20/month** (stated by the user). The
+earlier $200/month ("Max") was an assumption in `tools/tokens.py` that was never
+confirmed, and the $79 shown before left out the two measured rows of 2026-09-22.
+
+**Coverage.**
+- *BILLED* counts the months the ledger spans (August and September 2026).
+- *API-EQUIV* counts only the sessions recorded in the ledger, and no session after
+  2026-09-22 has been recorded.
+- So both figures cover roughly August–September only; October is in neither.
+- Within that window the token side is the more incomplete one: sessions from
+  2026-09-23 to 2026-09-30 are paid for but unrecorded. The ratio below is
+  therefore a lower bound.
 
 `python tools/tokens.py --report` produces both from `docs/token_ledger.csv`.
 
@@ -24,15 +37,32 @@ shadow price alongside the real one.
 **API-EQUIV must never be described as money spent.** It is a conversion, for
 comparison only.
 
-## The result so far, which runs the wrong way
+## The result so far
 
-At list prices the tokens are worth about **a fifth** of what the subscription
+At list prices the recorded tokens are worth about **three times** what the
+subscription cost over the same months: 2.92× per dollar billed ($117 against
+$40). The estimated rows carry a 2× band, so the range is about 1.9× to 4.9×. It
+is a lower bound, because sessions after 2026-09-22 are not in the ledger. So the
+subscription is the cheaper way to buy this work, and BILLED is the smaller of
+the two numbers.
+
+The two numbers answer different questions:
+- **BILLED** answers what the project cost the person running it.
+- **API-EQUIV** answers what someone without a subscription would pay to
+  reproduce the work.
+
+The write-up should quote both and keep them apart.
+
+**Superseded (2026-10-18).** The section below was written with the assumed
+$200/month plan. Its headline was arithmetic on that assumption and is withdrawn:
+
+~~At list prices the tokens are worth about **a fifth** of what the subscription
 costs — 0.20× per dollar billed. The obvious expectation was the opposite, that
 an agentic project like this would be extracting many times the plan price in
-tokens.
+tokens.~~
 
-It does not, and the reason is visible in the research log. The expensive parts
-of this project have not been tokens:
+The observation about where the cost lies does not depend on the plan price,
+and it still holds. The expensive parts of this project have not been tokens:
 
 - A 12-hour forecast sweep costs **wall-clock**, not tokens. Several sessions
   spent most of their duration waiting on runs of 10–60 minutes each.
@@ -42,11 +72,16 @@ of this project have not been tokens:
 - Two-thirds of the turns are short: a measurement comes back, it is read, the
   next one is launched.
 
-So the honest framing for the write-up is that the AI-assisted cost of this
-project is dominated by **elapsed time and human attention**, and the token bill
-is close to a rounding error against the subscription. That is a more
-interesting claim than a large token number would have been, and it is
-falsifiable: measured rows will either hold it up or not.
+So the framing for the write-up is that the AI-assisted cost of this project is
+dominated by **elapsed time and human attention**. In money, the token value is
+on the order of $100, which is modest against what the run times and the human
+hours represent.
+
+~~...and the token bill is close to a rounding error against the
+subscription.~~ That clause was withdrawn on 2026-10-18 with the $200
+assumption. At $20/month the tokens are worth more than the subscription, not
+less. The claim stays falsifiable: measured rows for the sessions after
+2026-09-22 will either hold it up or not.
 
 ## What is measured and what is not
 
@@ -88,6 +123,7 @@ Checked 2026-09-16 against a pricing aggregator, **not** against Anthropic
 directly. Re-verify at `docs.claude.com/en/docs/about-claude/pricing` before
 any figure from this tool is published.
 
-`PLAN_USD_PER_MONTH` and `PLAN_NAME` at the top of `tools/tokens.py` are
-assumptions about the subscription and should be corrected to whatever is
-actually being paid.
+`PLAN_USD_PER_MONTH` and `PLAN_NAME` are at the top of `tools/tokens.py`.
+- `PLAN_USD_PER_MONTH` is **$20**, as stated by the user on 2026-10-18. It
+  replaces the unconfirmed $200 assumption.
+- `PLAN_NAME` ("Pro") is inferred from the price and has not been confirmed.

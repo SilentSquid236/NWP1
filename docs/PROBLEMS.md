@@ -41,7 +41,8 @@ hypothesis, **G** missing physics, **H** performance, **I** logistics.
 
 ## P-83 — The exact start-up pushes each level's net divergence out through the north and east edges
 
-**Category** B · **First seen** 2026-10-15 (test J2 diagnostics) · **Status** FIX AVAILABLE (J4: `--init-balance exact-free`, opt-in)
+**Category** B · **First seen** 2026-10-15 (test J2 diagnostics) · **Status** FIXED in production, pending confirmation. The J4 start-up `exact-free` is the cron setting for both runs from 2026-10-18 23:20Z: `NWP_INIT_BALANCE=exact-free` (12 km) and `NWP_CAM_INIT_BALANCE=exact-free` (3 km), with commit 00d8512. Tests: start-up 10/10, core 8/8. The first cycle to use it is 2026-10-19 00Z (01:45Z run). Confirmation is still to come: aloft error against persistence, the 3 km step and hours reached, and 10 m v (J4-P5) over the next cycles. ~~FIX AVAILABLE (J4: `--init-balance exact-free`, opt-in)~~
+**Confirmed by.** Tests, not yet production. J4 (12 km, 6 starts): RMSE above 400 hPa 22.00 m/s at +12 h against 25.99 for the old start-up (persistence 22.02); departure from its own analysis at +1 h 6.7 against 12.9 m/s. K1 (3 km, 10-16 12Z): +1 h departure 8.8 against 11.2 m/s, 19.89 h reached against 19.68. Production confirmation from the 2026-10-19 cycles is pending.
 
 **Symptom.** Every 12 km forecast departs from its own analysis by 15–20 m/s RMS (vector, at and above 400 hPa) by +1 h and then hardly changes (J2 control: 19.5 m/s at +1 h, 20.4 at +24 h, 10-13 00Z). At 250 hPa the +1 h domain-mean wind is du −4.8, dv +16.0 m/s off the analysis. Above 400 hPa the forecast is worse than persistence at +12 h and +24 h (J2: 26.3 against 22.3 m/s; production, 10 cycles: 24.2 against 21.1).
 
@@ -82,6 +83,13 @@ hypothesis, **G** missing physics, **H** performance, **I** logistics.
 **J2 (2026-10-15).** Changing the upper boundary did not help (all arms 1–8 % worse aloft than the control). The forecast's departure from the analysis is made in the first hour by the exact start-up, which adds about +15 m/s of southerly wind at the jet levels (P-83). That systematic first-guess error is what each analysis corrects; with the jet in the Ontario gap the corrections accumulate. Status: cause now attributed to P-83; J3 proposed.
 
 **Possibly related.** P-81: the jet core is over the Bancroft rain maximum, and the 10-13 00Z analysis already had a 109 m/s maximum on the northern edge.
+
+**Update 2026-10-20 (status check).** The maximum has moved to the southern ocean edge and now sets the 3 km time step.
+- The 12 km analysis maximum at or above 400 hPa was 119.0 m/s at 37.70 N 70.44 W (10-19 12Z) and 125.3 m/s at 37.81 N 70.00 W (10-20 12Z). The strongest in-domain soundings were 23.1 and 30.4 m/s, and the medians 20.0 and 24.8 m/s.
+- The 3 km step is `nh3d.max_dt` = 0.7·dx/max|u|. That gives 2100/115.5 = 18.2 s, 2100/109.7 = 19.1 s and 2100/123.6 = 17.0 s, against the logged 18.2, 19.2 and 16.9 s: agreement within 0.1 s. The printed max|u| is that of the 12 km driver state.
+- 8 of the last 10 3 km cycles stopped at the deadline. With the maximum removed the step would reach the 26 s acoustic cap, 1.43× faster.
+- The log label "external wave ~290 m/s sets this" is a fixed string and is wrong for the 3 km core.
+- Proposed J5: relax the first guess toward the observation-only analysis far from upper-air observations. See docs/STATUS_CHECK_2026-10-20.md.
 
 
 ## P-81 — The moist NH runs put 4–10× too much rain in a tropical-remnant event
@@ -763,6 +771,37 @@ The 3 km CAM scores 2.97 K against 3.22 K for AM. What stays open in P-59 is sha
 - By 24 h the whole lower troposphere is too fast (+2.5 m/s at levels 13–18), which points at the resolved dynamics.
 
 **Test AK (20 cycles).** With the force-restore ground temperature and the similarity operator, the night ratio falls from 1.63 to 0.92 and the day ratio is 1.22. Wind RMSE falls against AD (u −0.107, v −0.163 m/s), but u is still 0.23 m/s worse than persistence. Most of the night excess was the neutral 10 m diagnosis of a surface layer that should be stable. **Status:** largely explained; it stays open until the land surface is adopted or rejected (the user's decision) and the remaining u error is understood (too little turning across the isobars, test AJ2).
+
+---
+
+
+## P-84 — The sigma stretch puts the thickest layer at the ground: lowest level ~235 m
+**Category** B · **First seen** 2026-10-19 (the user asked why the lowest level is 237 m AGL, prompt 219; first noticed by the AI on 2026-10-14 and not logged then) · **Status** OPEN
+
+**Symptom.** The 12 km model's lowest full level is about 235 m above ground (223–248 m for 270–300 K), and the 3 km run's about 117 m. `SigmaLevels` places half levels at σ = (h/N)^1.4.
+- With an exponent above 1 the layers are thinnest at the lid and thickest at the ground. At 20 levels the bottom Δσ is 0.069, against 0.050 for even spacing and 0.015 at the top.
+- So the bottom layer is about 56 hPa thick, and even spacing would put the lowest level lower (169 m).
+- The comment in `sigma.py` and EQUATIONS §1.2 said the stretch "concentrates resolution near the surface where the boundary layer lives"; it does the opposite. `radiation_dt.py` already noted that the 1.4 stretch puts the smallest Δσ at the top. The origin of the stretch is not recorded.
+
+**Why it may matter.** The 2 m temperature and 10 m wind are diagnosed between the ground and this level. At night the stable surface layer is often shallower than 200 m, so a level 235 m up can sit above it. Hypothesis, not yet measured: this feeds the night warm bias (+1.3 to +1.6 K) and part of the ~2 K error already present at +1 h.
+
+**What is known.**
+- **Floor from explicit mixing.** Vertical mixing is explicit (stable if dt ≤ 0.4 dz²/K; K capped at 200 m²/s with a 150 m mixing length). At the ~17 s step, the two lowest levels must be at least ~92 m apart, so the lowest level can come down to about 35–40 m. Lower than that needs implicit mixing; then the floor is the surface layer, about 10–20 m over land with z0 = 1 m.
+- **The limit was not enforced.** `mixing_stability_dt` was imported but never used in `max_dt`. It is now part of the limit. It cannot bind on the default grid (about 470 s against 17 s), and `test_sigma_levels.py` checks that the default dt is exactly unchanged.
+- **Trade-off at 20 levels.** A ground-concentrated grid with the lowest level at 51 m thickens the layer at 250 hPa from 651 m to 1575 m. At 40 levels a ground-concentrated grid (exponent 1.19) gives about 42 m with 599 m at 250 hPa, at twice the 12 km cost.
+- **Earlier measurement.** The only previous measurement of the stretch was a stability test on synthetic terrain (no effect). Forecast skill was never tested.
+
+**Measured (L1, 2026-10-20; 6 starts, 168 526 paired ASOS observations).** Arms with the lowest level at 51, 38 and 42 m:
+- **Night bias** lower by 0.24–0.34 K (A0 +0.85 K). Not uniform: the low-level arms cool three nights, two of them already too cold, and warm two.
+- **Night RMSE** not better: +0.04 to +0.14 K.
+- **Day** colder: bias −0.85 to −0.89 against −0.63 K, RMSE +0.24 to +0.26 K.
+- **All hours:** 2 m T RMSE +0.16 to +0.22 K, 10 m wind +0.12 to +0.18 m/s; MSLP unchanged.
+- **Aloft:** no cost (J4 sounding method; the arms were within 3 %, the coarse 20-level arm 1–3 % better), because the analysed-jet error (P-82) dominates.
+- **Cost:** the 40-level grid costs 2.0x.
+
+**Ruled out.** Lowering the lowest level by itself, with the current surface physics, as a fix for the night warm bias or the 2 m T error (L1: P2, P3 and P5 refuted). The 235 m height is not the main cause.
+
+**Open.** The surface physics and diagnostics were built and tuned with a ~235 m level: the 150 m fixed mixing length, z0 = 1 m (test AM), the Louis exchange and the force-restore coupling. A low level may help only together with mixing that scales with height near the ground (and implicit mixing to go below ~40 m). Production keeps 20 levels, power 1.4.
 
 ---
 

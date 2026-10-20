@@ -35,7 +35,7 @@ from sigma import (SigmaLevels, hydrostatic_geopotential, continuity,
 from subgrid import (hyperdiffusion, recommended_hyper_coeff, hyper_stability_dt,
                      divergence_damping, divergence_damping_stability_dt)
 import turbulence
-from turbulence import vertical_mixing, richardson, mixing_stability_dt
+from turbulence import vertical_mixing, richardson, mixing_stability_dt, eddy_diffusivity
 from surface import surface_drag, drag_stability_dt, ROUGHNESS
 from convection import dry_convective_adjustment, dry_convective_adjustment_pav
 from radiation import radiative_top_flux, top_flux_stability_dt
@@ -412,7 +412,22 @@ class PrimitiveSigma:
         if self.radiative_top and self._top_flux is not None:
             dt_top = top_flux_stability_dt(self._top_flux, self.pi, self.lev)
 
-        return float(min(dt_h, dt_v, dt_top,
+        # Explicit vertical mixing: dt <= 0.4 dz^2 / K (turbulence.
+        # mixing_stability_dt). Added 2026-10-19 (P-84): on the default grid the
+        # layers near the ground are hundreds of metres apart and this limit is
+        # hundreds of seconds, so it never binds; on a grid concentrated at the
+        # ground it can. Before the first step K is computed from the state.
+        dt_mix = np.inf
+        if self.mixing:
+            Ri, _, S2, dz = richardson(self.u, self.v, self.theta, self.pi, self.lev)
+            K = self._K_last
+            if K is None:
+                K = eddy_diffusivity(Ri, S2, self.ri_crit, self.k_max, self.mixing_length)
+            kmax = float(K.max())
+            if kmax > 0:
+                dt_mix = 0.4 * float(dz.min()) ** 2 / kmax
+
+        return float(min(dt_h, dt_v, dt_top, dt_mix,
                          hyper_stability_dt(gr, self.hyper),
                          divergence_damping_stability_dt(gr, self.div_damp)))
 

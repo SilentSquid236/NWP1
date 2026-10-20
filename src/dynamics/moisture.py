@@ -33,7 +33,7 @@ APPROXIMATIONS, KNOWN
 - The mixing ratios are relative to dry air in the microphysics formulas,
   but the mass weight mu is the whole air column (a ~1 % difference).
 
-WARM RAIN: KESSLER (1969) AS IN KLEMP AND WILHELMSON (1978)
+WARM RAIN: Kessler (1969) as in Klemp and Wilhelmson (1978)
 Transcribed from WRF's module_mp_kessler.F (the reference warm-rain scheme):
 - rain falls first, with the terminal velocity 36.34 (rho qr 1e-3)^0.1364
   sqrt(rho_0 / rho), in substeps that keep the fall Courant number <= 0.75;

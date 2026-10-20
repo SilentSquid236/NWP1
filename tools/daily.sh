@@ -32,7 +32,9 @@
 # Suggested crontab (UTC; soundings reach IEM a little after nominal time):
 #
 #   45 1,7,13,19 * * *  bash /data5/pierce/AINWP/tools/daily.sh >/dev/null 2>&1
-#   30 3 * * *          bash /data5/pierce/AINWP/tools/daily.sh verify >/dev/null 2>&1
+#   10 5,11,17,23 * * * bash /data5/pierce/AINWP/tools/daily.sh verify >/dev/null 2>&1
+#     (four times a day, in the gaps between the :45 cam_cycle runs, so each
+#     run is scored ~5 h after its window closes; was 30 3 * * * until 2026-10-19)
 #
 # Cron does not read ~/.bashrc, so NWP_DATA_ROOT is unset there and DATA falls
 # back to $ROOT/data -- which is /data5/pierce/AINWP/data, the same place.
@@ -136,6 +138,12 @@ if [ "$MODE" = "verify" ]; then
         [ -f "$d/maps/index.html" ] && [ "$d/maps/index.html" -nt "$d/verified.json" ] && continue
         maps --run-dir "$d" --products err_t,err_w
     done
+    # Skill against persistence from the live-observation archives, for the
+    # status page (data/status/scoreboard.md) and data/verification_scores.csv.
+    # Like the maps, a scoreboard failure never changes the verify status.
+    keep=$STATUS
+    step scoreboard python -u "$ROOT/tools/scoreboard.py" "$DATA" || true
+    STATUS=$keep
     echo "=== done  $(date -u +%FT%TZ)  status=$STATUS" >> "$LOG"
     exit "$STATUS"
 fi

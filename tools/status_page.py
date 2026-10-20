@@ -68,6 +68,23 @@ def fmt_age(h):
     return f"{h * 60:.0f} min ago" if h < 1.5 else f"{h:.1f} h ago"
 
 
+def section_scores(out, alerts):
+    """Forecast skill against live observations, written by tools/scoreboard.py
+    after each verification run (daily.sh verify)."""
+    p = os.path.join(DATA, "status", "scoreboard.md")
+    if not os.path.exists(p):
+        alerts.append("no forecast scoreboard yet (tools/scoreboard.py has not run)")
+        return
+    a = age(p)
+    if a is not None and a > 14:
+        alerts.append(f"forecast scoreboard is {a:.0f} h old (verification runs every 6 h)")
+    with open(p) as fh:
+        txt = fh.read().rstrip()
+    if "Verification is behind" in txt:
+        alerts.append("verification is behind: see Forecast skill")
+    out.append(txt + "\n")
+
+
 def section_notes(out):
     p = os.path.join(DATA, "status", "notes.md")
     entries, cur = [], []
@@ -201,6 +218,7 @@ def section_cron(out, alerts):
 
 def main():
     body, alerts = [], []
+    scores = []; section_scores(scores, alerts)
     section_notes(body)
     exp = []; section_experiments(exp, alerts)
     cron = []; section_cron(cron, alerts)
@@ -214,7 +232,7 @@ def main():
         out.append("## Attention\n")
         out += [f"- {a}" for a in alerts[-10:]]
         out.append("")
-    out += body + exp + cron + srv
+    out += scores + body + exp + cron + srv
     sys.stdout.write("\n".join(out) + "\n")
 
 

@@ -127,7 +127,10 @@ on itself.
 
 ---
 
-## Phase 5 — Debugging the instability (prompts 51-60)
+## Phase 5 — Debugging the instability, and everything after (prompts 51-223)
+
+Rows from 61 onward were appended to this table as they happened, without new
+phase breaks.
 
 | # | prompt | tag | effect |
 |---|---|---|---|
@@ -284,8 +287,32 @@ on itself.
 | 199 | "why is the temperature and dew point going to wrong way in the soundings" → "Lines lean the wrong way" | **OBS** | The data were correct; the viewer's skew-T was over-skewed (about 55 against 42.5 K per ln p), so normal profiles leaned right. Fixed in `viewer.py` and patched into the last 4 days of viewer pages |
 | 200 | "3 km ice test, then cron (Recommended)" | **DIR** | Ice tested at 3 km first (R3, 10-13 00Z, scratch data root), with `NWP_CAM_ICE=1` added to `cam_cycle.sh` |
 | 201 | "I think in the future we should add a way to see temperature changes minus heating and cooling done by dinural cycles to better see fronts" | **DIR** | Planned: 24 h temperature change and temperature-advection maps first, then a model tendency split (dynamics vs surface heating) after P-81 |
+| *— off-record prompts omitted here at the user's request —* | | | |
+| 202 | "just committed" | ADM | Commit 0e17989 "Add ice microphysics and moist diagnostics" (2026-10-15 02:44Z) |
+| 203 | "pushed" | ADM | A waiter fast-forwarded the server to 0e17989, ran the C kernel tests (all passed), then added `NWP_CAM_ICE=1` to the crontab, so both moist runs carry simple ice |
+| 204 | "Diagnose, then fix (Recommended)" | **DIR** | Asked after the AI found the upper-air analysis inflating the jet each cycle (109 to 138 m/s, no balloon above 70), P-82. J1 (analysis-only arms): the ring soundings add a ~20 m/s offset but are not the cause; the growth happens at the 00/12Z analyses. J1 overlapped the 10-15 00Z cron cycle and cut its 3 km forecast to 18.9 h, an AI scheduling mistake |
+| 205 | "Adopt A3 now, then J2 (Recommended)" | **DIR** | `NWP_UPPER_DOMAIN_ONLY=1`, `NWP_UPPER_L_KM=300` in cron from 2026-10-15 16:30Z (commit 5ca4c57) |
+| 206 | "Upper-boundary test (Recommended)" | **DIR** | J2 refuted the AI's sponge hypothesis: control 26.29 m/s RMSE aloft at +12 h against persistence 22.30, and every sponge or radiative-top variant was worse. The diagnostics found P-83: the exact start-up keeps the west/south boundary faces fixed and shifts the wind aloft (+15 m/s mean v at 250 hPa) |
+| 207 | "Test start-up variants (Recommended)" | **DIR** | J3: the symmetric variant barely helped; the old hybrid start-up came near persistence aloft (22.76 m/s) and improved 10 m u by 0.24 m/s, but brought back the edge ring (3.50 against 2.29) and +2.4 hPa MSLP bias |
+| 208 | "J4: solve with no fixed face (Recommended)" | **DIR** | J4: minimum-norm start-up with no fixed face (`exact-free`). Aloft 22.00 m/s against 25.99 now and 22.02 persistence, jet kept, ring 2.37; 2 m T -0.063 K, 10 m u -0.19, v +0.12 m/s. P1-P4 held, P5 narrowly refuted (v) |
+| 209 | "12 km now, 3 km after a test (Recommended)" | **DIR** | K1, the 3 km rerun of 10-16 12Z with `exact-free`: all four predictions held (19.89 h reached against 19.68, +1 h departure 8.8 against 11.2 m/s). Commit 00d8512 pushed 2026-10-18 23:04Z; the waiter checked the file hashes and tests (10/10, 8/8) and set `NWP_INIT_BALANCE` and `NWP_CAM_INIT_BALANCE=exact-free` in cron at 23:20Z |
+| 210 | "lets do a progress report" | ADM | Production review: the analysed jet still runs 30-70 m/s above the strongest sounding after A3; 19 of 36 3 km cycles since 10-10 ended non-zero (deadline stops since 10-14); the 16-17 Oct cold outbreak gave a 2 m T warm bias growing to +12 K at 24 h (quick diagnosis: frozen lateral boundaries, P-53). Report in progress |
+| 211 | "Can you convert the mark downs into pdfs for me in the docs folder in NWP local" | ADM | `docs_to_pdf.py` (reportlab + mathtext, no LaTeX); 16 PDFs next to the sources in the desktop copy, not in git |
+| 212 | "token cost should be set to 20$ a month for subscription billed" | **COR** | The $200/month plan in `tools/tokens.py` was an AI assumption never confirmed. At $20: BILLED $40 against API-EQUIV $116.64 (2.92x), so the earlier 0.20x conclusion reversed and is struck through in `docs/TOKEN_COST.md` |
+| 213 | "yes" | ADM | Approved backfilling prompts 202-213, after the AI noted the log had stopped at 201 against its own "as it happens" rule |
+| 214 | "the off record line is good" | ADM | A content-free note row marks where off-record prompts were left out, between 201 and 202 |
+| 215 | "Lets continue on the other open tasks" | DIR | Prompt-log statistics recounted from the rows (Aggregate, median, four-prompt mean, prompt 53 corrected), option-pick observation added, Phase 5 heading fixed; the research-log entry records it. Then the progress report |
+| 216 | "Make sure the model is being verified against live data so we can confirm is the model is making accurate predictions" | **MET** | Audit: live ASOS verification ran daily (status 0 every day) but up to ~2 days late, with no reference forecast and scores only in logs. Built `tools/scoreboard.py` (skill vs station and 24 h persistence from the same observations) for the status page; verify moves to four times a day in the gaps between cycles (pending push) |
+| 217 | "Temperatures have been way off" | **OBS** | Confirmed and quantified: 12 km 2 m T beats persistence to ~18 h (skill +0.30 to +0.37 at 1-12 h) but loses at 19-24 h (-0.11) with a +0.9 K warm bias; worst in the 16-17 Oct cold outbreak (P-53); ~2 K error already at +1 h |
+| 218 | "temperature needs to be 2m too" | **MET** | Checked: every production temperature pair already uses the 2 m similarity operator with a station-height correction, scored against the 2 m ASOS value; no change needed |
+| 219 | "Why is the lowest level 237m AGL" | **OBS** | Traced to `SigmaLevels` stretch 1.4: half levels (h/N)^1.4 make the layers THICKEST at the ground (bottom dsigma 0.069, uniform 0.050, top 0.015), the opposite of the code comment and EQUATIONS 1.2. Lowest full level 235 m at 12 km (20 levels), ~117 m at 3 km (40 levels); uniform levels would give 169 m |
+| 220 | "Open P-84, then test (Recommended)" | **DIR** | P-84 opened; comment in `sigma.py` and EQUATIONS 1.2 corrected; test L1 designed (option pick: the AI's recommended option) |
+| 221 | "Theoretically what is the lowest agl you think you can get" | **MET** | Floors computed from the code: ~35-40 m with the explicit vertical mixing (dt <= 0.4 dz^2/K at the ~17 s step), ~10-20 m over land with implicit mixing (surface layer, z0 = 1 m). Found the mixing stability limit was imported but never used in the time step |
+| 222 | "What if we increase levels" | **DIR** | 40 ground-concentrated levels give a ~42 m lowest level with jet layers as fine as now (599 against 651 m at 250 hPa) at twice the 12 km cost, which comes out of the 3 km budget; 30 levels give 38 m with 902 m jet layers |
+| 223 | "Yes" | **DIR** | L1 launched (4 arms x 6 starts, predictions first, gap-aware so no forecast overlaps a cron cycle). `forecast.py --sigma-form/--sigma-stretch`, the mixing limit in `max_dt` (default dt bit-identical, tested), `test_sigma_levels.py` 7/7 |
+| 224 | "Now that we have made decent progress can we get a status check on what needs to be improved" | ADM | Status check (docs/STATUS_CHECK_2026-10-20.md): the 3 km time step is set by an unsupported 119–125 m/s analysis maximum on the southern ocean edge (0.7·dx/max\|u\| matches every logged step to within 0.1 s), which explains the deadline stops; ranked P-82, P-53, MSLP drift, spin-up, P-84, P-81 |
 
-**Observation.** Prompt 53 is 18 words and is the most consequential
+**Observation.** Prompt 53 is 17 words (corrected 2026-10-18; previously 18) and is the most consequential
 instruction in the project. Before it, nine candidate causes had been patched
 and measured one at a time, all negative. After it, the failure was traced in
 a single session to three defects in the *test setup* — a super-geostrophic
@@ -296,28 +323,55 @@ Prompt 55 is the clearest case of domain intuition beating the AI's search
 order. The AI was examining the model top; the human said look at the boundary
 layer; the residual was at the bottom, by a factor of 70.
 
+**Observation (prompts 200-209).** Seven of these ten prompts are a choice
+among options the AI wrote: 200 and 204-209. In all seven the human picked the
+option the AI had marked "Recommended". Each one is tagged DIR, because it
+chose what was built next. But the options, their order and the recommendation
+all came from the AI. So in this stretch, DIR records approval of a direction
+more than its origin. Prompt 201, which proposed a new diagnostic unprompted,
+is the exception in the same stretch. For the study's main measurement (where
+direction came from), option picks should be counted apart from free-text
+directions. Rows before 200 do not record whether the pick was the recommended
+option, so this cannot yet be checked further back. Prompt 220 is another such pick, and again the recommended option.
+
 ---
 
 ## Aggregate
 
-| tag | count | share |
-|---|---|---|
-| DIR direction-setting | 22 | 37% |
-| OBS observation / pasted output | 13 | 22% |
-| ADM administrative | 10 | 17% |
-| MET methodological | 9 | 15% |
-| CON constraint | 8 | 13% |
-| COR correction | 3 | 5% |
+| tag | prompts 1-60 | share | all prompts 1-224 | share |
+|---|---|---|---|---|
+| DIR direction-setting | 19 | 32% | 73 | 33% |
+| OBS observation / pasted output | 13 | 22% | 60 | 27% |
+| ADM administrative | 8 | 14% | 57 | 26% |
+| MET methodological | 9 | 15% | 20 | 9% |
+| CON constraint | 7 | 12% | 13 | 6% |
+| COR correction | 2 | 3% | 5 | 2% |
+| prompts counted | 59 | | 223 | |
 
-(Counts exceed the prompt total slightly: a few prompts carry two tags.)
+How these counts were made:
+- They were computed from the table rows on 2026-10-18 and updated through prompt 224 on 2026-10-20. A row that groups
+  several prompts (28-30, 32 and 34, 153-158) counts once per prompt.
+- Shares are of prompts. They add to slightly more than 100 % because seven
+  rows carry two tags.
+- Prompt 40 has no row, so 223 prompts are counted. Prompt 24 is untagged.
+  Prompt 143 is tagged **Q**, which is not in the classification.
+- The earlier version of this table (DIR 22, OBS 13, ADM 10, MET 9, CON 8,
+  COR 3, over prompts 1-60) was a hand count and does not match the rows. The
+  rows are the record.
+- Since prompt 60 the mix has moved toward OBS and ADM: pasted results, and the
+  logistics of running on the server. MET and CON have fallen.
+- From prompt 200 on, DIR includes option picks; see the observation above.
 
 Prompt 61 is worth noting for length against effect. Eight words, no
 technique named, and the ambiguity in "higher levels" — terrain height or
 model level — turned out not to matter, because the answer was at a specific
 model level over specific terrain and the measurement found it either way.
 
-**Median prompt length: 11 words.** The four prompts that changed the project
-most — 41, 50, 53, 55 — average 19 words. None specifies a technique. Every
+**Median prompt length: 9 words over prompts 1-60, 8 words over all 223**
+(typed prompts only: pasted output and option picks are excluded; counted
+2026-10-18. The earlier hand count gave 11). The four prompts that changed the project
+most — 41, 50, 53, 55 — average 16.5 words (20, 3, 17 and 26; corrected
+2026-10-18 from the verbatim rows, previously given as 19). None specifies a technique. Every
 one specifies a *direction* or a *method*, and leaves the technique to the AI.
 
 **The AI never once proposed:** starting from 2D, deferring moisture, banning

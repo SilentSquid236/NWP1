@@ -26,16 +26,16 @@ Machine time used by this project, kept from 2026-10-03 at the user's request
   `$DATA/logs/compute_hours.csv` (start, cycle, script, wall minutes, threads).
   Those runs will be in that file, not here.
 
-## Totals to 2026-10-18 (83 server jobs)
+## Totals to 2026-10-20 (84 server jobs)
 
 | Work | Jobs | Run hours | Core-hours (upper bound) |
 |---|---|---|---|
 | Dry 12 km model (tests AB–AN) | 29 | 23.6 | 505 |
 | CAM stages S2–S7 and the first live cycle (AO, S3a–S6c, benchmarks, profiles) | 26 | 30.6 | 1333 |
-| S7 moisture tests, edge-ring and scoring tests (S7ab–S7d, P-76 diagnostics, E1–E7, P1, P2, P-80 A/B, moist cron test, the stale E4 duplicate, P-81 R1–R3, cron re-scoring, P-82 J1, J2 and P-83 J3, J4, K1) | 28 | 61.2 | 2020 |
-| **All server jobs** | **83** | **115.5** | **3859** |
+| S7 moisture tests, edge-ring and scoring tests (S7ab–S7d, P-76 diagnostics, E1–E7, P1, P2, P-80 A/B, moist cron test, the stale E4 duplicate, P-81 R1–R3, cron re-scoring, P-82 J1, J2 and P-83 J3, J4, K1, P-84 L1) | 29 | 71.1 | 2071 |
+| **All server jobs** | **84** | **125.3** | **3910** |
 
-Computed from the CSV rows (run_h 115.47, core-h 3859.18). E4–E7 (with e7r, e7s), P1 and P2 were started by hand over the
+Computed from the CSV rows (run_h 125.34, core-h 3910.28). E4–E7 (with e7r, e7s), P1 and P2 were started by hand over the
 command channel (the approval cards did not reach the user, 2026-10-10); their rows are written from the
 job logs, and the P1/P2 times are approximate (file stamps). E7's run_h is wall clock including waits for cron; its core-hours come from `compute_hours.csv`. The CAM rows are
 the two CAM benchmarks of 2026-10-02 (857ef10a, 1975c024) and every job

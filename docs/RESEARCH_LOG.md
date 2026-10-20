@@ -5761,6 +5761,315 @@ Plan: 1 and 2 first (map set), 3 after P-81 settles.
 
 ---
 
+## 2026-10-20 — Status check: a wind maximum on the southern ocean edge sets the 3 km time step (P-82)
+
+**Context.** Prompt 224 asked for a status check of what needs to be improved. The full ranking is in docs/STATUS_CHECK_2026-10-20.md.
+
+**Method.**
+- `tools/scoreboard.py` was run in scratch, because it is not yet deployed. It scored 29 cycles to 10-19 00Z.
+- The 12 km and 3 km analyses at or above 400 hPa were read for 10-13 00Z, 10-17 12Z, 10-19 12Z and 10-20 12Z.
+- The 3 km logs were read for 10-18 12Z to 10-20 12Z, and the result compared with `nh3d.max_dt`.
+
+**Result.**
+- 12 km skill against the best persistence forecast:
+  - 2 m T +0.35, +0.48, +0.22 and −0.04 for the 1–6, 7–12, 13–18 and 19–24 h bands;
+  - 10 m wind −0.82, −0.05, +0.16 and +0.20;
+  - MSLP −1.19, −0.22, −0.09 and −0.05, with the bias going from −0.9 to −3.2 hPa.
+- 3 km dewpoint skill at 1–6 h is −0.95 (bias −1.0 K).
+- 3 km cycles: 8 of the last 10 stopped at the deadline, at 20.2–23.6 h.
+- The analysis maximum was 119–125 m/s on the southern edge over the Atlantic, against in-domain sounding maxima of 23–30 m/s, on 10-19 and 10-20.
+- 0.7·dx/max|u| of the initial state matches the 3 km step to within 0.1 s in every cycle checked (18.2/18.2, 19.1/19.2, 17.0/16.9 s computed/logged). The max|u| used is the one printed for the 12 km driver state.
+
+**Interpretation.**
+- The deadline stops are caused by an analysed wind maximum in a data void, held there by the frozen boundaries and the first guess. They are not caused by the start-up, which the exact-free change left unchanged (6 of 7 cycles still stopped).
+- Removing the maximum would let the step reach the 26 s acoustic cap.
+- The MSLP drift of −3.2 hPa at 24 h is new in this window.
+
+**Status.** Open. J5 is proposed under P-82.
+
+---
+
+## 2026-10-20 — L1: lowering the lowest level alone makes the 12 km surface forecast worse (P-84 stays open)
+
+**Test.** Four vertical grids on six starts (design and predictions in the
+entry below; predictions md5 d31437e3…, saved before any run). It ran
+2026-10-19 22:35Z to 2026-10-20 04:59Z, only in gaps between cron cycles; one
+A3 forecast waited for the 04:30Z gap. All 24 forecasts and verifications
+ended rc=0, and the core tests passed 8/8 with the new time-step limit.
+
+**Result.** 168 526 ASOS pairs common to all arms, leads 1–24 h.
+
+| | A0: 20 lev, 235 m | A1: 20 lev, 51 m | A2: 30 lev, 38 m | A3: 40 lev, 42 m |
+|---|---|---|---|---|
+| 2 m T RMSE, all (K) | **5.103** | 5.261 | 5.318 | 5.319 |
+| 2 m T bias, all (K) | +0.229 | −0.068 | −0.029 | +0.007 |
+| night (02–10 UTC) RMSE / bias | **4.601** / +0.849 | 4.644 / **+0.506** | 4.735 / +0.560 | 4.742 / +0.611 |
+| day (14–22 UTC) RMSE / bias | **5.524** / −0.633 | 5.765 / −0.887 | 5.787 / −0.868 | 5.783 / −0.848 |
+| 10 m wind, vector RMSE (m/s) | **4.673** | 4.789 | 4.853 | 4.848 |
+| MSLP RMSE / bias (hPa) | 9.20 / −2.24 | 9.27 / −2.20 | 9.30 / −2.24 | 9.29 / −2.25 |
+| wall per forecast (min) | 14.9 | 15.6 | 22.1 | 30.0 |
+| dt (s) | 12.3–13.1 | 12.6–13.1 | 12.5–13.1 | 12.4–13.1 |
+
+The night bias varies far more between starts than between arms: for A0 it
+ranges from −2.3 to +4.9 K. Per start, the three low-level arms change it
+together:
+- They cool the night on 16 Oct 00Z, 16 Oct 12Z and 18 Oct 12Z, by 0.66–0.70,
+  0.76–1.05 and 1.39–1.56 K. Two of those three nights were already too cold
+  (−2.2 and −2.3 K), so part of the pooled bias "improvement" comes from
+  making cold nights colder.
+- They warm the night on 17 Oct 00Z and 12Z, by 0.25–0.38 and 0.84–1.03 K.
+- 18 Oct 00Z is unchanged (within 0.08 K).
+
+**Predictions.**
+- **P1 held** (24/24).
+- **P2 refuted.** A1 cut the night bias by 0.34 K, but its night RMSE rose by
+  0.04 K. A2 and A3 cut the bias by 0.29 and 0.24 K, with RMSE +0.13 and
+  +0.14 K.
+- **P3 refuted.** A3's day RMSE is 0.26 K worse.
+- **P4 not assessed as written.** `l1_score.py` looked for soundings in the
+  ASOS-only verification archives and found no pairs: my design error. A
+  supplementary score, added after the run with J4's method (`l1_aloft.py`:
+  in-domain soundings, paired across arms), gives these RMS vector errors in
+  m/s:
+
+  | band | lead | persistence | A0 | A1 | A2 | A3 |
+  |---|---|---|---|---|---|---|
+  | above 400 hPa | +12 h | 27.61 | 27.74 | 27.02 | 27.42 | 27.65 |
+  | above 400 hPa | +24 h | 40.25 | 40.76 | 40.37 | 40.78 | 40.78 |
+  | 500–850 hPa | +24 h | 23.89 | 23.01 | 23.10 | 23.08 | 23.15 |
+
+  The coarse jet layers of A1 did not hurt; it was 1–3 % better. Aloft, every
+  arm and persistence are dominated by the analysed jet's error (P-82), so
+  vertical resolution aloft does not show at this error level.
+- **P5 refuted.** A3's 10 m wind is 0.18 m/s worse.
+- **P6 held.** A3 costs 2.01×, and the starting dt agreed in all arms; the
+  mixing limit did not bind at the start.
+
+**Finding.**
+- Lowering the lowest level, with nothing else changed, lowers the pooled
+  night bias by 0.24–0.34 K. That is not a uniform correction: it cools some
+  nights, including two already too cold, and warms others. It also makes the day
+  colder by 0.2–0.25 K, so the all-hours 2 m temperature (+0.16 to +0.22 K)
+  and 10 m wind (+0.12 to +0.18 m/s) both get worse.
+- The 30- and 40-level grids were no better than 20 ground-concentrated
+  levels.
+- The 235 m level height is therefore not the main cause of the night warm
+  bias. The surface physics and diagnostics as they stand do better with the
+  high level they were built and tuned around.
+- Three things were set with the ~235 m level: the 150 m fixed mixing length;
+  z0 = 1 m (test AM); and the Louis exchange and force-restore coupling into
+  the lowest layer.
+- Hypothesis, not tested: a low level needs mixing that scales with height
+  near the ground, and those settings revisited, before it can help.
+
+**Decision rule.** No grid is proposed for production. The grid options stay
+in the code (default unchanged). The explicit-mixing limit in `max_dt` also
+stays: it never binds on the default grid, and it guards any thinner grid.
+
+## 2026-10-19 — L1 designed: four vertical grids for the 12 km model (P-84; running)
+
+**Context.** The user asked why the lowest model level is 237 m above ground
+(prompt 219). It is the sigma stretch: σ_h = (h/N)^1.4 puts the thickest layer
+at the ground (P-84). The code comment said the opposite.
+
+Two follow-up questions (prompts 221, 222) set the design:
+- **The floor.** With the explicit vertical mixing and the ~17 s step, the two
+  lowest levels must be at least ~92 m apart. The lowest level can come down
+  to ~35–40 m.
+- **The trade-off.** At 20 levels a low level coarsens the jet layers. At 40
+  levels it does not, but the 12 km run costs twice as much.
+
+**Hypothesis (H).** The 235 m lowest level is a cause of the night-time 2 m
+temperature warm bias and of part of the 2 m T error.
+
+**Code (production default unchanged).**
+- `SigmaLevels(form="power"|"surface")`. "surface" is σ_h = 1 − (1 − h/N)^s.
+- `forecast.py --sigma-form/--sigma-stretch`. The sponge keeps the same depth
+  in σ on non-default grids; the default sponge rule is unchanged.
+- The explicit-mixing limit 0.4 dz²/K is now part of `PrimitiveSigma.max_dt`.
+  It was imported but never used. On the default grid it is hundreds of
+  seconds and cannot bind.
+- `src/dynamics/test_sigma_levels.py`, 7/7. It includes a test that the
+  default dt is exactly unchanged, and a test that the limit binds on thin
+  bottom layers at the analytic value.
+- The dev tree is `git archive 00d8512` + `l1.patch`; each patched file was
+  checked against the local copy by md5.
+
+**Design.** Forecast only, 12 km, 6 starts (10-16 00Z to 10-18 12Z,
+production analyses), every arm with the production settings (torch,
+`--init-balance exact-free`):
+
+| arm | grid | lowest level | layer at 250 hPa | sponge |
+|---|---|---|---|---|
+| A0 | 20 levels, power 1.4 (now) | 235 m | 651 m | 5 (σ < 0.144) |
+| A1 | 20 levels, surface 1.4 | 51 m | 1575 m | 2 (σ < 0.137) |
+| A2 | 30 levels, surface 1.32 | 38 m | 902 m | 3 (σ < 0.130) |
+| A3 | 40 levels, surface 1.19 | 42 m | 599 m | 5 (σ < 0.147) |
+
+- **Scoring.** Against the production archives' own ASOS and sounding
+  observations. Only pairs held by all arms are used. Night is valid 02–10
+  UTC, day 14–22 UTC.
+- **Predictions** (`scratch/l1/l1_predictions.txt`, md5 d31437e3…, written
+  and saved as an artifact before any L1 forecast ran):
+  - P1: all 24 forecasts complete.
+  - P2: an arm cuts the night bias by ≥ 0.3 K and the night RMSE by ≥ 0.1 K.
+  - P3: A3's day RMSE within ±0.15 K of A0.
+  - P4: A1 aloft ≥ 3 % worse, A3 within 3 %.
+  - P5: A3's 10 m wind within 0.1 m/s of A0.
+  - P6: A3 costs 1.6–2.4× A0, and the initial dt is equal within 5 %.
+- **Scheduling.** A forecast starts only when no cron job is running and the
+  next :45 cycle is further away than that arm's expected run time (25, 25,
+  35 and 45 min). So a 40-level forecast never runs into a production cycle.
+
+## 2026-10-19 — Live verification against persistence: the 12 km beats persistence for 2 m T to 18 h, then loses; MSLP never does
+
+**Context.** The user asked that the model be verified against live data, to
+confirm whether its forecasts are accurate (prompt 216), and reported that
+temperatures had been far off (prompt 217). Then (prompt 218): temperature
+must be 2 m.
+
+**What the verification was doing.**
+- `daily.sh verify` ran once a day at 03:30Z. It fetches the live ASOS
+  observations, and every run since 10-10 completed with status 0.
+- A run is scored only after its whole 24 h window has closed, plus 2 h for
+  observation latency. Together with the daily schedule, scores came up to
+  about 2 days after the run started.
+- The 03:30Z start overlapped the 00Z cycle.
+- There was no reference forecast, and the scores were only in log files.
+
+**2 m temperature.** Every production TMP pair on both grids, 10-15 to 10-17,
+used the similarity operator (`temp_operator: similarity`). It works in two
+steps:
+- the ground temperature and the lowest level give a 2 m value through the
+  surface-layer (Monin–Obukhov) profile;
+- a lapse-rate correction moves that value to the station's height (e.g.
+  −0.15 K for 23 m).
+
+The scores are therefore already 2 m model against 2 m ASOS. Both persistence
+references below are built from the same 2 m observations.
+
+**Method.** Persistence was taken from the observations already in the
+archives, so every comparison is paired (same station, same valid hour):
+- **P0** is each station's observation at the run's start time.
+- **P24** is the observation 24 h before the valid time.
+- Skill is 1 − MSE(model) / MSE(reference) (Murphy 1988), against the better
+  of the two.
+
+No prediction was written before this comparison was computed. It is a
+measurement of production as it stands, not a test of a change.
+
+**Result.** 12 km production, 28 verified cycles from 10-10 06Z to 10-17 00Z;
+2 m T RMSE in K, model / P0 / P24:
+- +1 h: 2.01 / 1.13 / 4.98
+- +6 h: 3.39 / 4.56 / 5.08
+- +12 h: 4.29 / 5.88 / 5.24
+- +18 h: 5.24 / 6.15 / 5.50
+- +24 h: 6.16 / 5.73 / 5.73
+- Pooled over 1–24 h: 4.52 / 5.28 / 5.27. The model beats P24 in 24 of 28
+  cycles. It does not in 10-10 06Z, 10-11 12Z (a tie at 4.08 K), and 10-16
+  12Z and 18Z (the cold outbreak, P-53).
+- The bias grows from about 0 at 3–6 h to +0.9 K at 21–24 h.
+
+3 km, 29 cycles: pooled 4.55 / 5.11 / 5.29; it beats P24 in 22 of 29. Its
+21–24 h sample is smaller, because most 3 km runs stop at the deadline.
+
+Skill against the better persistence, 12 km, last 7 days (the first
+scoreboard output):
+
+| | 1–6 h | 7–12 h | 13–18 h | 19–24 h |
+|---|---|---|---|---|
+| 2 m T | +0.30 | +0.37 | +0.16 | −0.11 |
+| 10 m wind (vector) | −0.68 | −0.03 | +0.12 | +0.17 |
+| MSLP | −0.89 | −0.14 | −0.05 | −0.04 |
+
+**Finding.**
+- The 12 km forecast adds skill over persistence for 2 m temperature to about
+  18 h. After that it is worse than persistence, with a growing warm bias.
+- MSLP never beats persistence at any lead (P-74).
+- The 10 m wind is slow (speed bias −0.7 m/s) and beats persistence only after
+  12 h.
+- At 1 h the model is 2.0 K from the observations, against 1.1 K for P0. So
+  about 2 K of the temperature error is there from the start (analysis and
+  2 m diagnosis), before any forecast error.
+
+**Change (pending the user's push).**
+- `tools/scoreboard.py` with `tools/test_scoreboard.py` (11/11, run on the
+  server's Python 3.9). It writes `data/status/scoreboard.md` and
+  `data/verification_scores.csv` after each verification run.
+- `tools/status_page.py` shows that section first, with alerts when the
+  scoreboard is more than 14 h old or the newest verified run started more
+  than 48 h ago.
+- `daily.sh verify` runs the scoreboard. A scoreboard failure does not change
+  the job's status.
+- The cron verify line moves from `30 3 * * *` to `10 5,11,17,23 * * *`: four
+  times a day, in the gaps between cycles. Each run is then scored about 5 h
+  after its window closes.
+- Dry run on the real archives into scratch: 972 rows in about 100 s; the
+  status page rendered.
+
+**Record repairs made alongside.**
+- `tools/check_refs.py` had been failing with 14 citations since the moisture
+  and ice work. Dudhia (1989), Emanuel (1994) and Murray (1967) were added,
+  resolved against CrossRef.
+- The Kessler (1969) and Klemp and Wilhelmson (1978) entries already existed.
+  Their failures were a capitalised heading in `moisture.py` and a citation
+  split across a line in EQUATIONS.md, both rewritten.
+- Murphy (1988) was added for the skill score.
+- P-83 now has a "Confirmed by" line (J4 and K1; production pending).
+- STRUCTURE.md and the manifest were regenerated.
+
+## 2026-10-18 — Prompt-log statistics recounted from the rows; option picks counted apart
+
+**Context.** The Aggregate table in `docs/PROMPT_LOG.md` was flagged as stale on
+2026-09-22 ("Found in the record", above) and left for the human. On
+2026-10-18 the user asked for the log's open fixes to be done (prompt 215). Before this, prompts 202-213 were backfilled from the archived
+conversation, and a content-free note marks where off-record prompts were left
+out.
+
+**Method.** Every row of the prompt table was parsed by script. A row that
+groups prompts (28-30, 32 and 34, 153-158) counts once per prompt. Lengths
+count only typed prompts, leaving out pasted output and option picks. This is
+a count, not a reclassification: no tag was changed.
+
+**Result.**
+- Prompts 1-60: DIR 19, OBS 13, MET 9, ADM 8, CON 7, COR 2.
+- All 215 prompts (214 with rows): DIR 70 (33 %), OBS 58 (27 %), ADM 56 (26 %),
+  MET 17 (8 %), CON 13 (6 %), COR 5 (2 %).
+- The hand count in the 2026-09-01 entry (direction 37 %, ... correction 5 %;
+  DIR 22 in the table) does not match the rows. ~~Median prompt length 11 words;
+  the four highest-leverage prompts average 19 words.~~ From the verbatim rows:
+  - median 9 words over prompts 1-60, and 8 over all 215;
+  - prompts 41, 50, 53 and 55 have 20, 3, 17 and 26 words, a mean of 16.5;
+  - prompt 53 is 17 words, not 18.
+- Record defects found: prompt 40 has no row; prompt 24 is untagged; prompt 143
+  carries a tag (Q) that is not in the classification.
+
+**Finding.** The qualitative claim stands. The prompts that turned the project
+are short and name no technique, and prompt 50 ("AI to build", 3 words) makes
+that sharper.
+
+What does not stand is the precision of the earlier figures. Since prompt 60
+the mix has shifted toward OBS and ADM, that is, pasted results and the
+logistics of running on the server.
+
+**A measurement problem for the study.** Prompts 200 and 204-209 are picks
+among options the AI wrote, and all seven chose the option marked
+"Recommended". They are tagged DIR, so the DIR share now partly counts
+approval of the AI's direction, not direction from the human. Prompt 201, in
+the same stretch, is a free-text direction the AI had not proposed.
+
+Option picks need to be counted apart from free-text direction. They are now
+recorded with their labels. Rows before 200 do not say whether the pick was
+the recommended option.
+
+**Status.** `docs/PROMPT_LOG.md` changes:
+- the Aggregate table is replaced by a two-column recount;
+- the median and four-prompt figures are corrected, each marked as corrected;
+- an observation on option picks is added;
+- the Phase 5 heading now covers 51-213 (it is updated to 215 with this entry).
+
+The earlier entries are left as written.
+
 ## 2026-10-18 — K1: the exact-free start-up in the 3 km forecast is stable and starts closer to the analysis (one cycle)
 
 **K1** (`scratch/k1/k1_job.sh`; predictions `k1_predictions.txt`, written first). The production 3 km forecast of 2026-10-16 12Z (moist, ice, 40 levels, C kernels, 26 threads, the production edge relaxation) rerun with `--init-balance exact-free` and nothing else changed: the same 3 km analysis and the same 12 km moist edge file (made with exact), the same 124 min deadline, code 5ca4c57 + J2–J4 patches. It waited for the 19:45Z cycle to start and finish (a first launch at 19:34Z was stopped before its forecast: "nothing running" eleven minutes before a cycle is not a gap) and ended at 00:51Z.

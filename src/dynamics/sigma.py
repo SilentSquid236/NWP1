@@ -53,7 +53,7 @@ class SigmaLevels:
     sigma_dot and bound the layers.
     """
 
-    def __init__(self, n_levels=20, p_top=20000.0, stretch=1.4):
+    def __init__(self, n_levels=20, p_top=20000.0, stretch=1.4, form="power"):
         """
         p_top defaults to 200 hPa, not 50 hPa.
 
@@ -80,10 +80,20 @@ class SigmaLevels:
         self.nz = int(n_levels)
         self.p_top = float(p_top)
 
-        # Half levels from 0 (lid) to 1 (ground), stretched so resolution
-        # concentrates near the surface where the boundary layer lives.
+        # Half levels from 0 (lid) to 1 (ground).
+        #   form "power"   (default):  sigma_h = (h/N)**stretch
+        #   form "surface":            sigma_h = 1 - (1 - h/N)**stretch
+        # With stretch > 1, "power" makes the layers THINNEST AT THE LID and
+        # thickest at the ground (at 20 levels and 1.4: bottom dsigma 0.069,
+        # top 0.015; lowest full level ~235 m above ground). An earlier comment
+        # here said it concentrated resolution near the surface; it does the
+        # opposite (P-84, 2026-10-19). "surface" is the mirror image: thinnest
+        # at the ground (20 levels, 1.4: lowest level ~51 m). Test L1.
+        if form not in ("power", "surface"):
+            raise ValueError(f"form must be 'power' or 'surface', not {form!r}")
+        self.stretch, self.form = float(stretch), form
         s = np.linspace(0.0, 1.0, self.nz + 1)
-        self.sigma_half = s ** stretch
+        self.sigma_half = s ** stretch if form == "power" else 1.0 - (1.0 - s) ** stretch
 
         # Full levels at layer midpoints.
         self.sigma = 0.5 * (self.sigma_half[:-1] + self.sigma_half[1:])
@@ -113,6 +123,7 @@ class SigmaLevels:
 
     def __repr__(self):
         return (f"SigmaLevels({self.nz} levels, p_top={self.p_top/100:.0f} hPa, "
+                f"{self.form} {self.stretch:g}, "
                 f"sigma {self.sigma[0]:.3f}..{self.sigma[-1]:.3f})")
 
 

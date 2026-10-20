@@ -726,6 +726,12 @@ def main():
     p.add_argument("--levels", type=int, default=None,
                    help="Number of sigma levels (default: the analysis's pressure-level "
                         "count, 20). CAM stage S5 uses 40")
+    p.add_argument("--sigma-stretch", type=float, default=1.4,
+                   help="exponent of the sigma level placement (default 1.4; EQUATIONS 1.2)")
+    p.add_argument("--sigma-form", choices=("power", "surface"), default="power",
+                   help="power (default): sigma_h = (h/N)^s, layers thinnest at the lid and "
+                        "thickest at the ground; surface: sigma_h = 1 - (1 - h/N)^s, thinnest at "
+                        "the ground (P-84, test L1)")
     p.add_argument("--stochastic", action="store_true",
                    help="Enable SPPT-style tendency perturbations (Buizza et al. 1999)")
     p.add_argument("--seed", type=int, default=None)
@@ -842,11 +848,19 @@ def main():
     nlev = config.N_LEVELS if args.levels is None else int(args.levels)
     if nlev < 4:
         raise SystemExit(f"--levels {nlev}: need at least 4")
-    lev = SigmaLevels(nlev)
+    lev = SigmaLevels(nlev, stretch=args.sigma_stretch, form=args.sigma_form)
     if args.sponge_levels is None:
         # Same depth in sigma as the measured 5 of 20: the top quarter of the
         # half levels, which with the 1.4 stretch is sigma < 0.14 either way.
-        args.sponge_levels = max(1, int(round(5 * nlev / 20)))
+        if args.sigma_form == "power" and args.sigma_stretch == 1.4:
+            args.sponge_levels = max(1, int(round(5 * nlev / 20)))
+        else:
+            # Other placements (P-84, test L1): the count whose lowest sponge
+            # half level is nearest the same sigma depth, (5/20)**1.4 = 0.144,
+            # so the sponge covers the same air whatever the grid.
+            target = (5.0 / 20.0) ** 1.4
+            args.sponge_levels = max(1, int(np.argmin(np.abs(lev.sigma_half - target))))
+        print(f"  sponge levels  : {args.sponge_levels} (sigma < {lev.sigma_half[args.sponge_levels]:.3f})")
 
     fields0, meta0 = load_state(files[0])
     grid = build_grid(fields0, levels)

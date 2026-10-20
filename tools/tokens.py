@@ -65,8 +65,11 @@ DEFAULT_MODEL = "claude-opus-5"
 
 # The subscription actually being paid for. Set this to what is true; the
 # billed total is prorated across the months the project has run.
-PLAN_USD_PER_MONTH = 200.0
-PLAN_NAME = "Max"
+# 2026-10-18: the user stated the billed subscription is $20/month (the earlier
+# $200 "Max" figure was an assumption, never confirmed). The plan name is
+# inferred from the price.
+PLAN_USD_PER_MONTH = 20.0
+PLAN_NAME = "Pro"
 
 # Factor-of-two band on estimated rows; see --estimate for why it is this wide.
 EST_UNCERTAINTY = 2.0
@@ -182,6 +185,10 @@ def report(args):
             print("Below 1x, so at these prices the plan is not being used to "
                   "its list value --\nthe cost here is wall-clock and human "
                   "attention, not tokens.")
+        else:
+            print("Above 1x, so the plan delivers more list-price tokens than "
+                  "it costs; the\nsubscription is the cheaper way to buy this "
+                  "work, and BILLED is the lower number.")
     print("\nAPI-EQUIV is a shadow price for the write-up. It is not money "
           "spent.")
     if any(r["basis"] == "estimated" for r in rows):

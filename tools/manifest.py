@@ -40,6 +40,10 @@ def files():
             continue
         if p.suffix in SKIP_EXT:
             continue
+        # docs/*.pdf are rendered copies of the .md files (desktop only, not in git;
+        # rebuilt with docs_to_pdf.py), so a clone without them is still complete.
+        if p.suffix == ".pdf" and p.parent.name == "docs":
+            continue
         if p == OUT:
             continue
         yield p

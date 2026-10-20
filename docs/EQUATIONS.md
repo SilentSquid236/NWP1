@@ -100,8 +100,17 @@ $$
   the analysis's pressure-level count), $N = 40$ at 3 km (`--levels 40`).
   Lowest full level: $\sigma_{N-1}$ = 0.9654 at 20 levels (about 237-290 m
   above ground), 0.9826 at 40 levels (about 140 m).
-- **Why.** The stretch concentrates resolution near the surface "where the
-  boundary layer lives" (comment). Twenty levels match the analysis so that
+- **Correction (2026-10-19, P-84).** With $s > 1$ this form makes the layers
+  *thinnest at the lid and thickest at the ground*: at 20 levels the bottom
+  $\Delta\sigma$ is 0.069, against 0.050 for even spacing and 0.015 at the
+  top. The comment in `sigma.py` and this section used to say the stretch
+  concentrates resolution near the surface; it does the opposite.
+  `--sigma-form surface` gives the mirror image,
+  $\sigma^h_h = 1 - (1 - h/N)^{s}$, thinnest at the ground (20 levels, 1.4:
+  lowest level about 51 m). Under test in L1; production is unchanged.
+- **Why.** The original intent was to concentrate resolution near the surface
+  "where the boundary layer lives" (former comment); see the correction above.
+  Twenty levels match the analysis so that
   a different count would not silently change the vertical resolution of
   every earlier result (`forecast.py` comment). Forty levels for the CAM
   because convection needs them (S5a: T +0.116 K worse, u -0.100 and
@@ -1365,8 +1374,8 @@ $$
   conserving water and $c_pT + L_vq_v$ to 1e-13; 20 min of rain through 30
   layers closes the column water budget exactly.
 - **Source.** Kessler (1969) as in Klemp and Wilhelmson (1978), via WRF's
-  `module_mp_kessler.F` (WRF version not recorded). Terminal velocity: Klemp
-  and Wilhelmson (1978). Rain evaporation: Klemp and Wilhelmson (1978),
+  `module_mp_kessler.F` (WRF version not recorded). Terminal velocity:
+  Klemp and Wilhelmson (1978). Rain evaporation: Klemp and Wilhelmson (1978),
   eq. 2.14 (as cited in `moisture.py`). Bolton (1980) for $e_s$.
 
 **Gate (test only, `test_moist_bubble.py`).** The Bryan and Fritsch (2002)
@@ -2206,7 +2215,7 @@ Davies, H. C., 1976: A lateral boundary formulation for multi-level prediction m
 
 Deardorff, J. W., 1978: Efficient prediction of ground surface temperature and moisture, with inclusion of a layer of vegetation. *J. Geophys. Res.*, **83**, 1889–1903, https://doi.org/10.1029/JC083iC04p01889. Used in: Eq. 4.11.
 
-\*Emanuel, K. A., 1994: *Atmospheric Convection*. Oxford University Press. Cited in `moisture.py` as "Emanuel 1994, sec. 4.3"; title, publisher and author initials not confirmed from the repository. Used in: Eq. 5.1.
+\*Emanuel, K. A., 1994: *Atmospheric Convection*. Oxford University Press. Cited in `moisture.py` as "Emanuel 1994, sec. 4.3"; confirmed against its CrossRef record on 2026-10-19 and now in `docs/REFERENCES.md`. Used in: Eq. 5.1.
 
 Howard, L. N., 1961: Note on a paper of John W. Miles. *J. Fluid Mech.*, **10**, 509–512, https://doi.org/10.1017/S0022112061000317. Used in: Eq. 4.8.
 
