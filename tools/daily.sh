@@ -71,6 +71,20 @@ UPPER_ARGS=""
 # switch for its 12 km moist run, and NWP_CAM_INIT_BALANCE for the 3 km run.
 INIT_ARGS=""
 [ -n "${NWP_INIT_BALANCE:-}" ] && INIT_ARGS="--init-balance $NWP_INIT_BALANCE"
+# NWP_12KM_MOIST=1 (2026-10-20, prompt 232, user decision "promote the moist NH
+# run"): the 12 km PRODUCT is the moist non-hydrostatic forecast forecast_nhm.npz
+# (40 levels, warm rain and, with NWP_CAM_ICE=1, ice; the file cam_cycle.sh used
+# to make only for the 3 km edges). It runs first, then the dry hydrostatic
+# forecast.npz, which stays as the cycling first guess (ingest_obs.previous_run)
+# until a test switches that too. Maps, the viewer and verification use the
+# product file; verify_pending.py reads NWP_12KM_PRODUCT. Unset = as before.
+MOIST12="${NWP_12KM_MOIST:-0}"
+NH_THREADS="${NWP_CAM_THREADS:-26}"
+ICE_ARG=""; [ "${NWP_CAM_ICE:-0}" = 1 ] && ICE_ARG="--ice"
+if [ "$MOIST12" = 1 ]; then export NWP_12KM_PRODUCT="${NWP_12KM_PRODUCT:-forecast_nhm.npz}"; fi
+product_of() {   # the product file of a run dir: the moist run when promoted and present
+    if [ "$MOIST12" = 1 ] && [ -f "$1/forecast_nhm.npz" ]; then echo forecast_nhm.npz; else echo forecast.npz; fi
+}
 
 mkdir -p "$LOGDIR" "$DATA"
 
@@ -136,7 +150,7 @@ if [ "$MODE" = "verify" ]; then
     for d in "$TENSORS"/obs_*; do
         [ -f "$d/verified.json" ] || continue
         [ -f "$d/maps/index.html" ] && [ "$d/maps/index.html" -nt "$d/verified.json" ] && continue
-        maps --run-dir "$d" --products err_t,err_w
+        maps --run-dir "$d" --forecast "$(product_of "$d")" --products err_t,err_w
     done
     # Skill against persistence from the live-observation archives, for the
     # status page (data/status/scoreboard.md) and data/verification_scores.csv.
@@ -161,7 +175,18 @@ else
 fi
 echo "rundir $RUNDIR" >> "$LOG"
 
-# 2. Forecast, inside what is left of the budget.
+# 2a. The moist NH 12 km forecast: the 12 km product when NWP_12KM_MOIST=1
+# (same command as cam_cycle.sh step 1b, which then reuses this file).
+if [ "$MOIST12" = 1 ] && [ -f "$RUNDIR/obs_analysis_f00.npz" ]; then
+    rm -f "$RUNDIR/forecast_nhm.npz"     # never keep a stale file from an earlier attempt
+    step "moist 12 km forecast (product)" python -u "$ROOT/src/forecast.py" --run-dir "$RUNDIR" \
+        --hours "$HOURS" --output-every 1 --core nh --nh-backend c --advection upwind3 \
+        --nh-physics step --levels 40 --threads "$NH_THREADS" --moist $ICE_ARG \
+        --out "$RUNDIR/forecast_nhm.npz" $INIT_ARGS --deadline-min 30 || true
+fi
+
+# 2b. The dry hydrostatic forecast (the product when NWP_12KM_MOIST is unset;
+# otherwise the next cycle's first guess), inside what is left of the budget.
 USED_MIN=$(( ($(date +%s) - T0) / 60 ))
 LEFT_MIN=$(( BUDGET_MIN - USED_MIN - RESERVE_MIN ))
 if [ "$LEFT_MIN" -lt 5 ]; then
@@ -182,8 +207,12 @@ if [ ! -f "$RUNDIR/forecast.npz" ]; then
 fi
 
 # 3. Maps and the viewer (<rundir>/maps/index.html), for the hours reached.
-if [ -f "$RUNDIR/forecast.npz" ] || [ -f "$RUNDIR/obs_analysis_f00.npz" ]; then
-    maps --run-dir "$RUNDIR"
+# NWP_DEFER_MAPS=1 (set by cam_cycle.sh with NWP_CAM_MAPS=1, 2026-10-20): the
+# caller draws them on spare CPUs so the 3 km run does not wait for them.
+if [ "${NWP_DEFER_MAPS:-0}" = 1 ]; then
+    echo "=== maps deferred to the caller (NWP_DEFER_MAPS=1)" >> "$LOG"
+elif [ -f "$RUNDIR/forecast.npz" ] || [ -f "$RUNDIR/obs_analysis_f00.npz" ]; then
+    maps --run-dir "$RUNDIR" --forecast "$(product_of "$RUNDIR")"
 fi
 
 # Compute ledger (docs/COMPUTE_LEDGER.md): one line per run, kept with the logs.

@@ -41,7 +41,11 @@ VARS = {  # archive variable -> (label, scale, unit)
     "PMSL": ("sea-level pressure", 0.01, "hPa"),
 }
 BANDS = [(1, 6), (7, 12), (13, 18), (19, 24)]
-GRIDS = [("12 km", "verification"), ("3 km", "verification_3km")]
+GRIDS = [("12 km", "verification"), ("3 km", "verification_3km"),
+         # 2026-10-20: when the moist NH run is the 12 km product (NWP_12KM_PRODUCT),
+         # the dry hydrostatic run is verified here over the overlap; shown only if present
+         ("12 km dry run (overlap)", "verification_12dry")]
+OPTIONAL = {"verification_12dry"}
 LAG_ALERT_H = 48.0   # newest verified run start; normal lag is ~26-35 h
 
 
@@ -184,6 +188,8 @@ def main(argv):
     csv_rows = []
     alerts = []
     for grid, sub in GRIDS:
+        if sub in OPTIONAL and not os.path.isdir(os.path.join(data, sub)):
+            continue
         acc = build(read_archive(os.path.join(data, sub, "2*_??", "matches.jsonl")))
         cycles = sorted({k[0] for k in acc})
         if not cycles:

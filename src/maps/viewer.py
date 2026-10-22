@@ -10,10 +10,12 @@ sHHH.js) loaded with <script> tags, which browsers allow from file://.
     up/down = product)
   * hover: the values under the cursor for the product shown
   * click: the model sounding at that grid point, laid out like SHARPpy
-    (Blumberg et al. 2017): skew-T
-    log-p, wind barbs, hodograph and a few indices. The model is dry, so
-    forecast soundings have no dewpoint and no CAPE; hour 0 (the analysis)
-    shows a dewpoint from the analysed humidity.
+    (Blumberg et al. 2017): skew-T log-p, wind barbs, hodograph and indices.
+    Since 2026-10-20 (moist 12 km product): the model dewpoint, the surface
+    parcel's virtual-temperature trace (SHARPpy's Wobus lifting, ported), and
+    the indices make_maps computed for every column (maps/indices.py, checked
+    against SHARPpy); a button saves the sounding as a SHARPpy text file.
+    A dry file still shows temperature and wind only.
 """
 
 import json
@@ -44,16 +46,17 @@ PAGE = r"""<!DOCTYPE html>
  #snd{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;z-index:10;align-items:center;justify-content:center}
  #sndbox{background:#000;border:1px solid #555;padding:8px;position:relative}
  #sndclose{position:absolute;right:10px;top:6px;color:#ddd;cursor:pointer;font:18px sans-serif}
+ #sndsave{position:absolute;right:40px;top:6px;font:12px sans-serif;cursor:pointer}
 </style></head><body>
 <header><b>NWP1</b><span>__RUN__</span><span id="status"></span></header>
 <div id="wrap"><nav id="menu"></nav>
 <main><div id="hours"></div>
 <div id="mapbox"><img id="map" alt="map"><div id="tip"></div></div>
 <div id="note"></div></main></div>
-<div id="snd"><div id="sndbox"><span id="sndclose">&#x2715;</span><canvas id="skew" width="1000" height="640"></canvas></div></div>
+<div id="snd"><div id="sndbox"><span id="sndclose">&#x2715;</span><button id="sndsave" title="Save this sounding as a SHARPpy text file">SHARPpy file</button><canvas id="skew" width="1000" height="760"></canvas></div></div>
 <script>
 const M = __MANIFEST__;
-const groups = ["Surface","Upper air","Analysis","Verification"];
+const groups = ["Surface","Moisture","Upper air","Analysis","Verification"];
 let prod = M.default_product, hour = M.products[prod].hours[0], timer = null;
 window.NWPH = window.NWPH || {}; window.NWPS = window.NWPS || {};
 const cache = {h:{}, s:{}};
@@ -189,12 +192,16 @@ function column(g, sd, hd){
     const ps = val(ch.ps, idx);
     for (let k = m.sigma.length - 1; k >= 0; k--){
       L.push({p: m.p_top + m.sigma[k] * (ps - m.p_top), T: val(ch["T" + k], idx),
-              u: val(ch["u" + k], idx), v: val(ch["v" + k], idx), rh: NaN});
+              u: val(ch["u" + k], idx), v: val(ch["v" + k], idx), rh: NaN,
+              td: ch["Td" + k] ? val(ch["Td" + k], idx) : NaN});
     }
     let z = terr + RD * L[0].T / G0 * Math.log(ps / L[0].p);
     L[0].z = z;
     for (let k = 1; k < L.length; k++){ z += RD * 0.5 * (L[k].T + L[k-1].T) / G0 * Math.log(L[k-1].p / L[k].p); L[k].z = z; }
-    L.unshift({p: ps, T: L[0].T + 0.0065 * (L[0].z - terr), u: L[0].u, v: L[0].v, rh: NaN, z: terr});
+    if (ch.T2) L.unshift({p: ps, T: val(ch.T2, idx), u: val(ch.u10, idx), v: val(ch.v10, idx), rh: NaN, z: terr,
+                          td: ch.Td2 ? val(ch.Td2, idx) : NaN});
+    else L.unshift({p: ps, T: L[0].T + 0.0065 * (L[0].z - terr), u: L[0].u, v: L[0].v, rh: NaN, z: terr, td: NaN});
+    g.ix = {}; for (const name in ch) if (name.startsWith("x_")) g.ix[name.slice(2)] = val(ch[name], idx);
   } else {
     m.levels_hPa.forEach((ph, k) => {
       const z = val(ch["HGT" + k], idx);
@@ -227,6 +234,45 @@ function barb(ctx, x, y, u, v, color){
   if (r >= 5){ if (pos === -len) pos += 4; ctx.beginPath(); ctx.moveTo(0, pos); ctx.lineTo(6, pos - 3); ctx.stroke(); }
   ctx.restore();
 }
+/* SHARPpy's lifting (sharptab/thermo.py, BSD-3): lcltemp, Wobus function, satlift */
+const ROCP = 0.28571426;
+let lastSnd = null;
+function wobf(t){ t = t - 20;
+  if (t <= 0){ const n = 1 + t * (-8.841660499999999e-3 + t * (1.4714143e-4 + t * (-9.671989000000001e-7 + t * (-3.2607217e-8 + t * (-3.8598073e-10))))); return 15.13 / Math.pow(n, 4); }
+  let q = t * (4.9618922e-07 + t * (-6.1059365e-09 + t * (3.9401551e-11 + t * (-1.2588129e-13 + t * (1.6688280e-16)))));
+  q = 1 + t * (3.6182989e-03 + t * (-1.3603273e-05 + q)); return 29.93 / Math.pow(q, 4) + 0.96 * t - 14.8; }
+function satlift(p, thetam){ if (Math.abs(p - 1000) <= 0.001) return thetam;
+  const pw = Math.pow(p / 1000, ROCP); let t1 = (thetam + 273.15) * pw - 273.15, e1 = wobf(t1) - wobf(thetam), rate = 1;
+  let t2 = t1 - e1 * rate, e2 = (t2 + 273.15) / pw - 273.15; e2 += wobf(t2) - wobf(e2) - thetam; let eor = e2 * rate;
+  for (let n = 0; n < 50 && Math.abs(eor) > 0.1; n++){ rate = (t2 - t1) / (e2 - e1); t1 = t2; e1 = e2; t2 = t1 - e1 * rate;
+    e2 = (t2 + 273.15) / pw - 273.15; e2 += wobf(t2) - wobf(e2) - thetam; eor = e2 * rate; }
+  return t2 - eor; }
+function mixr(tdc, p){ const e = 6.112 * Math.exp(17.67 * tdc / (tdc + 243.5)); return 0.622 * e / (p - e); }
+function virtC(tc, r){ return (tc + 273.15) * (1 + r / 0.622) / (1 + r) - 273.15; }
+function parcelTrace(t0, td0, p0){      /* deg C, deg C, hPa -> virtual-T trace every 5 hPa to 200 */
+  const sd = t0 - td0, tl = t0 - sd * (1.2185 + 0.001278 * t0 + sd * (-0.00219 + 1.173e-5 * sd - 0.0000052 * t0));
+  const pl = p0 * Math.pow((tl + 273.15) / (t0 + 273.15), 1 / ROCP), r0 = mixr(td0, p0);
+  const thta = (tl + 273.15) * Math.pow(1000 / pl, ROCP) - 273.15, thetam = thta - wobf(thta) + wobf(tl), pts = [];
+  for (let p = p0; p >= 200; p -= 5){
+    if (p >= pl) pts.push({p: p * 100, tv: virtC((t0 + 273.15) * Math.pow(p / p0, ROCP) - 273.15, r0)});
+    else { const t = satlift(p, thetam); pts.push({p: p * 100, tv: virtC(t, mixr(t, p))}); }
+  }
+  return {pts, pl: pl * 100}; }
+function sharppyText(S){      /* SHARPpy's text format (io/spc_decoder.py): %TITLE%, %RAW% rows, %END% */
+  const v = S.valid, two = n => String(n).padStart(2, "0");
+  const stamp = String(v.getUTCFullYear()).slice(2) + two(v.getUTCMonth() + 1) + two(v.getUTCDate()) + "/" + two(v.getUTCHours()) + "00";
+  const rows = S.L.filter(l => isFinite(l.T) && isFinite(l.z)).map(l => {
+    const td = isFinite(l.td) ? l.td - 273.15 : (isFinite(l.rh) ? dewpoint(l.T, l.rh) : -9999);
+    const spd = Math.hypot(l.u, l.v) / 0.514444, dir = (Math.atan2(-l.u, -l.v) * 180 / Math.PI + 360) % 360;
+    return [(l.p / 100).toFixed(2), l.z.toFixed(2), (l.T - 273.15).toFixed(2), Number(td).toFixed(2), dir.toFixed(2), spd.toFixed(2)].map(x => x.padStart(10)).join(",");
+  });
+  return ["%TITLE%", " NWP1 " + stamp + " " + S.g.lat.toFixed(2) + "," + S.g.lon.toFixed(2), "",
+          "   LEVEL       HGHT       TEMP       DWPT       WDIR       WSPD", "-".repeat(66), "%RAW%", ...rows, "%END%", ""].join("\n"); }
+document.getElementById("sndsave").onclick = e => { e.stopPropagation(); if (!lastSnd) return;
+  const blob = new Blob([sharppyText(lastSnd)], {type: "text/plain"}), a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "NWP1_" + fmt(hour) + "_" + lastSnd.g.lat.toFixed(2) + "N_" + (-lastSnd.g.lon).toFixed(2) + "W.txt";
+  document.body.appendChild(a); a.click(); a.remove(); };
 function sounding(g, sd, hd){
   const {L, terr} = column(g, sd, hd), c = document.getElementById("skew"), ctx = c.getContext("2d");
   document.getElementById("snd").style.display = "flex";
@@ -252,9 +298,18 @@ function sounding(g, sd, hd){
     for (const l of L){ const v = key(l); if (!isFinite(v)) continue;
       if (!started){ ctx.moveTo(xOf(v, l.p), yOf(l.p)); started = true; } else ctx.lineTo(xOf(v, l.p), yOf(l.p)); } ctx.stroke(); };
   line(l => l.T - 273.15, "#ff3030", 2.5);
-  const hasTd = L.some(l => isFinite(l.rh));
-  if (hasTd) line(l => dewpoint(l.T, l.rh), "#30d030", 2.5);
+  const tdOf = l => isFinite(l.td) ? l.td - 273.15 : (isFinite(l.rh) ? dewpoint(l.T, l.rh) : NaN);
+  const hasTd = L.some(l => isFinite(tdOf(l)));
+  if (hasTd) line(tdOf, "#30d030", 2.5);
+  let trace = null;
+  if (isFinite(L[0].td)) {
+    trace = parcelTrace(L[0].T - 273.15, L[0].td - 273.15, L[0].p / 100);
+    ctx.setLineDash([6, 4]); ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 1.6; ctx.beginPath();
+    trace.pts.forEach((q, n) => { if (n === 0) ctx.moveTo(xOf(q.tv, q.p), yOf(q.p)); else ctx.lineTo(xOf(q.tv, q.p), yOf(q.p)); });
+    ctx.stroke(); ctx.setLineDash([]);
+  }
   ctx.restore();
+  lastSnd = {L, g, valid: new Date(new Date(M.init + "Z").getTime() + hour * 3600e3)};
   ctx.fillStyle = "#bbb"; ctx.font = "11px sans-serif";
   for (let p = 100000; p >= PT; p -= 10000) ctx.fillText(String(p / 100), 12, yOf(p) + 4);
   for (let T = -40; T <= 40; T += 10) ctx.fillText(String(T), xOf(T, PB) - 8, Y1 + 14);
@@ -277,6 +332,19 @@ function sounding(g, sd, hd){
   const shear = zt => { const u = interpZ(L, "u", terr + zt) - L[0].u, v = interpZ(L, "v", terr + zt) - L[0].v; return Math.hypot(u, v) / 0.514444; };
   let fzl = NaN; for (let k = 1; k < L.length; k++) if (L[k-1].T >= 273.15 && L[k].T < 273.15){ fzl = L[k-1].z + (L[k-1].T - 273.15) / (L[k-1].T - L[k].T) * (L[k].z - L[k-1].z) - terr; break; }
   const valid = new Date(new Date(M.init + "Z").getTime() + hour * 3600e3);
+  const X = g.ix || {}, has = k => isFinite(X[k]);
+  const f0 = (k, u) => has(k) ? Math.round(X[k]) + (u || "") : "n/a";
+  const f1 = (k, u) => has(k) ? X[k].toFixed(1) + (u || "") : "n/a";
+  const dirspd = (uu, vv) => (String(Math.round(((Math.atan2(-uu, -vv) * 180 / Math.PI + 360) % 360) / 5) * 5).padStart(3, "0") + "\u00b0 " + Math.round(Math.hypot(uu, vv)) + " kt");
+  const moistTxt = has("sbcape") ? [
+    "", "Parcel   CAPE   CIN   (J/kg)   LCL / LFC (m AGL)",
+    "SB     " + f0("sbcape").padStart(6) + " " + f0("sbcin").padStart(6) + "        " + f0("sblcl") + " / " + (has("sblfc") ? f0("sblfc") : "none"),
+    "ML     " + f0("mlcape").padStart(6) + " " + f0("mlcin").padStart(6) + "        " + f0("mllcl"),
+    "MU     " + f0("mucape").padStart(6) + " " + f0("mucin").padStart(6) + "        from " + f0("mup", " mb"),
+    "SB EL " + (has("sbel") ? f0("sbel", " mb") + (X.el_at_lid > 0.5 ? " (model lid: CAPE cut off)" : "") : "none") + "   LI " + f1("li"),
+    "Precipitable water    " + (has("pw") ? X.pw.toFixed(1) + " mm (" + (X.pw / 25.4).toFixed(2) + " in)" : "n/a"),
+    "SRH 0-1 / 0-3 km      " + f0("srh1") + " / " + f0("srh3") + " m\u00b2/s\u00b2",
+    "Bunkers right mover   " + (has("rm_u") ? dirspd(X.rm_u, X.rm_v) : "n/a") + " (0-6 km)"] : [];
   const txt = [
     "NWP1 model sounding   " + fmt(hour) + "   valid " + valid.toISOString().slice(0, 13).replace("T", " ") + "Z",
     g.lat.toFixed(2) + "\u00b0N " + (-g.lon).toFixed(2) + "\u00b0W   column (" + g.sj + ", " + g.si + ")   terrain " + Math.round(terr) + " m",
@@ -286,10 +354,13 @@ function sounding(g, sd, hd){
     "Freezing level        " + (isFinite(fzl) ? Math.round(fzl) + " m AGL" : (T0 < 273.15 ? "at the surface" : "above the top")),
     "Bulk shear 0-1 km     " + Math.round(shear(1000)) + " kt",
     "Bulk shear 0-6 km     " + (isFinite(shear(6000)) ? Math.round(shear(6000)) + " kt" : "n/a"),
-    "", hasTd ? "Dewpoint (green) from the analysed humidity." : "The model is dry: no dewpoint, no CAPE.",
+    ...moistTxt,
+    "", has("sbcape") ? "Dewpoint green; surface parcel (virtual T) white dashed." :
+        (hasTd ? "Dewpoint (green) from the analysed humidity." : "The model is dry: no dewpoint, no CAPE."),
+    has("sbcape") ? "Indices: SHARPpy methods (maps/indices.py); model lid 200 mb." : "",
     "Hodograph: 0-3 km red, 3-6 green, 6-9 yellow, 9-12 cyan (kt).", "Esc or click outside to close."];
-  ctx.fillStyle = "#eee"; ctx.font = "13px Consolas, monospace";
-  txt.forEach((t, k) => ctx.fillText(t, 675, 350 + k * 19));
+  ctx.fillStyle = "#eee"; ctx.font = "12px Consolas, monospace";
+  txt.forEach((t, k) => ctx.fillText(t, 668, 340 + k * 17));
 }
 draw();
 </script></body></html>

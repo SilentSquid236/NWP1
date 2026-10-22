@@ -179,6 +179,11 @@ def hover_channels(d, dt1=None):
         ch.append(("dt1_f", dt1 * 9 / 5))
     if "T_2m" in d:
         ch.append(("t2m_f", tf(d["T_2m"])))
+    for key, name, conv in (("Td2", "td2_f", tf), ("pcp1", "pcp1_in", lambda a: a / 25.4),
+                            ("pcpt", "pcpt_in", lambda a: a / 25.4), ("pw", "pw_in", lambda a: a / 25.4),
+                            ("mucape", "mucape", None), ("sbcape", "sbcape", None), ("mucin", "mucin", None)):
+        if key in d:
+            ch.append((name, conv(d[key]) if conv else d[key]))
     for L in (925, 850, 700, 500, 300, 250):
         below = d[f"below{L}"]
         ch += [(f"t{L}", np.where(below, np.nan, d[f"T{L}"] - 273.15)),
@@ -192,6 +197,9 @@ HOVER_META = {   # name: (label, unit, decimals); winds are shown as dir/speed
     "terrain": ("Terrain", "m", 0), "mslp": ("MSLP", "mb", 1), "thick": ("1000-500 thickness", "dam", 0),
     "t_low_f": ("Temperature (lowest level)", "\u00b0F", 0), "dt1_f": ("1-hr change", "\u00b0F", 1),
     "t2m_f": ("2 m temperature", "\u00b0F", 0), "wind_low": ("Wind (lowest level)", "kt", 0),
+    "td2_f": ("2 m dewpoint", "\u00b0F", 0), "pcp1_in": ("1-hr precipitation", "in", 2),
+    "pcpt_in": ("Total precipitation", "in", 2), "pw_in": ("Precipitable water", "in", 2),
+    "mucape": ("MU CAPE", "J/kg", 0), "sbcape": ("SB CAPE", "J/kg", 0), "mucin": ("MU CIN", "J/kg", 0),
     "omega700": ("700 mb vertical velocity", "-\u00b5b/s", 1), "avort500": ("500 mb abs. vorticity", "10\u207b\u2075 s\u207b\u00b9", 1),
     **{f"t{L}": (f"{L} mb temperature", "\u00b0C", 1) for L in (925, 850, 700, 500, 300, 250)},
     **{f"z{L}": (f"{L} mb height", "dam", 0) for L in (925, 850, 700, 500, 300, 250)},
@@ -199,15 +207,76 @@ HOVER_META = {   # name: (label, unit, decimals); winds are shown as dir/speed
 }
 
 
-SOUNDING_STRIDE = 2      # soundings on every 2nd grid point (24 km): ~0.5 MB an hour
+SOUNDING_STRIDE = 2      # analysis (hour 0) soundings: every 2nd grid point
+SOUNDING_FULL_MAX = 40000   # grids up to this many columns get a sounding at EVERY point
 
 
-def sounding_channels_sigma(f, i, stride=SOUNDING_STRIDE):
-    p, T, u, v, Z, ps = derive.column_for_sounding(f, i)
+def sounding_stride(ny, nx):
+    """1 (every column) for the 12 km grids; 2 for the 3 km grid (6 km), to keep the
+    per-hour data file near the 12 km one in size (2026-10-20)."""
+    return 1 if ny * nx <= SOUNDING_FULL_MAX else 2
+
+
+def short_first_guess(fg):
+    """'previous_forecast:/data5/.../obs_20261020_06/forecast.npz' -> 'previous forecast
+    (obs_20261020_06)'. The full path ran into the right-hand footer text."""
+    kind, _, path = str(fg).partition(":")
+    if not path:
+        return kind
+    parts = Path(path).parts
+    run = next((q for q in reversed(parts) if q.startswith("obs_")), Path(path).name)
+    return f"{kind.replace('_', ' ')} ({run})"
+
+
+def moist_hour(f, i, stride):
+    """The sounding profile of snapshot i and, for a moist file, the indices of
+    maps/indices.py on the sounding grid (every `stride`-th column). Computed once
+    per hour and shared by the moist maps, the hover data and the soundings."""
+    from maps import indices
+    p, T, r, z, u, v = derive.sounding_profile(f, i)
+    out = {"prof": (p, T, r, z, u, v), "stride": stride, "idx": None}
+    if np.isfinite(r).any():
+        sub = lambda a: a[:, ::stride, ::stride]
+        shp = sub(p).shape
+        fl = lambda a: sub(a).reshape(shp[0], -1)
+        ter = np.asarray(f["terrain"], float)[::stride, ::stride].reshape(-1)
+        with np.errstate(all="ignore"):
+            idx = indices.column_indices(fl(p), fl(T), fl(r), fl(z), fl(u), fl(v), ter)
+        out["idx"] = {k: np.asarray(a, float).reshape(shp[1:]) for k, a in idx.items()}
+    return out
+
+
+def full_grid(a, stride, shape):
+    """A field on every stride-th column back on the full grid (nearest column)."""
+    if stride == 1:
+        return a
+    return np.repeat(np.repeat(a, stride, axis=0), stride, axis=1)[:shape[0], :shape[1]]
+
+
+def sounding_channels_sigma(f, i, stride=SOUNDING_STRIDE, mh=None):
+    """Model levels T{k}, u{k}, v{k} (k = 0 at the lid, as before), and since
+    2026-10-20 (prompt 232): the surface level T2, u10, v10 from the verification's
+    operators (derive.sounding_profile) and, for a moist file, the dewpoint Td{k}
+    and Td2 and every index of maps/indices.py as x_<name>, per column. The indices
+    follow SHARPpy's methods and were checked against SHARPpy on 300 model columns
+    (docs/RESEARCH_LOG.md, 2026-10-20)."""
+    from moisture import dewpoint
+    mh = mh if mh is not None else moist_hour(f, i, stride)
+    p, T, r, z, u, v = mh["prof"]
     s = (slice(None, None, stride), slice(None, None, stride))
-    ch = [("ps", ps[s])]
-    for k in range(T.shape[0]):
-        ch += [(f"T{k}", T[k][s]), (f"u{k}", u[k][s]), (f"v{k}", v[k][s])]
+    L = T.shape[0] - 1
+    moist = bool(np.isfinite(r).any())
+    ch = [("ps", p[0][s])]
+    for k in range(L):
+        j = L - k                      # profile index: 0 = surface, 1 = lowest model level
+        ch += [(f"T{k}", T[j][s]), (f"u{k}", u[j][s]), (f"v{k}", v[j][s])]
+        if moist:
+            ch.append((f"Td{k}", np.minimum(dewpoint(r[j], p[j]), T[j])[s]))
+    ch += [("T2", T[0][s]), ("u10", u[0][s]), ("v10", v[0][s])]
+    if moist:
+        ch.append(("Td2", np.minimum(dewpoint(r[0], p[0]), T[0])[s]))
+        for name, a in (mh["idx"] or {}).items():
+            ch.append((f"x_{name}", a))
     return ch
 
 
@@ -277,7 +346,15 @@ def main():
         dy, dx = spacing_m(domain, ny, nx)
         terrain = np.asarray(np.load(run_dir / "terrain.npz")["terrain"], float)
     cycle = run_time_of(run_dir, f)
+    # The label names the run actually mapped (2026-10-20: the moist NH run is the
+    # 12 km product when NWP_12KM_MOIST=1; the same code maps the 3 km runs).
+    moist = f is not None and "qv" in f
+    km = float(dx) / 1000.0
+    render.MODEL_LABEL = (f"NWP1 {km:.0f} km ({'moist' if moist else 'dry'} "
+                          f"{'non-hydrostatic' if moist or f is not None and np.shape(f['theta'])[1] == 40 else 'sigma'} model, "
+                          "observation-only analysis)")
     m = render.Mapper(lat, lon, geography.load_boundaries(domain))
+    sst = sounding_stride(*lat.shape)
 
     stopped = str(f.get("stopped", "")) if f is not None else ""
     status = ("forecast " + stopped) if stopped else ("forecast complete" if f is not None else "analysis only")
@@ -285,7 +362,7 @@ def main():
     av = run_dir / "availability.json"
     if av.exists():
         first_guess = json.load(open(av)).get("first_guess", "")
-    left = f"first guess: {first_guess}" if first_guess else ""
+    left = f"first guess: {short_first_guess(first_guess)}" if first_guess else ""
 
     # Hour -> source. Snapshots land a few seconds after each output time
     # (a whole number of model steps), so match the nearest within 0.1 h.
@@ -309,6 +386,20 @@ def main():
         dt1 = t_low[hour] - t_low[prev] if prev in t_low and a.every == 1 else None
         if dt1 is not None:
             d["dT1"] = dt1
+        mh = None
+        if kind == "f" and moist:
+            from moisture import dewpoint
+            mh = moist_hour(f, i, sst)
+            p_, T_, r_ = mh["prof"][0], mh["prof"][1], mh["prof"][2]
+            d["T_2m"] = T_[0]
+            d["Td2"] = np.minimum(dewpoint(r_[0], p_[0]), T_[0])
+            if "rain" in f:
+                acc = np.asarray(f["rain"][i], float)
+                d["pcpt"] = acc
+                d["pcp1"] = acc - np.asarray(f["rain"][i - 1], float) if i > 0 else acc
+            if mh["idx"] is not None:
+                for k_ in ("pw", "mucape", "sbcape", "mucin"):
+                    d[k_] = full_grid(mh["idx"][k_], sst, T_[0].shape)
         sub = render.time_labels(cycle, hour)
         right = "hour 0 = the analysis" if kind == "a" else (
             f"run stopped: {stopped}" if stopped else "")
@@ -317,6 +408,13 @@ def main():
                 continue
             fig = fn(m, d, sub, (left, right))
             fig.savefig(out / f"{key}_f{hour:03d}.png", dpi=render.DPI); plt.close(fig); n_img += 1
+        if mh is not None:
+            for key, fn in render.MOIST_PRODUCTS.items():
+                need = {"td2": "Td2", "pcp1": "pcp1", "pcpt": "pcpt", "pw": "pw", "cape": "mucape"}[key]
+                if not want(key) or need not in d:
+                    continue
+                fig = fn(m, d, sub, (left, right))
+                fig.savefig(out / f"{key}_f{hour:03d}.png", dpi=render.DPI); plt.close(fig); n_img += 1
         if kind == "a":
             sfc, ua, withheld = station_reports(run_dir, cycle, domain)
             note = (left, "analysis and the reports it was built from")
@@ -335,9 +433,9 @@ def main():
             snd = ({"stride": SOUNDING_STRIDE, "nx": int(np.ceil(lat.shape[1] / SOUNDING_STRIDE)),
                     "kind": "plev", "levels_hPa": [float(x) for x in an["levels_hPa"]],
                     **pack(sounding_channels_plev(an))} if kind == "a" else
-                   {"stride": SOUNDING_STRIDE, "nx": int(np.ceil(lat.shape[1] / SOUNDING_STRIDE)),
+                   {"stride": sst, "nx": int(np.ceil(lat.shape[1] / sst)),
                     "kind": "sigma", "sigma": [float(x) for x in f["sigma"]],
-                    "p_top": float(f["p_top"]), **pack(sounding_channels_sigma(f, i))})
+                    "p_top": float(f["p_top"]), **pack(sounding_channels_sigma(f, i, sst, mh))})
             write_js(out / "data" / f"s{hour:03d}.js", "NWPS", hour, snd)
 
     ver = verification_pairs(run_dir)
@@ -365,9 +463,11 @@ def main():
             "dlat": float(lat[1, 0] - lat[0, 0]), "dlon": float(lon[0, 1] - lon[0, 0])}
     viewer.write_viewer(out / "index.html", f"{run_dir.name}  (init {cycle:%Y-%m-%d %H}Z)",
                         products, status,
-                        "Hover for values; click for the model sounding. Near-surface fields are "
-                        "the lowest model level. The model is dry: no precipitation or moisture "
-                        "products, and forecast soundings have no dewpoint.",
+                        ("Hover for values; click for the model sounding. Near-surface fields are "
+                         "the lowest model level. " +
+                         ("Moist model: forecast soundings carry the model dewpoint." if moist else
+                          "The model is dry: no precipitation or moisture products, and forecast "
+                          "soundings have no dewpoint.")),
                         extra={"frame": m.pixel_frame(), "grid": grid, "hover_meta": HOVER_META,
                                "data_hours": data_hours, "init": cycle.isoformat()})
     print(f"maps: {n_img} images drawn, {len(products)} products in the viewer, hours "

@@ -71,6 +71,14 @@ export NWP_RESOURCE_FRACTION="${NWP_RESOURCE_FRACTION:-0.25}"
 # (taskset -c 0,2,..,50 and 1,3,..,51): 0.81-0.82 s/step each, against 1.25
 # when both use the default placement and land on the same cores.
 export OMP_PLACES="${OMP_PLACES:-cores}" OMP_PROC_BIND="${OMP_PROC_BIND:-close}"
+# Maps (2026-10-20, prompt 232): NWP_CAM_MAPS=1 draws the 12 km maps in the
+# background as soon as the 12 km product exists, and the 3 km maps (with
+# click-to-sounding data) after the 3 km forecast, both niced and pinned to
+# NWP_MAP_CPUS, outside the "close" cores of the 26-thread 3 km run (0-25).
+# A map failure never changes the cycle status. Unset = daily.sh draws the
+# 12 km maps itself before the 3 km run, and there are no 3 km maps (as before).
+CAM_MAPS="${NWP_CAM_MAPS:-0}"
+MAP_CPUS="${NWP_MAP_CPUS:-50,51}"
 mkdir -p "$LOGDIR" "$T3" "$NWP_CBUILD"
 
 latest_cycle() {          # as in daily.sh
@@ -109,6 +117,8 @@ echo "NWP1 CAM cycle $RUN, $HOURS h, budget $BUDGET_MIN min, $CAM_THREADS thread
 
 # 1. The 12 km cycle
 if [ -z "${NWP_SKIP_12KM:-}" ]; then
+    export NWP_CAM_THREADS="$CAM_THREADS"   # daily.sh: threads of its moist 12 km run
+    [ "$CAM_MAPS" = 1 ] && export NWP_DEFER_MAPS=1
     step "12 km cycle (daily.sh)" bash "$ROOT/tools/daily.sh" "$RUN" "$HOURS" || true
 fi
 # Edges: the 12 km forecast of the same cycle; NWP_CAM_BOUNDARY overrides the
@@ -121,6 +131,22 @@ for f in "$D12/obs_analysis_f00.npz" "$BFC"; do
     fi
 done
 
+# 1a. The 12 km maps, in the background (NWP_CAM_MAPS=1).
+draw_maps() {   # run dir, forecast file name
+    nice -n 19 taskset -c "$MAP_CPUS" env OMP_NUM_THREADS=2 MKL_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 \
+        NWP_RESOURCE_FRACTION=0.02 timeout 3600 python -u "$ROOT/src/make_maps.py" --run-dir "$1" --forecast "$2"
+}
+MAPS_PID=""
+if [ "$CAM_MAPS" = 1 ] && [ -z "${NWP_SKIP_12KM:-}" ]; then
+    P12=forecast.npz
+    if [ "${NWP_12KM_MOIST:-0}" = 1 ] && [ -f "$D12/forecast_nhm.npz" ] && \
+       [ "$(stat -c %Y "$D12/forecast_nhm.npz")" -ge "$T0" ]; then P12=forecast_nhm.npz; fi
+    echo "=== 12 km maps ($P12) started in the background on CPUs $MAP_CPUS  $(date -u +%FT%TZ)" >> "$LOG"
+    ( M0=$(date +%s); draw_maps "$D12" "$P12" > "$LOGDIR/maps12_$STAMP.log" 2>&1
+      echo "=== 12 km maps finished rc=$?  $(date -u +%FT%TZ)  ($(( ($(date +%s) - M0) / 60 )) min)" >> "$LOG" ) &
+    MAPS_PID=$!
+fi
+
 # 1b. Moist runs: a moist 12 km NH forecast for the 3 km edges (E4 nhMb set-up:
 # bounded start-up is the forecast.py default). Same threads as the 3 km run.
 CAM_MOIST_ARGS=""
@@ -128,11 +154,17 @@ if [ "$CAM_MOIST" = 1 ]; then
     CAM_MOIST_ARGS="--moist $CAM_ICE_ARG"
     if [ -z "${NWP_CAM_BOUNDARY:-}" ]; then
         BFM="$D12/forecast_nhm.npz"
+        # NWP_12KM_MOIST=1 (2026-10-20): daily.sh (step 1) has just made this file as
+        # the 12 km product; reuse it when it was written after this cycle started (T0).
+        if [ "${NWP_12KM_MOIST:-0}" = 1 ] && [ -f "$BFM" ] && [ "$(stat -c %Y "$BFM")" -ge "$T0" ]; then
+            echo "=== 12 km moist NH forecast: reusing the 12 km product $BFM" >> "$LOG"
+        else
         rm -f "$BFM"          # never nest in a stale file from an earlier attempt
         step "12 km moist NH forecast (3 km edges)" python -u "$ROOT/src/forecast.py" --run-dir "$D12" \
             --hours "$HOURS" --output-every 1 --core nh --nh-backend c --advection upwind3 \
             --nh-physics step --levels 40 --threads "$CAM_THREADS" --moist $CAM_ICE_ARG --out "$BFM" \
             $INIT12_ARGS --deadline-min 30 || true
+        fi
         if [ -f "$BFM" ]; then BFC="$BFM"
         else echo "=== moist 12 km forecast missing: 3 km edges from $BFC (no moisture at the edges)" >> "$LOG"; fi
     fi
@@ -169,5 +201,17 @@ log_compute() {   # script, threads
     echo "$(date -u -d @"$T0" +%FT%TZ),$RUN,$1,$(awk "BEGIN{printf \"%.1f\", $wall/60}"),$2,$(awk "BEGIN{printf \"%.2f\", $wall*$2/3600}"),$STATUS" >> "$f"
 }
 log_compute cam_cycle.sh "$CAM_THREADS"
+
+# 4. The 3 km maps and viewer (NWP_CAM_MAPS=1), after the 12 km maps are done.
+if [ "$CAM_MAPS" = 1 ]; then
+    [ -n "$MAPS_PID" ] && wait "$MAPS_PID"
+    if [ -f "$D3/forecast.npz" ]; then
+        M0=$(date +%s)
+        echo "=== 3 km maps on CPUs $MAP_CPUS  $(date -u +%FT%TZ)" >> "$LOG"
+        draw_maps "$D3" forecast.npz >> "$LOG" 2>&1
+        echo "    3 km maps rc=$?  ($(( ($(date +%s) - M0) / 60 )) min)" >> "$LOG"
+        echo "$(date -u -d @"$M0" +%FT%TZ),$RUN,maps_3km,$(awk "BEGIN{printf \"%.1f\", ($(date +%s)-$M0)/60}"),2,$(awk "BEGIN{printf \"%.2f\", ($(date +%s)-$M0)*2/3600}"),0" >> "$LOGDIR/compute_hours.csv"
+    fi
+fi
 echo "=== done  $(date -u +%FT%TZ)  (+$(( ($(date +%s) - T0) / 60 )) min)  status=$STATUS" >> "$LOG"
 exit "$STATUS"

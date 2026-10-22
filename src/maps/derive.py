@@ -160,6 +160,43 @@ def column_for_sounding(f, i):
     return p, T, uc, vc, Z, ps
 
 
+def sounding_profile(f, i):
+    """
+    The click-sounding columns of snapshot i (2026-10-20): (p, T, r, z, u, v), each
+    [L+1, Y, X] with level 0 the SURFACE and the model levels above it, rising.
+
+    The surface level uses the verification's own operators (src/verification/
+    surface_similarity.surface_diagnostics; P-78): the 10 m wind and the 2 m
+    temperature from the lowest level, the ground temperature tg and the roughness
+    map z0, with p = p_s and z = terrain (+2 m for T is ignored in height). The
+    2 m mixing ratio is the lowest level's, capped at saturation at the 2 m
+    temperature. A dry file (no qv) gives r = NaN.
+    """
+    import os
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "verification"))
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "dynamics"))
+    from surface_similarity import surface_diagnostics
+    from moisture import qsat
+    p, T, uc, vc, Z, ps = column_for_sounding(f, i)
+    terrain = np.asarray(f["terrain"], dtype=float)
+    q = np.asarray(f["qv"][i], dtype=float) if "qv" in f else np.full(T.shape, np.nan)
+    z1 = Z[-1] - terrain
+    th1 = T[-1] * (P0 / p[-1]) ** KAPPA
+    z0 = np.asarray(f["z0"], dtype=float) if "z0" in f else 0.1
+    if "tg" in f:
+        thg = np.asarray(f["tg"][i], dtype=float) * (P0 / ps) ** KAPPA
+        f10, th2, _, _ = surface_diagnostics(np.hypot(uc[-1], vc[-1]), th1, thg, z1, z0=z0)
+        T2 = th2 * (ps / P0) ** KAPPA
+    else:                                   # no land surface in the file: neutral 10 m, dry-adiabatic 2 m
+        f10 = np.log(10.0 / z0) / np.log(np.maximum(z1, 20.0) / z0)
+        T2 = th1 * (ps / P0) ** KAPPA
+    r2 = np.minimum(q[-1], qsat(T2, ps))
+    st = lambda sfc, col: np.concatenate([sfc[None], col[::-1]], axis=0)
+    return (st(ps, p), st(T2, T), st(r2, q), st(terrain, Z),
+            st(uc[-1] * f10, uc), st(vc[-1] * f10, vc))
+
+
 def coriolis(lat):
     return 2.0 * OMEGA * np.sin(np.radians(lat))
 

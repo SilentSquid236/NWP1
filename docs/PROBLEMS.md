@@ -39,6 +39,35 @@ hypothesis, **G** missing physics, **H** performance, **I** logistics.
 # OPEN
 
 
+## P-85 — The grid is a constant-dx beta-plane, but the cells sit on a lat/lon mesh
+
+**Category** B · **First seen** 2026-10-20 (found while sizing N2's continental outer level, prompt 240) · **Status** OPEN
+
+**What the code does.**
+- `forecast.build_grid` and `geo.spacing_m`: dx = (lon span) × 111.32 km × cos(mid-latitude) / nx, one value for the whole grid. `dynamics/grid.py`: f = f0 + β(y − y0).
+- `geo.cell_centres`, by contrast, places the cells evenly in latitude and longitude, and the analysis, the nesting and the verification all use those positions.
+- So the model's east–west distances are right only at the box's middle latitude.
+
+**Size of the error** (true cell width / model cell width − 1, at the southern / northern edge; and the beta-plane Coriolis error):
+
+| box | spacing | Coriolis |
+|---|---|---|
+| production 12 km and 3 km, 37–47.5° N | +8 % / −9 % | under 0.5 % |
+| N1 P and U, 34–50.5° N | +12 % / −14 % | about 1 % |
+| a continental lat/lon box, 24–55° N | +18 % / −26 % | 3–5 % |
+
+**Consequences.**
+- East–west advection is too fast in the south of the box and too slow in the north, by these percentages.
+- East–west pressure gradients are misjudged by the same factors, so the analysed winds are out of balance with the model's own gradients.
+- N1's larger boxes carry more of this error than the control box. Read their scores with that in mind.
+
+**Decision for N2 (user, 2026-10-20).** The outer level gets an evenly spaced Lambert conformal grid. Its standard parallels were then chosen as 30° and 50° N (central meridian 92° W, 36 km, 192 × 123), for accuracy over the 12 km box. The map factor stays within 0.985–1.002 over 34–50.5° N and 0.985–1.055 over 24–60° N, rising to 1.086 only in the far ocean and Arctic corners. So the existing dynamics can ignore it (under 1.5 % where the outer level feeds the 12 km edges). Parallels of 33° and 45° N were considered first: 0.995–1.016 over the 12 km box, but up to 1.107 at the northern corners. This needs:
+- Coriolis from each cell's latitude;
+- wind rotation between grid and compass directions (up to 22° at ±35° from the central meridian);
+- projection-aware station lookup and regridding.
+
+The production levels keep the lat/lon box for now. Map factors in the dynamics, which would fix those too, are deferred.
+
 ## P-83 — The exact start-up pushes each level's net divergence out through the north and east edges
 
 **Category** B · **First seen** 2026-10-15 (test J2 diagnostics) · **Status** FIXED in production, pending confirmation. The J4 start-up `exact-free` is the cron setting for both runs from 2026-10-18 23:20Z: `NWP_INIT_BALANCE=exact-free` (12 km) and `NWP_CAM_INIT_BALANCE=exact-free` (3 km), with commit 00d8512. Tests: start-up 10/10, core 8/8. The first cycle to use it is 2026-10-19 00Z (01:45Z run). Confirmation is still to come: aloft error against persistence, the 3 km step and hours reached, and 10 m v (J4-P5) over the next cycles. ~~FIX AVAILABLE (J4: `--init-balance exact-free`, opt-in)~~
@@ -145,6 +174,14 @@ hypothesis, **G** missing physics, **H** performance, **I** logistics.
 **Contrast.** Over E7's 20 September cycles the same physics gave about 6× too little rain. The error depends on the regime, not a simple scale factor.
 
 **Next.** Score against the stations in the area (CYPQ, CYTR, CYOW, CTNK and others) once the window closes; then a moisture budget at the maximum (precipitable water, moisture-flux convergence, surface evaporation).
+
+**Update 2026-10-20 (M12 rain check, before promoting the moist 12 km run).** Hourly precipitation (APCP1H) against US ASOS stations only. Canadian stations (C???) are left out because their METARs report missing precipitation as zero, so this check cannot see the Bancroft maximum itself.
+- 26 moist 12 km cycles (10-12 06Z to 10-19 00Z). 25 of them are paired station by station with the 3 km run: 142,510 station-hours.
+- Totals over the paired set: 12 km 13,433 mm, 3 km 12,439 mm, observed 13,457 mm. Ratios 1.00 and 0.92. There is no domain-wide wet bias over the US network.
+- Hours with at least 1 mm: frequency bias 0.69 (too few heavy hours), hit rate 0.10. The error is placement and timing, not total amount.
+- Per cycle, the 12 km/observed ratio runs from 0.01 to 3.9. Examples: 10-13 18Z 3.88; 10-16 18Z 0.01 (13 mm forecast against 1,165 mm observed, an event the model missed); the dry 10-18 cycles 46–89 mm against under 1 mm observed (light spurious rain).
+- Only the unpaired first cycle (10-12 06Z) shows the old excess: 4.8× (1,271 against 264 mm).
+- So the 4–10× of this entry is a local extreme in the Ontario event, not a scale factor on the domain. Status stays OPEN; the Ontario station check under **Next** is still to do.
 
 ## P-80 — A run pinned to one socket used the other socket's memory
 
@@ -802,6 +839,12 @@ The 3 km CAM scores 2.97 K against 3.22 K for AM. What stays open in P-59 is sha
 **Ruled out.** Lowering the lowest level by itself, with the current surface physics, as a fix for the night warm bias or the 2 m T error (L1: P2, P3 and P5 refuted). The 235 m height is not the main cause.
 
 **Open.** The surface physics and diagnostics were built and tuned with a ~235 m level: the 150 m fixed mixing length, z0 = 1 m (test AM), the Louis exchange and the force-restore coupling. A low level may help only together with mixing that scales with height near the ground (and implicit mixing to go below ~40 m). Production keeps 20 levels, power 1.4.
+
+**Consequence for the soundings (2026-10-20).**
+- The click-to-sounding profiles have a surface point from the similarity diagnostic (2 m T and dewpoint, 10 m wind, at the surface pressure), followed directly by the model levels.
+- Between the surface and the lowest model level the profile is a straight line. A nocturnal inversion or a superadiabatic layer that is shallower than the lowest level cannot appear.
+- So surface-based CIN, the SB parcel's LCL and the 0–1 km shear and SRH depend on the diagnostic and on this one interval. The ML parcel (lowest 100 hPa) and the MU parcel depend on it less.
+- The viewer shows the levels as they are, with no interpolation.
 
 ---
 

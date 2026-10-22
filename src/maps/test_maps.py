@@ -177,12 +177,19 @@ def test_every_product_renders():
          "hours": np.array([1.0]), "lat": lat, "lon": lon, "dx": dx, "dy": dy}
     d = derive.snapshot(f, 0)
     d["dT1"] = np.full(terrain.shape, -0.8)
+    # moist fields (synthetic): dewpoint gradient, a rain blob, PW and CAPE ramps
+    yy, xx = np.mgrid[0:ny, 0:nx]
+    d["Td2"] = 270.0 + 0.8 * xx
+    d["pcpt"] = 30.0 * np.exp(-((xx - 12) ** 2 + (yy - 10) ** 2) / 20.0)
+    d["pcp1"] = 0.3 * d["pcpt"]
+    d["pw"] = 10.0 + 2.0 * xx
+    d["mucape"] = 120.0 * xx
     m = render.Mapper(lat, lon, {"coast": (np.array([-75.0, -72.0, np.nan], np.float32),
                                            np.array([40.0, 41.0, np.nan], np.float32))})
     sub = render.time_labels(__import__("datetime").datetime(2026, 9, 21, 12), 1)
     sizes = {}
     with tempfile.TemporaryDirectory() as tmp:
-        for key, fn in render.FORECAST_PRODUCTS.items():
+        for key, fn in {**render.FORECAST_PRODUCTS, **render.MOIST_PRODUCTS}.items():
             fig = fn(m, d, sub, ("left", "right"))
             path = Path(tmp) / f"{key}.png"
             fig.savefig(path, dpi=render.DPI)
@@ -192,8 +199,8 @@ def test_every_product_renders():
         fig = render.product_error(m, {"terrain": terrain}, sub, ("", ""), pairs, "t")
         fig.savefig(Path(tmp) / "err.png", dpi=render.DPI); render.plt.close(fig)
         sizes["err_t"] = (Path(tmp) / "err.png").stat().st_size
-    report("rendering: every forecast product and the error map write a PNG",
-           len(sizes) == len(render.FORECAST_PRODUCTS) + 1 and min(sizes.values()) > 10_000,
+    report("rendering: every forecast and moist product and the error map write a PNG",
+           len(sizes) == len(render.FORECAST_PRODUCTS) + len(render.MOIST_PRODUCTS) + 1 and min(sizes.values()) > 10_000,
            f"{len(sizes)} images, {min(sizes.values()) // 1000}-{max(sizes.values()) // 1000} kB")
 
 

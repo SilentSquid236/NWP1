@@ -48,6 +48,12 @@ PRODUCTS = {
     "an_mslp": ("Analysis", "MSLP & station reports", ["mslp"]),
     "an_850": ("Analysis", "850 mb & soundings", ["t850", "z850", "wind850"]),
     "an_500": ("Analysis", "500 mb & soundings", ["t500", "z500", "wind500"]),
+    # Moist 12 km product (2026-10-20, prompt 232): only drawn for a moist file
+    "td2": ("Moisture", "2 m dewpoint", ["td2_f", "t2m_f"]),
+    "pcp1": ("Moisture", "1-hr precipitation", ["pcp1_in", "pcpt_in"]),
+    "pcpt": ("Moisture", "Total precipitation", ["pcpt_in", "pcp1_in"]),
+    "pw": ("Moisture", "Precipitable water", ["pw_in"]),
+    "cape": ("Moisture", "Most-unstable CAPE", ["mucape", "sbcape", "mucin"]),
     "err_t": ("Verification", "Temperature error by station", []),
     "err_w": ("Verification", "Wind speed error by station", []),
 }
@@ -396,6 +402,74 @@ def product_w300(m, d, sub, note):
 
 def product_w250(m, d, sub, note):
     return _jet(m, d, sub, note, 250)
+
+
+# ---------------------------------------------------------------------------
+# Moist products (2026-10-20): drawn only when the forecast file has moisture
+# ---------------------------------------------------------------------------
+
+def _filled(m, d, sub, note, title, field, levels, cmap, unit, ticks, extend="max", under=None):
+    """Filled contours with ONE colour per bin (BoundaryNorm): a short colour list
+    is not stretched over unevenly spaced levels such as 0.01-0.05-0.1-...-4 in."""
+    from matplotlib.colors import BoundaryNorm
+    fig, ax = m.frame(title, sub, *note)
+    cm = cmap if not isinstance(cmap, str) else plt.get_cmap(cmap).copy()
+    if under is not None:
+        cm.set_under(under)
+    norm = BoundaryNorm(levels, cm.N, extend=extend)
+    cf = ax.contourf(m.X, m.Y, field, levels=levels, cmap=cm, norm=norm, extend=extend, zorder=1)
+    m.boundaries(ax)
+    m.colorbar(fig, cf, unit, ticks=ticks)
+    return fig
+
+
+def product_td2(m, d, sub, note):
+    tf = _t_f(d["Td2"])
+    fig = _filled(m, d, sub, note, "2 m dewpoint (\u00b0F)", tf, np.arange(-10, 82, 2), "BrBG", "\u00b0F",
+                  np.arange(-10, 81, 10), extend="both")
+    return fig
+
+
+PCP_LEVELS = [0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0]
+
+
+# Precipitation colours in the usual NWS order (greens, yellows/oranges, reds,
+# magentas) so the light bins stay visible; one colour per bin above 0.01 in.
+PCP_COLORS = ["#a6e3a6", "#5cc45c", "#2a9a2a", "#14641e", "#f5e64a", "#f5b02a",
+              "#ee7a1c", "#d6301a", "#a0103c", "#c060c8"]
+
+
+def _pcp_cmap():
+    from matplotlib.colors import ListedColormap
+    cm = ListedColormap(PCP_COLORS + ["#f0c8f0"])   # last entry = above 4 in
+    return cm
+
+
+def product_pcp1(m, d, sub, note):
+    return _filled(m, d, sub, note, "1-hr precipitation (in)", d["pcp1"] / 25.4, PCP_LEVELS, _pcp_cmap(),
+                   "in", PCP_LEVELS, under=(1, 1, 1, 0))
+
+
+def product_pcpt(m, d, sub, note):
+    return _filled(m, d, sub, note, "Total precipitation since F000 (in)", d["pcpt"] / 25.4, PCP_LEVELS,
+                   _pcp_cmap(), "in", PCP_LEVELS, under=(1, 1, 1, 0))
+
+
+def product_pw(m, d, sub, note):
+    lv = np.arange(0.2, 2.61, 0.1)
+    return _filled(m, d, sub, note, "Precipitable water (in)", d["pw"] / 25.4, lv, "GnBu", "in",
+                   np.arange(0.2, 2.61, 0.4), extend="both")
+
+
+def product_cape(m, d, sub, note):
+    lv = [100, 250, 500, 750, 1000, 1500, 2000, 2500, 3000, 4000]
+    fig = _filled(m, d, sub, note, "Most-unstable CAPE (J/kg); model lid 200 mb: deep-parcel CAPE is cut off",
+                  d["mucape"], lv, "YlOrRd", "J/kg", lv, under=(1, 1, 1, 0))
+    return fig
+
+
+MOIST_PRODUCTS = {"td2": product_td2, "pcp1": product_pcp1, "pcpt": product_pcpt, "pw": product_pw,
+                  "cape": product_cape}
 
 
 FORECAST_PRODUCTS = {"mslp": product_mslp, "tlow": product_tlow, "tchg": product_tchg,
