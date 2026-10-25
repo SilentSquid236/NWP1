@@ -212,28 +212,15 @@ class Mapper:
         e = self.extent
         return (x >= e[0]) & (x <= e[1]) & (y >= e[2]) & (y <= e[3])
 
-    def highs_lows(self, ax, F, size=9, min_sep=8):
-        """H and L at local extrema over a (2*size+1)^2 window, inside the frame."""
-        Fp = np.pad(F, size, mode="edge")
-        mx = np.full(F.shape, -np.inf); mn = np.full(F.shape, np.inf)
-        ny, nx = F.shape
-        for dj in range(-size, size + 1, 3):
-            for di in range(-size, size + 1, 3):
-                w = Fp[size + dj: size + dj + ny, size + di: size + di + nx]
-                mx = np.maximum(mx, w); mn = np.minimum(mn, w)
+    def highs_lows(self, ax, F, **kw):
+        """H and L at enclosed pressure centres (see find_centres), inside the frame."""
         ok = self.inside(self.X, self.Y)
-        ok[:3, :] = ok[-3:, :] = False; ok[:, :3] = ok[:, -3:] = False
-        done = []
-        for mask, letter, col in (((F >= mx) & ok, "H", "#1f3fbf"),
-                                  ((F <= mn) & ok, "L", "#c01818")):
-            for j, i in zip(*np.nonzero(mask)):
-                if any(abs(j - a) + abs(i - b) < min_sep for a, b in done):
-                    continue
-                done.append((j, i))
-                ax.text(self.X[j, i], self.Y[j, i], letter, color=col, fontsize=18,
-                        fontweight="bold", ha="center", va="center", zorder=7)
-                ax.text(self.X[j, i], self.Y[j, i], f"\n\n{F[j, i]:.0f}", color=col,
-                        fontsize=7.5, fontweight="bold", ha="center", va="center", zorder=7)
+        for j, i, letter, val in find_centres(self.X, self.Y, F, ok, **kw):
+            col = "#1f3fbf" if letter == "H" else "#c01818"
+            ax.text(self.X[j, i], self.Y[j, i], letter, color=col, fontsize=18,
+                    fontweight="bold", ha="center", va="center", zorder=7)
+            ax.text(self.X[j, i], self.Y[j, i], f"\n\n{val:.0f}", color=col,
+                    fontsize=7.5, fontweight="bold", ha="center", va="center", zorder=7)
 
     def points(self, lon, lat):
         return self.P(np.asarray(lon, float), np.asarray(lat, float))
@@ -250,6 +237,123 @@ class Mapper:
             if all((x - a) ** 2 + (y - b) ** 2 >= (min_km * 1e3) ** 2 for a, b in xy):
                 out.append(o); xy.append((float(x), float(y)))
         return out
+
+
+# --- pressure centres -------------------------------------------------------
+# A centre is labelled only if it is a real, enclosed feature, measured in km
+# and mb so that the 3 km and 12 km maps follow the same rule (HL1, 2026-10-25).
+# The old rule took the extreme of a 19-cell window with no depth test, so on
+# the 3 km grid (+-27 km window) every 0.2-1 mb wiggle on a flat field got a
+# letter.
+
+def _shift_extreme(a, k, axis, fn):
+    """Running max/min over +-k cells along one axis (edge padded)."""
+    if k < 1:
+        return a.copy()
+    pad = [(0, 0), (0, 0)]
+    pad[axis] = (k, k)
+    ap = np.pad(a, pad, mode="edge")
+    n = a.shape[axis]
+    out = a.copy()
+    for s in range(2 * k + 1):
+        sl = [slice(None), slice(None)]
+        sl[axis] = slice(s, s + n)
+        out = fn(out, ap[tuple(sl)])
+    return out
+
+
+def _gauss1d(a, sigma, axis):
+    if sigma < 0.3:
+        return a
+    k = int(math.ceil(3 * sigma))
+    w = np.exp(-0.5 * (np.arange(-k, k + 1) / sigma) ** 2)
+    w /= w.sum()
+    pad = [(0, 0), (0, 0)]
+    pad[axis] = (k, k)
+    ap = np.pad(a, pad, mode="edge")
+    n = a.shape[axis]
+    out = np.zeros_like(a, dtype=float)
+    for s in range(2 * k + 1):
+        sl = [slice(None), slice(None)]
+        sl[axis] = slice(s, s + n)
+        out += w[s] * ap[tuple(sl)]
+    return out
+
+
+def find_centres(X, Y, F, inside, smooth_km=25.0, window_km=250.0, depth=2.0,
+                 enclose_km=400.0, n_rad=16, min_inside=12, sep_km=400.0, edge=3):
+    """[(j, i, 'H'|'L', value)] for enclosed pressure centres.
+
+    1. Smooth F with a Gaussian of sigma smooth_km (for finding centres only).
+    2. Candidates are the exact extremes of the smoothed field within window_km.
+    3. A candidate is kept if it is enclosed by a contour `depth` (mb) away from
+       it within enclose_km: along each of n_rad radials the smoothed field
+       rises (L) or falls (H) by >= depth. Radials that leave the frame first
+       are not counted; at least min_inside must stay inside, and all of those
+       must pass.
+    4. Deepest first; no two centres of the same letter within sep_km.
+    The letter goes at the smoothed centre, so a wiggle does not move it; the
+    number is the raw extreme within smooth_km of it, so it matches the plotted
+    contours. (HL1 first draft put the letter at that raw extreme; on a 12 km
+    grid with 0.5 mb wiggles it then sat 34 km from the true centre.)
+    """
+    F = np.asarray(F, float)
+    good = np.isfinite(F) & inside
+    if good.sum() < 10:
+        return []
+    Ff = np.where(np.isfinite(F), F, np.nanmean(F[good]))
+    dx = float(np.nanmedian(np.hypot(np.diff(X, axis=1), np.diff(Y, axis=1)))) / 1e3
+    dy = float(np.nanmedian(np.hypot(np.diff(X, axis=0), np.diff(Y, axis=0)))) / 1e3
+    Fs = _gauss1d(_gauss1d(Ff, smooth_km / dx, 1), smooth_km / dy, 0)
+    kx, ky = int(round(window_km / dx)), int(round(window_km / dy))
+    mx = _shift_extreme(_shift_extreme(Fs, kx, 1, np.maximum), ky, 0, np.maximum)
+    mn = _shift_extreme(_shift_extreme(Fs, kx, 1, np.minimum), ky, 0, np.minimum)
+    ny, nx = F.shape
+    ok = good.copy()
+    ok[:edge, :] = ok[-edge:, :] = False
+    ok[:, :edge] = ok[:, -edge:] = False
+    ang = 2 * np.pi * np.arange(n_rad) / n_rad
+    step = min(dx, dy)
+    r = np.arange(step, enclose_km + 0.5 * step, step)
+    rx, ry = int(round(smooth_km / dx)), int(round(smooth_km / dy))
+    out = []
+    for letter, cand, sign in (("H", (Fs >= mx) & ok, -1.0), ("L", (Fs <= mn) & ok, 1.0)):
+        found = []
+        for j, i in zip(*np.nonzero(cand)):
+            inside_n, passed = 0, True
+            for a in ang:
+                jj = np.rint(j + r * np.sin(a) / dy).astype(int)
+                ii = np.rint(i + r * np.cos(a) / dx).astype(int)
+                inb = (jj >= 0) & (jj < ny) & (ii >= 0) & (ii < nx)
+                jj, ii = jj[inb], ii[inb]
+                lim = len(jj)
+                bad = np.nonzero(~good[jj, ii])[0]
+                if len(bad):
+                    lim = bad[0]
+                rise = sign * (Fs[jj[:lim], ii[:lim]] - Fs[j, i])
+                hit = np.nonzero(rise >= depth)[0]
+                if len(hit):
+                    inside_n += 1
+                elif lim == len(r):
+                    inside_n += 1
+                    passed = False
+                    break
+            if passed and inside_n >= min_inside:
+                found.append((sign * Fs[j, i], j, i))
+        found.sort()
+        kept = []
+        for _, j, i in found:
+            if any(math.hypot((X[j, i] - X[b, a]), (Y[j, i] - Y[b, a])) < sep_km * 1e3
+                   for b, a in kept):
+                continue
+            kept.append((j, i))
+            j0, j1 = max(j - ry, 0), min(j + ry + 1, ny)
+            i0, i1 = max(i - rx, 0), min(i + rx + 1, nx)
+            box = np.where(good[j0:j1, i0:i1], Ff[j0:j1, i0:i1], np.nan)
+            flat = np.nanargmin(box) if letter == "L" else np.nanargmax(box)
+            bj, bi = np.unravel_index(flat, box.shape)
+            out.append((j, i, letter, float(Ff[j0 + bj, i0 + bi])))
+    return out
 
 
 def mask_below(F, below):

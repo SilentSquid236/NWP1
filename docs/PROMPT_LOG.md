@@ -341,6 +341,9 @@ phase breaks.
 | 252 | (option pick) "Replication: C vs V5 (Recommended)" | **DIR** | Asked again after the final J5 result changed the picture. J5b launched 01:36Z: C vs V5 on 10-15..10-18 (out of sample), one-sided harm rule R1-R3, md5 6644463a. The J5b predictions file says "prompts 250-251" for this choice; it is 251-252. Again the recommended option |
 | 253 | "Lets keep going" | ADM | J5b scored: R1-R3 held (T 0.984, wind 0.968, MSLP 1.004 of control), ADOPT V5 by its rule; production switch NWP_VOID_BLEND prepared. The project folder was found missing from the Desktop |
 | 254 | (answer) "here is access to all projects C:\\Users\\Epier\\Documents\\Projects" | ADM | The project had moved intact to Documents\\Projects\\NWP (md5s of the tested and deployed files matched); work continued there |
+| 255 | "Looks good" | ADM | Approved the two writes the safety check had held (RESEARCH_LOG entry, deployment waiter). The waiter switched production to the void blend at 18:11Z (NWP_VOID_BLEND=300,600,0.5, first active 10-26 00Z) |
+| 256 | "pushed" | ADM | Docs follow-up 3da4be5 (RESEARCH_LOG, MANIFEST). Server fast-forwarded; manifest check 0 missing, 0 differing |
+| 257 | "can we get rid of the extra high and low pressures" | **DIR** | Free text, not an option pick, though the AI had listed the H/L labeller among open items. HL1: enclosed-centre rule, predictions first (md5 36c8992a). During the work two figures already in docs/ (instability_cross_section.png, instability_growth.png) arrived attached with no text; not counted as a prompt |
 
 **Observation.** Prompt 53 is 17 words (corrected 2026-10-18; previously 18) and is the most consequential
 instruction in the project. Before it, nine candidate causes had been patched
@@ -370,24 +373,24 @@ option, so this cannot yet be checked further back. Prompts 220 and 227 are othe
 
 ## Aggregate
 
-| tag | prompts 1-60 | share | all prompts 1-254 | share |
+| tag | prompts 1-60 | share | all prompts 1-257 | share |
 |---|---|---|---|---|
-| DIR direction-setting | 19 | 32% | 83 | 33% |
-| OBS observation / pasted output | 13 | 22% | 65 | 26% |
-| ADM administrative | 8 | 14% | 72 | 28% |
+| DIR direction-setting | 19 | 32% | 84 | 33% |
+| OBS observation / pasted output | 13 | 22% | 65 | 25% |
+| ADM administrative | 8 | 14% | 74 | 29% |
 | MET methodological | 9 | 15% | 20 | 8% |
 | CON constraint | 7 | 12% | 13 | 5% |
 | COR correction | 2 | 3% | 5 | 2% |
-| prompts counted | 59 | | 253 | |
+| prompts counted | 59 | | 256 | |
 
 How these counts were made:
-- They were computed from the table rows on 2026-10-18 and updated through prompt 254 on 2026-10-25. A row that groups
+- They were computed from the table rows on 2026-10-18 and updated through prompt 257 on 2026-10-25. A row that groups
   several prompts (28-30, 32 and 34, 153-158) counts once per prompt.
 - Shares are of prompts. They add to slightly more than 100 % because seven
   rows carry two tags. The tag counts therefore sum to 5 more than the prompts
   counted: +7 for the second tags, -1 for untagged prompt 24, -1 for prompt 143
-  (tagged Q). Recounted from the rows on 2026-10-25: 258 tags over 253 prompts.
-- Prompt 40 has no row, so 253 prompts are counted. Prompt 24 is untagged.
+  (tagged Q). Recounted from the rows on 2026-10-25: 261 tags over 256 prompts.
+- Prompt 40 has no row, so 256 prompts are counted. Prompt 24 is untagged.
   Prompt 143 is tagged **Q**, which is not in the classification.
 - The earlier version of this table (DIR 22, OBS 13, ADM 10, MET 9, CON 8,
   COR 3, over prompts 1-60) was a hand count and does not match the rows. The

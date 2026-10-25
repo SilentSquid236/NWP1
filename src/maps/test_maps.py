@@ -288,13 +288,44 @@ def test_pack_roundtrip():
            err <= 1 / 65000 + 1e-12 and np.isnan(rb[3, 4]), f"relative error {err:.1e}")
 
 
+
+def test_pressure_centres_need_an_enclosing_contour():
+    """HL1: a 6 mb low gets one L at 3 km and 12 km; 0.5 mb wiggles get none."""
+    from maps import render
+    rng = np.random.default_rng(7)
+    msg = []
+    ok = True
+    for dkm, n in ((3.0, 300), (12.0, 80)):
+        x = (np.arange(n) - n / 2) * dkm * 1e3
+        X, Y = np.meshgrid(x, x)
+        inside = np.ones(X.shape, bool)
+        noise = np.zeros(X.shape)
+        for lam in (30e3, 60e3, 90e3):          # wiggles of 0.5 mb total
+            ph = rng.uniform(0, 2 * np.pi, 4)
+            noise += 0.125 * (np.sin(2 * np.pi * X / lam + ph[0]) * np.sin(2 * np.pi * Y / lam + ph[1])
+                              + np.cos(2 * np.pi * (X + Y) / lam + ph[2]))
+        flat = 1015.0 + noise
+        x0, y0 = 0.1 * x[-1], -0.15 * x[-1]
+        low = flat - 6.0 * np.exp(-((X - x0) ** 2 + (Y - y0) ** 2) / (2 * 200e3 ** 2))
+        c_flat = render.find_centres(X, Y, flat, inside)
+        c_low = render.find_centres(X, Y, low, inside)
+        dist = [np.hypot(X[j, i] - x0, Y[j, i] - y0) / 1e3 for j, i, l, v in c_low if l == "L"]
+        good = (len(c_flat) == 0 and len(c_low) == 1 and c_low[0][2] == "L" and dist[0] <= 25.0)
+        ok &= good
+        msg.append(f"{dkm:.0f} km: wiggles -> {len(c_flat)} marks; low -> "
+                   f"{[(l, round(v, 1)) for j, i, l, v in c_low]}, "
+                   f"{dist[0] if dist else float('nan'):.0f} km from centre")
+    report("pressure centres need an enclosing 2 mb contour", ok, "; ".join(msg))
+
+
 TESTS = [test_projection_is_conformal, test_clip_breaks_lines_at_the_box,
          test_geojson_geometry_kinds, test_heights_match_standard_atmosphere,
          test_mslp_recovers_sea_level_pressure, test_interpolation_exact_at_model_levels,
          test_vorticity, test_destagger, test_wind_rotation_follows_the_meridians,
          test_every_product_renders, test_viewer_embeds_every_product,
          test_forecast_hours_match_real_snapshot_times, test_valid_time_labels,
-         test_pixel_geometry_for_hover, test_pack_roundtrip]
+         test_pixel_geometry_for_hover, test_pack_roundtrip,
+         test_pressure_centres_need_an_enclosing_contour]
 
 if __name__ == "__main__":
     print("=" * 62)

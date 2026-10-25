@@ -31,9 +31,9 @@ cd7d0f085e4d3284    173203  docs/nh2d_density_current.png
 25bdef4fd9603cc4    116736  docs/nh3d_terrain_rest.png
 1eeb6616080945dd      6884  docs/POSTPROCESSING.md
 ec1f5aee006d27d4    140832  docs/PROBLEMS.md
-2a4654d7b43ee897     61505  docs/PROMPT_LOG.md
+c03f92aba6020bb9     62259  docs/PROMPT_LOG.md
 94ce3f65437ddd36     21574  docs/REFERENCES.md
-d01352ce68e56e85    443123  docs/RESEARCH_LOG.md
+6d47649b28cf2a1d    446037  docs/RESEARCH_LOG.md
 bf17820767386e75     85879  docs/s3_backend_cost.png
 2ad8f171b4d38426    226489  docs/skew_compare.png
 78c3574bb1b0dd88      4845  docs/STABILITY.md
@@ -162,8 +162,8 @@ c57b6b9d4f57b3e8        77  src/maps/__init__.py
 d33e07daa311a180     12756  src/maps/derive.py
 a0212cd6292269bc      7467  src/maps/geography.py
 6720f2816bf8307f     15031  src/maps/indices.py
-75dae7b75cb03e75     25701  src/maps/render.py
-0dce856056bbf2c9     14893  src/maps/test_maps.py
+6adde0d880214259     30084  src/maps/render.py
+448c68c4cf4478ca     16467  src/maps/test_maps.py
 9de33df9a6df483a     25295  src/maps/viewer.py
 0b94d99cffafa126     10696  src/nest.py
 63e337c29a4c7512      3753  src/numa_bind.py

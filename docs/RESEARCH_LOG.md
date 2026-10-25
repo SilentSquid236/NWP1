@@ -5761,6 +5761,38 @@ Plan: 1 and 2 first (map set), 3 after P-81 settles.
 
 ---
 
+## 2026-10-25 — HL1: H and L only at enclosed pressure centres
+
+**Context.** Prompt 257: "can we get rid of the extra high and low pressures". The thermal-low check (10-23) had already found that most H/L marks on the 3 km MSLP maps sit on 0.2–1 mb wiggles of a flat field.
+
+**Cause.** `Mapper.highs_lows` marked any point that was the extreme of a 19 × 19-cell window, sampled every third cell, with no depth test. The window is in cells, so it is ±108 km at 12 km but only ±27 km at 3 km.
+
+**Change (map code only; forecasts untouched).** `render.find_centres` works in km and mb, the same on both grids:
+1. smooth the MSLP with a Gaussian, σ = 25 km (for finding centres only; the contours are unchanged);
+2. candidates are exact extremes of the smoothed field within 250 km;
+3. keep a candidate only if a contour 2 mb away from it (one plotted interval) encloses it within 400 km: on each of 16 radials the field must rise (L) or fall (H) by 2 mb. Radials that leave the frame first are not counted, but at least 12 must stay inside;
+4. deepest first, no two of the same letter within 400 km.
+The letter sits at the smoothed centre. The number is the raw extreme within 25 km of it, so it agrees with the contours. The analysis MSLP map uses the same function.
+
+**Predictions (written first, md5 36c8992a).** Scored on the 10-22 12Z run, hourly MSLP maps.
+
+| | predicted | result | |
+|---|---|---|---|
+| H1 3 km marks per map | ≥ 70 % fewer, ≤ 3 | 137.5 → 1.73 (99 % fewer), 22 maps | held |
+| H2 12 km marks per map | 20–70 % fewer | 11.2 → 2.21 (80 % fewer), 24 maps | **refuted** |
+| H3 north-border false low still marked at f005 | yes, both grids | L 1014 at 46.4 N 74.2 W (12 km); L 1014 at 46.6 N 74.9 W (3 km) | held |
+| H4 no new mark without an old one within 150 km | none | 0 | held |
+| H5 synthetic: one L within 25 km of a 6 mb low under 0.5 mb wiggles; none for wiggles alone | both grids | second draft only (below) | held after a revision |
+| H6 cost | < 1 s per 3 km map | 0.25 s (12 km 0.02 s) | held |
+
+- H2 failed because the old rule over-marked at 12 km too, not only at 3 km. The AI had expected the 12 km window (±108 km) to be large enough to filter most shallow features. It was not.
+- H5: the first draft put the letter at the raw extreme, and on the 12 km test grid the wiggles moved it 34 km from the true centre. The letter was moved to the smoothed centre (1–2 km off) before the real-map run. The revision followed a failed check, so H5 held only on the second draft.
+- Map tests 16/16 on the server, including the new synthetic test.
+
+**Seen on the test maps, not acted on.** The 3 km map at +8 h has a knot of tight closed contours over the ocean near 39 N 67.5 W, in the south-east corner. It is small, so the new rule does not label it. It looks like grid-scale convective pressure noise near the boundary and is worth a look under P-81 or P-53.
+
+---
+
 ## 2026-10-24 — A false low in the Canadian sounding gap: J5 blends the first guess toward the mean sounding (adopted after J5b)
 
 **Context.** Prompts 246–248: the user saw thermal lows that looked too strong, then pointed at one case, the 10-22 12Z run at +5 h, with wrong surface winds near a low on the northern border of NY.
