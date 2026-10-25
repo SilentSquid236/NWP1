@@ -5761,6 +5761,77 @@ Plan: 1 and 2 first (map set), 3 after P-81 settles.
 
 ---
 
+## 2026-10-24 — A false low in the Canadian sounding gap: J5 blends the first guess toward the mean sounding (adopted after J5b)
+
+**Context.** Prompts 246–248: the user saw thermal lows that looked too strong, then pointed at one case, the 10-22 12Z run at +5 h, with wrong surface winds near a low on the northern border of NY.
+
+**What the averages said first.** Against ASOS over 32 cycles, afternoon MSLP at low stations is slightly too HIGH (3 km +0.44 hPa at 14–17 L). The 2 m temperature cycle is damped: −1.3 K in the afternoon, +0.5 to +1.2 K at night. Small-scale MSLP over land has no afternoon peak. So the mean statistics argued against the user's impression; the specific case did not.
+
+**The case.** At 17Z every METAR from the Ottawa Valley to Vermont had north winds of 5–16 kt, with pressure rising toward Ontario. Both grids instead had a ~1015 hPa low near 46.5° N 74.5° W. Errors were −5 to −6.4 hPa at Maniwaki, Petawawa and Renfrew, and the median wind-direction error was 128° (3 km) and 132° (12 km).
+- The first guess (06Z +6 h) carried the low.
+- The 12Z analysis fitted every station pressure to about ±1 hPa: `analyse_pmsl` uses the station reports only.
+- The analysed winds were the first guess's, because no Canadian sounding entered the analysis. Vorticity within 150 km of the low was +26 × 10⁻⁵ s⁻¹ at 500 hPa, 2.5 f.
+- The surface low re-formed within an hour (−0.6 → −3.2 → −6.4 hPa at Maniwaki). That is what a pressure-only correction does when the wind field still holds the circulation.
+- Systematic: north of 45.3° N the 3 km MSLP bias runs about 1 hPa below 41–44° N at every lead. Details are in P-82.
+
+**Hypothesis (J5, written first, md5 e5a56d31).** At 00Z/12Z, blending the cycled first guess toward the mean sounding far from soundings removes the void circulation without harm elsewhere. The blend weight is 1 within 300 km of a sounding and WMIN beyond 600 km, linear between.
+
+**J5 method.** Arms C, V5 (WMIN 0.5) and V0 (WMIN 0). 16 cycles 10-19..10-22, all from the same production first guess, with 12 scored 24 h moist runs (550,673 pairs).
+
+**J5 result.**
+
+| | C | V5 | V0 |
+|---|---|---|---|
+| case: MSLP error / direction error | −4.54 hPa / 135° | −1.31 / 30° | −1.63 / 31° |
+| north band 13–24 h MSLP bias | −1.13 hPa | +0.04 | −0.22 |
+| domain 2 m T / wind / MSLP RMSE | 4.738 / 3.110 / 4.32 | 4.735 / 2.816 / 4.15 | 4.743 / 2.787 / 4.11 |
+| analysed max \|u\| ≥ 400 hPa | 124.5 m/s | 97.7 | 92.0 |
+
+- Q1, Q2, Q4 and Q5 held. Q3 failed because its two-sided "within 2 %" band also rejected the 9.5 % wind improvement, so the rule as written did not adopt J5.
+- **My error.** I reported interim scores on 11 of the 12 starts as findings: a +1 hPa north-band bias and a 1 % temperature cost. The 12th start removed both; that one start moved the bias by about 1 hPa. The user chose J5b on the interim picture. I corrected it before J5b ran and asked again.
+
+**J5b (user's choice, prompts 251–252; predictions md5 6644463a).** An out-of-sample replication: C against V5 on 10-15..10-18, which does not overlap J5, with a one-sided rule.
+- R1 no variable worse than 1.02 × C.
+- R2 north-band |bias| no worse than C's by more than 0.5 hPa.
+- R3 wind or MSLP RMSE at least 2 % better.
+
+**J5b result (12 starts, 532,330 pairs).**
+- Ratios to C: T 0.984, wind 0.968, MSLP 1.004. R1, R2 and R3 held: ADOPT V5.
+- The analysed jet maximum fell from 110.4 to 87.6 m/s; north-band wind RMSE from 5.31 to 4.98 m/s.
+- F3 (domain wind at least 5 % better) was refuted: −3.2 %.
+- The period held the 16–17 Oct cold outbreak. Both arms had MSLP RMSE near 9 hPa and a north-band bias near −6 hPa, so V5 does not fix the P-53 frozen-edge error of that regime.
+
+**Interpretation.** The cycled first guess is the carrier of the void features (P-82). Blending it halfway toward the mean sounding where no sounding is near removes much of the false jet and the false circulations at no measurable cost. It is an observation-only fix: the information it discards in the voids was never observed.
+
+**Status.** Adopted.
+- `ingest_obs.py --void-blend 300,600,0.5` through `NWP_VOID_BLEND` in `tools/daily.sh`, at 00Z/12Z, 12 km only.
+- Tests: `test_void_blend` 5/5.
+- Deployed by the waiter after the user's push.
+
+---
+
+## 2026-10-22 — N1: a larger 12 km box helps the 3 km run (stages 1 and 2)
+
+**Stage 1** (12 starts, 534,049 pairs inside the 3 km box). Box P (34–50.5° N, 86–62° W) against C:
+- the 12 km edge-band 2 m T RMSE at 13–24 h fell from 5.92 to 4.48 K, and the interior from 5.51 to 5.05 K;
+- edge MSLP fell from 8.46 to 7.58 hPa;
+- but edge-band 10 m wind at 7–24 h rose from 3.26 to 3.82 m/s;
+- the analysed maximum aloft was unchanged (about 64–66 m/s).
+
+P1, P3, P4 and P7 held; P2, P5 and P6 were refuted. The rule passed with arm P.
+
+**Stage 2** (3 km nested in P against C, starts 10-17/18/19 00Z, 117,583 pairs):
+- edge 2 m T at 13–24 h 4.88 → 3.95 K, interior 5.62 → 4.45 K;
+- dewpoint at the edge 6.60 → 5.07 K;
+- MSLP at the edge 9.7 → 7.1 hPa;
+- interior wind 5.08 → 4.58 m/s; edge wind at 7–24 h worse, 3.71 → 3.95 m/s.
+
+S2a and S2b held. S2c was refuted (the interior gain is larger than the edge gain). S2d was refuted, but P ran on the odd socket about 33 % slower at the same 25.7 s step, so its hours reached are confounded by the CPU set.
+
+**Status.** Supports N2 (continental 36 km outer level → 12 km on box P → 3 km). The larger boxes carry the larger P-85 grid-spacing error.
+
+---
+
 ## 2026-10-20 — Moist 12 km promotion: skill at parity, soundings checked against SHARPpy, maps for 3 km
 
 **Context.** Prompts 230–232 asked for SHARPpy-level sounding detail, moisture in the 12 km run, its promotion, and a sounding on click. Prompt 237 asked how to see the 3 km soundings, and showed that the 3 km runs had no viewer.
