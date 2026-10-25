@@ -329,6 +329,18 @@ phase breaks.
 | 240 | "we should use a large km resolution model to get flow over the US down then say take a 12km run of a 1/4 the us to get higher resolution data localized then feed that into the 3km or add an intermediatary step if needed" | **DIR** | Free-text direction for a three-level nest. Became plan N2 (36 km continental -> 12 km on N1's box -> 3 km). Sizing it found P-85: the dynamics use one constant dx on a beta-plane, 26 % wrong at the north edge of a continental lat/lon box |
 | 241 | *(plan approved)* | ADM | N2 plan |
 | 242 | (option pick) "Lambert grid (Recommended)" | **DIR** | Outer level on a Lambert conformal grid (standard parallels then chosen as 30/50 N). Again the recommended option |
+| 243 | "can we get maps on all 3km that come out" | ADM | The change that does this (NWP_CAM_MAPS=1) was waiting on a push. Until it deployed, a backfill-and-watch job mapped the five unmapped 3 km runs (10-20 18Z to 10-21 18Z) on spare CPUs |
+| 244 | "push is good" | ADM | 98222db deployed at 01:17Z: all 18 md5s match the pc2-tested copies, tests 5/5, 4/4, 11/11, 15/15, crontab NWP_12KM_MOIST=1 and NWP_CAM_MAPS=1. N1 stage 1 (finished 10-21 07:14Z) found and reported; stage 2 launched |
+| 245 | "Im back" | ADM | Status: production maps on every run since the 01:45Z cycle; backfill done; N1 stage 2 done but its scorer crashed (wrong key) and was fixed |
+| 246 | "I am seeing thermal lows being too strong almopst like proper mixing isnt happening" | **OBS** | Tested against ASOS (32 cycles): afternoon MSLP bias slightly positive (+0.44 hPa at 14-17L), 2 m T too cold in the afternoon and too warm at night (damped cycle); no afternoon small-scale pressure peak. Not supported as a mean bias; the AI asked for a specific case |
+| 247 | "10/22/26 12z run at 5hrs was showing some wrong surface winds due to a lowq" | **OBS** | The specific case. See 248 |
+| 248 | "Check the North border of NY" | **OBS** | The human located it. A false 1015 hPa low near 46.5 N 74.5 W, 5-6 hPa too deep, winds about 130 deg wrong; carried by the first guess, corrected at the surface by the analysis but re-formed within 1 h from a cyclone aloft in the Canadian sounding gap; systematic north-band MSLP deficit. P-82 update |
+| 249 | (option pick) "J5: blend toward cold start (Recommended)" | **DIR** | J5 built (build.void_blend, ingest_obs --void-blend, default off, 00Z/12Z only; tests 4/4), predictions Q1-Q6 written (md5 e5a56d31), 3-arm cycling test launched 02:41Z. Again the recommended option |
+| 250 | "I am back" | ADM | J5 interim scores (11 of 12 starts) reported with three options. The interim numbers showed a +1 hPa north-band bias and a 1 % temperature cost that the final 12-start score did not keep |
+| 251 | "2" | **DIR** | Chose option 2: a J5b test with a corrected rule |
+| 252 | (option pick) "Replication: C vs V5 (Recommended)" | **DIR** | Asked again after the final J5 result changed the picture. J5b launched 01:36Z: C vs V5 on 10-15..10-18 (out of sample), one-sided harm rule R1-R3, md5 6644463a. The J5b predictions file says "prompts 250-251" for this choice; it is 251-252. Again the recommended option |
+| 253 | "Lets keep going" | ADM | J5b scored: R1-R3 held (T 0.984, wind 0.968, MSLP 1.004 of control), ADOPT V5 by its rule; production switch NWP_VOID_BLEND prepared. The project folder was found missing from the Desktop |
+| 254 | (answer) "here is access to all projects C:\\Users\\Epier\\Documents\\Projects" | ADM | The project had moved intact to Documents\\Projects\\NWP (md5s of the tested and deployed files matched); work continued there |
 
 **Observation.** Prompt 53 is 17 words (corrected 2026-10-18; previously 18) and is the most consequential
 instruction in the project. Before it, nine candidate causes had been patched
@@ -352,28 +364,30 @@ direction came from), option picks should be counted apart from free-text
 directions. Rows before 200 do not record whether the pick was the recommended
 option, so this cannot yet be checked further back. Prompts 220 and 227 are other such picks, and again the recommended option.
 
-**Observation (prompts 228-237).** Prompts 230-232 are free-text directions, the first since 225; none of them is an option pick. Prompt 232 asks for a feature (a sounding on click), not a method. Rows 228-237 were appended in one batch on 2026-10-20 at about 19:05Z, not as each prompt happened as this file requires. The prompt texts were copied from the archived transcript. Prompt 240 is the second direction in the project that sets the model's architecture (the first was the 3 km nest), and it came from the human. The N2 predictions file (md5 e7714b0d...) calls it "prompt 239"; the number was corrected here after the file was fixed, and the file was not edited.
+**Observation (prompts 228-237).** Prompts 230-232 are free-text directions, the first since 225; none of them is an option pick. Prompt 232 asks for a feature (a sounding on click), not a method. Rows 228-237 were appended in one batch on 2026-10-20 at about 19:05Z, not as each prompt happened as this file requires. The prompt texts were copied from the archived transcript. Prompt 240 is the second direction in the project that sets the model's architecture (the first was the 3 km nest), and it came from the human. The N2 predictions file (md5 e7714b0d...) calls it "prompt 239"; the number was corrected here after the file was fixed, and the file was not edited. Prompts 246-248 are the human finding a model error by eye that the AI's domain-mean statistics had just argued against: the mean afternoon bias was right, but the error was local, and the human's "check the North border" put the AI on it.
 
 ---
 
 ## Aggregate
 
-| tag | prompts 1-60 | share | all prompts 1-242 | share |
+| tag | prompts 1-60 | share | all prompts 1-254 | share |
 |---|---|---|---|---|
-| DIR direction-setting | 19 | 32% | 80 | 33% |
-| OBS observation / pasted output | 13 | 22% | 62 | 26% |
-| ADM administrative | 8 | 14% | 66 | 27% |
+| DIR direction-setting | 19 | 32% | 83 | 33% |
+| OBS observation / pasted output | 13 | 22% | 65 | 26% |
+| ADM administrative | 8 | 14% | 72 | 28% |
 | MET methodological | 9 | 15% | 20 | 8% |
 | CON constraint | 7 | 12% | 13 | 5% |
 | COR correction | 2 | 3% | 5 | 2% |
-| prompts counted | 59 | | 241 | |
+| prompts counted | 59 | | 253 | |
 
 How these counts were made:
-- They were computed from the table rows on 2026-10-18 and updated through prompt 242 on 2026-10-20. A row that groups
+- They were computed from the table rows on 2026-10-18 and updated through prompt 254 on 2026-10-25. A row that groups
   several prompts (28-30, 32 and 34, 153-158) counts once per prompt.
 - Shares are of prompts. They add to slightly more than 100 % because seven
-  rows carry two tags.
-- Prompt 40 has no row, so 241 prompts are counted. Prompt 24 is untagged.
+  rows carry two tags. The tag counts therefore sum to 5 more than the prompts
+  counted: +7 for the second tags, -1 for untagged prompt 24, -1 for prompt 143
+  (tagged Q). Recounted from the rows on 2026-10-25: 258 tags over 253 prompts.
+- Prompt 40 has no row, so 253 prompts are counted. Prompt 24 is untagged.
   Prompt 143 is tagged **Q**, which is not in the classification.
 - The earlier version of this table (DIR 22, OBS 13, ADM 10, MET 9, CON 8,
   COR 3, over prompts 1-60) was a hand count and does not match the rows. The

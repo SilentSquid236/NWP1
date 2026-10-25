@@ -126,6 +126,7 @@ NOTES = {
     "src/nest.py": "S5: 12 km forecast -> 3 km boundary frames (bilinear by staggering, hydrostatic terrain shift, ln p)",
     "src/test_nest.py": "tests: regridding exact for linear fields, identity, hydrostatic over a hill",
     "src/analysis/test_barnes_aware.py": "tests: terrain- and coast-aware Barnes (S5 gap-filling)",
+    "src/analysis/test_void_blend.py": "tests: J5 first-guess blend toward the mean sounding far from soundings (weights, no-sounding guard, J5b large-scale background)",
     "src/dynamics/nh3d_kernels.c": "S4: the NH core's dynamics as C/OpenMP kernels (acoustic substeps, tendencies, set-up), transcribed from nh3d.py",
     "src/dynamics/cnh.py": "S4: builds nh3d_kernels.c with gcc at first use (cached) and binds it with ctypes",
     "src/dynamics/test_nh3d_c.py": "tests: C kernels against the NumPy core (tendencies, full steps, both edge modes, threads, dtype guard)",

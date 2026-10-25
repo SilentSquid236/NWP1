@@ -65,6 +65,13 @@ THREADS="${NWP_THREADS:-8}"
 UPPER_ARGS=""
 [ "${NWP_UPPER_DOMAIN_ONLY:-0}" = 1 ] && UPPER_ARGS="--upper-domain-only"
 [ -n "${NWP_UPPER_L_KM:-}" ] && UPPER_ARGS="$UPPER_ARGS --upper-L-km $NWP_UPPER_L_KM"
+# NWP_VOID_BLEND (P-82, tests J5 and J5b, 2026-10-23/24, user decision "replication:
+# C vs V5", adopted by J5b's rule): at 00Z/12Z the cycled first guess is blended
+# toward the mean sounding far from soundings before the sounding increments
+# (ingest_obs.py --void-blend D0,D1,WMIN; production value 300,600,0.5). It only
+# touches the 12 km analysis; the 3 km analysis starts from the 12 km analysis and
+# never blends. Unset = as before.
+[ -n "${NWP_VOID_BLEND:-}" ] && UPPER_ARGS="$UPPER_ARGS --void-blend $NWP_VOID_BLEND"
 # NWP_INIT_BALANCE (P-83, tests J2-J4, 2026-10-17): the start-up divergence removal
 # of the 12 km forecast (forecast.py --init-balance; unset = its default, exact).
 # exact-free (J4) holds no boundary face fixed. tools/cam_cycle.sh reads the same

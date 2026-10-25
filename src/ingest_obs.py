@@ -144,6 +144,11 @@ def main():
     p.add_argument("--spacing-km", type=float, default=12.0)
     p.add_argument("--no-previous", action="store_true",
                    help="ignore the previous run (cold start)")
+    p.add_argument("--void-blend", default=None, metavar="D0,D1,WMIN[,L]",
+                   help="test J5 (P-82): at 00Z/12Z, weight the cycled first guess 1 within D0 km "
+                        "of a sounding and WMIN beyond D1 km, the rest from the mean sounding "
+                        "(or, with L > 0, the soundings' Barnes analysis at L km; test J5b). "
+                        "Default off")
     # CAM stage S5: the 3 km analysis. It is written to its own tree, built
     # from the observations the 12 km cycle archived, and starts from the
     # 12 km analysis of the same cycle.
@@ -255,6 +260,13 @@ def main():
     if args.upper_L_km != 450.0 or args.upper_domain_only:
         print(f"  upper air      : L {args.upper_L_km:g} km"
               f"{', soundings inside the domain only' if args.upper_domain_only else ''} (test J1)")
+    vb_cfg = None
+    if args.void_blend:
+        vb_cfg = tuple(float(x) for x in args.void_blend.split(","))
+        assert len(vb_cfg) in (3, 4) and 0.0 <= vb_cfg[2] <= 1.0 and vb_cfg[0] < vb_cfg[1], args.void_blend
+        print(f"  void blend     : J5, first-guess weight 1 within {vb_cfg[0]:g} km of a sounding, "
+              f"{vb_cfg[2]:g} beyond {vb_cfg[1]:g} km (00Z/12Z only)"
+              + (f"; background = soundings Barnes L {vb_cfg[3]:g} km (J5b)" if len(vb_cfg) == 4 and vb_cfg[3] > 0 else ""))
     aware = None
     if args.gapfill:
         aware = {"H_m": args.gapfill_h, "coast_factor": args.gapfill_coast, "passes": 3,
@@ -271,7 +283,8 @@ def main():
                                            background=background,
                                            surface_aware=aware,
                                            upper_L_km=args.upper_L_km,
-                                           upper_domain_only=args.upper_domain_only)
+                                           upper_domain_only=args.upper_domain_only,
+                                           void_blend_cfg=vb_cfg)
     except ValueError as e:
         print(f"\n  ANALYSIS FAILED: {e}")
         json.dump({"cycle": cycle.isoformat(), "sources": table, "qc": qc,

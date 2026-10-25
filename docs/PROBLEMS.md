@@ -43,6 +43,8 @@ hypothesis, **G** missing physics, **H** performance, **I** logistics.
 
 **Category** B · **First seen** 2026-10-20 (found while sizing N2's continental outer level, prompt 240) · **Status** OPEN
 
+**Symptom.** East–west distances in the model are right only at the box's middle latitude: on the production box the cell width is 8 % too small at 37° N and 9 % too large at 47.5° N, and on a continental 24–55° N box 18 % and 26 %.
+
 **What the code does.**
 - `forecast.build_grid` and `geo.spacing_m`: dx = (lon span) × 111.32 km × cos(mid-latitude) / nx, one value for the whole grid. `dynamics/grid.py`: f = f0 + β(y − y0).
 - `geo.cell_centres`, by contrast, places the cells evenly in latitude and longitude, and the analysis, the nesting and the verification all use those positions.
@@ -119,6 +121,40 @@ The production levels keep the lat/lon box for now. Map factors in the dynamics,
 - 8 of the last 10 3 km cycles stopped at the deadline. With the maximum removed the step would reach the 26 s acoustic cap, 1.43× faster.
 - The log label "external wave ~290 m/s sets this" is a fixed string and is wrong for the 3 km core.
 - Proposed J5: relax the first guess toward the observation-only analysis far from upper-air observations. See docs/STATUS_CHECK_2026-10-20.md.
+
+**Update 2026-10-23 (user report, prompt 247: wrong surface winds near a low at the northern NY border, 10-22 12Z run at +5 h).** The same carrier, now at the surface.
+- At 17Z every METAR from Ontario to Vermont shows northerly winds of 5–16 kt, with pressure rising toward Ontario (1015–1019 hPa in VT/NH, 1022–1024 hPa in Ontario).
+- Both runs instead have a false low near 46.5° N, 74.5° W (the Laurentians, about 110 km inside the north edge). At +5 h it is 1014.6 hPa on the 3 km grid; the 12 km grid has the same low.
+- Pressure errors at +5 h: CWMJ −6.4 hPa, CYWA −5.6, CWRK −5.3. Over the Champlain valley, Montreal and northern NY the winds are southerly instead of northerly: median direction error 128° (3 km, 25 stations) and 132° (12 km).
+- The first guess (the 06Z dry forecast at +6 h) already had the low: −3 to −6.5 hPa at the Ontario and Ottawa Valley stations.
+- The 12Z analysis fitted the station pressures (errors within about ±1 hPa; CWMJ −0.6). The analysed winds above the spot stayed strongly cyclonic: relative vorticity within 150 km of +2.3 (925 hPa), +5.4 (850), +11.7 (700) and +26.3 × 10⁻⁵ s⁻¹ (500 hPa, 2.5 f), against −3.5 to −8.3 in a 300–600 km ring.
+- No Canadian sounding entered the analysis. The in-domain soundings were BUF, GYX, OKX, IAD and PIT; ALB, CHH, WAL and Maniwaki were absent.
+- In the forecast the surface low returned within the first hour: CWMJ −0.6 hPa at analysis time, −3.2 at +1 h, −6.4 at +5 h. That is the expected behaviour of a surface-only pressure increment on a scale below the Rossby radius: the pressure readjusts to the winds.
+- It is systematic. At stations north of 45.3° N (78.5–71° W), the 3 km MSLP bias is −0.9 / −1.6 / −2.1 / −1.9 hPa by lead band. That is about 1 hPa below the stations at 41–44° N at every lead, and below −1 hPa in 15–18 of 32 cycles. The 12 km bias is −1.6 to −2.8 hPa.
+- It is probably the same feature as the spurious cold cyclonic pocket over southern Quebec that the user found at 700 hPa on 10-20.
+- Candidates:
+  - J5 (first guess relaxed toward a cold-start background far from soundings);
+  - pressure increments that carry a column (a hydrostatic temperature/height increment with a geostrophic wind increment);
+  - why the Canadian soundings, and ALB/CHH/WAL, were missing;
+  - the larger 12 km box (N1 stage 2: edge-band MSLP RMSE at 13–24 h fell from 9.7 to 7.1 hPa).
+
+**J5 result (2026-10-23, 16 cycles 10-19..10-22, 12 scored starts, 550,673 pairs; predictions md5 e5a56d31).** The first guess was blended toward the mean sounding more than 300–600 km from any sounding, at 00Z/12Z only.
+
+| score | C | V5 (50 %) | V0 (100 %) |
+|---|---|---|---|
+| 10-22 12Z +5 h: MSLP error at the 6 Ontario stations | −4.54 hPa | −1.31 | −1.63 |
+| 10-22 12Z +5 h: median wind-direction error | 135° | 30° | 31° |
+| north band 13–24 h: MSLP bias / RMSE | −1.13 / 7.39 hPa | +0.04 / 6.84 | −0.22 / 6.79 |
+| north band 10 m wind RMSE | 2.93 m/s | 2.46 | 2.48 |
+| whole domain 2 m T RMSE | 4.738 K | 4.735 | 4.743 |
+| whole domain 10 m wind RMSE | 3.110 m/s | 2.816 | 2.787 |
+| whole domain MSLP RMSE | 4.32 hPa | 4.15 | 4.11 |
+| analysed max \|u\| at or above 400 hPa | 124.5 m/s | 97.7 | 92.0 |
+
+- Q1, Q2, Q4 and Q5 held.
+- Q3 was refuted as written. Its two-sided "within 2 %" band also rejected the wind improvement (−9.5 %); temperature stayed within 0.2 %. Under the rule J5 is therefore not adopted.
+- Interim scores on 11 starts had shown a +1 hPa north-band bias that the 12th start removed. It was reported to the user before the final score.
+- J5b (user's choice) is an out-of-sample replication of C against V5 on 10-15..10-18, with a one-sided harm rule (predictions md5 6644463a).
 
 
 ## P-81 — The moist NH runs put 4–10× too much rain in a tropical-remnant event

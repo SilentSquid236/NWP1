@@ -30,8 +30,8 @@ cd7d0f085e4d3284    173203  docs/nh2d_density_current.png
 8edbeb1f9f90e5b7     88994  docs/nh2d_mass_mountain_wave.png
 25bdef4fd9603cc4    116736  docs/nh3d_terrain_rest.png
 1eeb6616080945dd      6884  docs/POSTPROCESSING.md
-b8d5caacfc42076f    136815  docs/PROBLEMS.md
-4cc4602d16c743fd     58166  docs/PROMPT_LOG.md
+eeba0e8a9302e91d    140591  docs/PROBLEMS.md
+582d45190cd8a6bd     61056  docs/PROMPT_LOG.md
 d920f1c36b550a3f     21087  docs/REFERENCES.md
 62eb6d1dc0826009    437572  docs/RESEARCH_LOG.md
 bf17820767386e75     85879  docs/s3_backend_cost.png

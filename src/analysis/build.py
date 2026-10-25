@@ -219,6 +219,42 @@ def first_guess_from_forecast(path, lead_hours, levels_pa, rh_default=None):
 # Analysis steps
 # ---------------------------------------------------------------------------
 
+def void_blend(bg, cold, so, lat, lon, domain, d0_km, d1_km, w_min, domain_only=False):
+    """
+    Test J5 (P-82, 2026-10-23): pull the first guess toward the cold-start
+    background (the mean sounding) where no sounding is near.
+
+    The cycled first guess carries features into the sounding voids that no
+    observation can remove: the data-void jet maximum (P-82) and a small
+    cyclone aloft over southern Quebec that re-formed a false surface low
+    within an hour of every surface-pressure correction (10-22 12Z case).
+    Weight of the first guess: 1 within d0_km of the nearest sounding, w_min
+    beyond d1_km, linear in between. Applied to TMP, RH, UGRD and VGRD before
+    the sounding increments, so near a sounding nothing changes. The caller
+    applies it only at cycles that have soundings (00Z, 12Z); at 06Z and 18Z
+    the cold background would be a standard atmosphere.
+    Returns (bg, info).
+    """
+    inside = lambda x: (domain["lat_min"] <= x[2] <= domain["lat_max"]
+                        and domain["lon_min"] <= x[3] <= domain["lon_max"])
+    rows = [x for x in so.get("TMP", []) if (inside(x) or not domain_only)]
+    sites = sorted({(round(float(x[2]), 3), round(float(x[3]), 3)) for x in rows})
+    if not sites:
+        return bg, {"applied": False, "reason": "no soundings"}
+    d = np.full(lat.shape, np.inf)
+    for la, lo in sites:
+        dy = (lat - la) * 111.132
+        dx = (lon - lo) * 111.320 * np.cos(np.radians(0.5 * (lat + la)))
+        d = np.minimum(d, np.hypot(dx, dy))
+    w = np.clip((d1_km - d) / max(d1_km - d0_km, 1e-6), 0.0, 1.0)
+    w = w_min + (1.0 - w_min) * w
+    for var in ("TMP", "RH", "UGRD", "VGRD"):
+        bg[var] = w[None] * bg[var] + (1.0 - w[None]) * cold[var]
+    return bg, {"applied": True, "sites": len(sites), "d0_km": d0_km, "d1_km": d1_km,
+                "w_min": w_min, "mean_w": float(w.mean()),
+                "area_w_below_1": float((w < 1.0).mean())}
+
+
 def analyse_upper(bg, so, lat, lon, domain, L_km=450.0, lam=0.25, domain_only=False):
     """
     Level-by-level increments from the sounding superobs.
@@ -394,7 +430,7 @@ def build_analysis(cycle, observations, terrain, domain, levels_hpa,
                    previous_forecast=None, previous_rh=None,
                    previous_analysis=None, surface_blend=True,
                    below_ground="none", background=None, surface_aware=None,
-                   upper_L_km=450.0, upper_domain_only=False):
+                   upper_L_km=450.0, upper_domain_only=False, void_blend_cfg=None):
     """
     Returns (features [C, L, Y, X] float32, meta dict).
 
@@ -439,6 +475,24 @@ def build_analysis(cycle, observations, terrain, domain, levels_hpa,
         bg, bg_label = first_guess_from_soundings(so, levels_pa, (ny, nx))
         if previous_forecast is not None:
             bg_label += " (previous forecast lacked the lead time)"
+    elif void_blend_cfg is not None and background is None and so.get("TMP"):
+        # J5: only a cycled first guess, and only at a cycle with soundings
+        cold, _ = first_guess_from_soundings(so, levels_pa, (ny, nx))
+        d0, d1, wmin = void_blend_cfg[:3]
+        cold_L = void_blend_cfg[3] if len(void_blend_cfg) > 3 else 0.0
+        if cold_L > 0:
+            # J5b: a smooth large-scale cold background (the mean sounding plus
+            # Barnes increments of the soundings at cold_L km) instead of one
+            # horizontally uniform sounding, which J5 suspected of the +1 hPa
+            # north-band bias.
+            cold, _ = analyse_upper(cold, so, lat, lon, domain, L_km=cold_L,
+                                    domain_only=upper_domain_only)
+        bg, vb = void_blend(bg, cold, so, lat, lon, domain, d0, d1, wmin,
+                            domain_only=upper_domain_only)
+        if vb.get("applied"):
+            bg_label += (f" (J5 void blend: weight 1 within {d0:g} km of a sounding, "
+                         f"{wmin:g} beyond {d1:g} km; mean weight {vb['mean_w']:.2f}"
+                         + (f"; background Barnes L {cold_L:g} km" if cold_L > 0 else "") + ")")
 
     fields, upper_info = analyse_upper(bg, so, lat, lon, domain, L_km=upper_L_km,
                                        domain_only=upper_domain_only)
