@@ -5761,6 +5761,60 @@ Plan: 1 and 2 first (map set), 3 after P-81 settles.
 
 ---
 
+## 2026-10-28 — TB1: the 2 m temperature error follows the cycle start time (deep soil set at the cycle time); M1 tests a fix
+
+**Context.** Prompt 258: "can you look into temperature bias and correction while im gone". The user was away for the whole of this entry, and every choice in it was made by the AI. Production was not changed.
+
+**Predictions first.** TB1 was written before any number was computed (md5 4c7bac5e). Its background line misquotes the 10-23 thermal-low check (it says night +0.5 to +1.2 K; the check found +1 to +1.9 K), so D1 was an easier test than intended. The C2c addendum (8de39c67) and M1 (d03a4747) came later, each before its own run. M1's text gives its time as ~16:05Z; the server stamp is 15:17Z.
+
+**Diagnosis** (every archived TMP match: 12 km moist 26 runs, 215,381; 3 km 73 runs, 549,696).
+- D1 held: 13–16 L −3.55 / −2.21 K (12 km / 3 km), 00–05 L +1.92 / +1.64 K.
+- D2 held: on calm nights (observed wind < 1.5 m/s) +3.1 K; on windy nights (> 4 m/s) about 0.
+- D3 held: stations more than 100 m below the model terrain are about 1.2 K warmer at night.
+- D4 held, with a caveat: dry afternoons −4.1 / −3.5 K, moist afternoons +2.4 / +2.5 K. The split is on observed quantities, so part of the difference is selection.
+- D5 refuted: the error at a fixed local hour is larger at SHORT leads.
+- Not predicted: the error depends on the cycle hour (figure tb1_bias_by_cycle.png). 18Z starts are +6.1 / +5.0 K at night; 12Z starts are −6.7 / −4.2 K in the afternoon. The domain-mean "damped cycle" is largely an average of opposite errors from different starts. Cause: the deep-soil and water temperatures are set from the cycle-time air temperature (P-86).
+
+**Statistical correction** (causal; tested on 3 km from 10-16 and 12 km moist from 10-23).
+
+| arm | 3 km | 12 km moist |
+|---|---|---|
+| raw RMSE | 4.957 K | 5.087 K |
+| C1 domain hour bias | 0.959 | 0.900 |
+| C2 station × valid hour | 0.894 | 0.866 |
+| C3 gridded, station left out | 0.927 | 0.904 |
+
+- K1 was partly refuted, K2 and K3 were refuted, and K4 held.
+- C2 harms the 19–24 h band by 8 %. Its key pools starts whose errors have opposite signs. All three arms fail the deployment rule.
+- C2c, keyed on the cycle hour as well, was chosen after seeing the results. It scored 0.794 / 0.791. On the dry 12 km archive it replicated poorly: 0.961, with the 19–24 h band 1.021.
+- So a station correction mostly learns the P-86 error. It is no substitute for fixing it, and it adapts badly while the model keeps changing.
+
+**M1** (12 km moist, 8 starts 10-24..10-25, C vs T, 367,916 paired matches). `--deep-soil-offset` adds the 24 h station-mean anomaly to T2 and the water temperature.
+
+| | C | T | |
+|---|---|---|---|
+| 2 m T RMSE | 5.401 K | 4.824 K | ratio 0.893; M1b needed ≤ 0.85: refuted |
+| spread of per-cycle mean bias | 7.86 K | 3.45 K | M1c held |
+| 18Z starts, 00–05 L | +6.15 | +1.81 | held |
+| 12Z starts, 13–16 L | −8.19 | −7.15 | M1d needed ≥ −3.5: refuted |
+| dewpoint / MSLP / wind ratio | | 0.990 / 1.010 / 1.022 | M1e (≤ 1.02) refuted on wind |
+
+- M1a was refuted: the offsets were larger than predicted (18Z −7.4 / −8.3 K, 12Z +5.7 / +5.8 K, 06Z +4.9 / +4.2 K, not near 0).
+- M1f held.
+- The rule needed M1b, M1c and M1e, so M1 is not proposed for production as tested.
+
+**What the AI takes from it.** There are two separate deficiencies.
+1. T2 phase (P-86), which M1 largely removes.
+2. A ground that barely heats or cools (P-87). The model skin temperature's diurnal range is 7.3 K against an observed 2 m range of 13 K, and afternoons stay 4–7 K too cold with T2 corrected.
+
+After M1, P-87 is the larger. A fix for P-86 alone warms nights that are already too warm for 00Z starts. That is why M1's overall gain stopped at 11 %. The next step is an energy-budget printout at clear-day stations, before any constant is changed.
+
+**AI-collaboration notes.**
+- The pre-registered statistical correction was the wrong design. It pooled starts whose errors have opposite signs, a structure the AI had not looked for before writing the file. The finding that mattered came from a breakdown the predictions file did not ask for.
+- For a while the AI misjudged the server's clock against its own sense of elapsed time. The server stamps are the record.
+
+---
+
 ## 2026-10-25 — HL1: H and L only at enclosed pressure centres
 
 **Context.** Prompt 257: "can we get rid of the extra high and low pressures". The thermal-low check (10-23) had already found that most H/L marks on the 3 km MSLP maps sit on 0.2–1 mb wiggles of a flat field.

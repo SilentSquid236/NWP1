@@ -39,6 +39,33 @@ hypothesis, **G** missing physics, **H** performance, **I** logistics.
 # OPEN
 
 
+## P-86 — The deep-soil and water temperatures are set from the cycle-time air temperature, so the 2 m error depends on when the run started
+
+**Category** B · **First seen** 2026-10-28 (TB1, prompt 258) · **Status** OPEN (fix tested, not adopted)
+
+**Symptom.** The mean 2 m T error depends on the cycle hour far more than on the lead. Moist 12 km / 3 km archive: runs starting at 18Z (14 L) are +6.1 / +5.0 K too warm at 00–05 L. Runs starting at 12Z (08 L) are −6.7 / −4.2 K too cold at 13–16 L. The domain-mean "damped diurnal cycle" is the average of these. The dry 12 km runs show the same pattern at about half the size.
+
+**Cause (code).** `land_surface.ForceRestoreSurface.__init__` sets the ground Tg, the deep-soil T2 and the fixed water temperature to the lowest-level air temperature at the cycle time, brought down with the standard lapse. The ground relaxes to T2 with time scale τ_d / 2π = 3.8 h. So T2 is an afternoon maximum for 18Z runs and a morning minimum for 12Z runs, when it should be a daily mean.
+
+**Test M1** (2026-10-28; predictions md5 d03a4747). `forecast.py --deep-soil-offset` adds the analysed anomaly (24 h station mean − cycle-time value; `t2_offset.py`, Gaussian 150 km, reports up to the cycle time only) to T2 and the water temperature. Setup: 12 km moist, 8 starts 10-24..10-25, 367,916 paired matches.
+- 2 m T RMSE 5.401 → 4.824 K (ratio 0.893).
+- Spread of the per-cycle-hour mean bias 7.86 → 3.45 K.
+- 18Z-start nights +6.15 → +1.81 K.
+- Dewpoint ratio 0.990, MSLP 1.010, wind 1.022.
+- Its own rule needed ratio ≤ 0.85 and every other variable ≤ 1.02. Both failed, so M1 is not adopted as tested. 00Z starts got slightly worse (their nights were already too warm).
+
+**Not yet tried.** A cycled land state, carrying Tg and T2 from the previous forecast as operational models do; buoy water temperatures for the water (the run directories already hold NDBC files); M1 together with a fix for P-87. Patch and tool: server `scratch/tb/`.
+
+## P-87 — The ground's own diurnal range is about half the observed 2 m range
+
+**Category** B · **First seen** 2026-10-28 (TB1/M1) · **Status** OPEN
+
+**Symptom.** Over the moist archive, the hourly-mean model skin temperature Tg ranges 7.3 K (12 km) and 7.6 K (3 km) over the day. Observed 2 m air ranges 13.0 and 10.0 K over the same matches, and the forecast 2 m air 6.4 and 6.7 K. At 15 L Tg is only about 0.6 K above the model air. With T2 corrected (M1), afternoons are still −4.9 K at 13–16 L (12Z starts −7.2 K, 00Z starts −3.6 K), and 00Z-start nights stay +3.5 K.
+
+**Evidence that it is the surface budget, not only the 2 m operator.** The skin temperature itself is damped, before any 2 m diagnostic is applied. The calm-night warm bias (+3.1 K when the observed wind is < 1.5 m/s, about 0 when it is > 4 m/s), and valley stations (+1.2 K more at night), point the same way at night.
+
+**Candidates, none tested.** Daytime evaporative fraction 0.5 all day; soil heat capacity and the force-restore coefficient (one loam everywhere); the strength of the heat-flux coupling to a ~35–40 m lowest layer (P-84); the stable-side long tail of the heat flux, chosen to stop runaway decoupling; clear-sky radiation everywhere (this cuts the other way on cloudy days). The next step is an hour-by-hour energy-budget printout (Rn, H, LE, G) at a few clear-day stations, before changing any constant.
+
 ## P-85 — The grid is a constant-dx beta-plane, but the cells sit on a lat/lon mesh
 
 **Category** B · **First seen** 2026-10-20 (found while sizing N2's continental outer level, prompt 240) · **Status** OPEN
