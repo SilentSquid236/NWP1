@@ -92,6 +92,11 @@ The model's lowest level sits at ~114 m, so a 150 m blend gives it only about a 
 
 Open: the remaining night warm bias may need longwave cooling of the air itself (the model has no atmospheric radiation); and the wind and dewpoint cost of the thin layers is unexplained. Code for IM, M2 and NS: server `scratch/im`, `scratch/m2`, `scratch/ns` (not in the repo).
 
+**Test RAD (2026-11-04, prompt 263; predictions md5 f5972c9a).** Grey radiation of the air (`grey_radiation.py`: the Byrne and O'Gorman 2013 longwave with water vapour, optional Geen et al. 2016 shortwave absorption, both as coded in Isca). Forecast only from production's analyses, 12 starts.
+- Longwave + shortwave: 2 m T 0.975, dewpoint 0.982, wind 1.015, MSLP 1.018. Nights 0.25 K cooler (18Z starts gain most: 4.96 → 4.65 K). The warm drift aloft at +24 h is smaller.
+- It cools the cold days too, and costs 1.29× (NumPy every step). It missed its ratio rule (≤ 0.97) by 0.005, so it is not adopted.
+- Not yet run: radiation inside the warm P-87 packages (LBT +1.2 K), where its cooling has the right sign.
+
 **Other candidates, not tested.** Daytime evaporative fraction 0.5 all day; soil heat capacity and the force-restore coefficient (one loam everywhere); the strength of the heat-flux coupling to a ~35–40 m lowest layer (P-84); the stable-side long tail of the heat flux, chosen to stop runaway decoupling; clear-sky radiation everywhere (this cuts the other way on cloudy days). The next step is an hour-by-hour energy-budget printout (Rn, H, LE, G) at a few clear-day stations, before changing any constant.
 
 ## P-85 — The grid is a constant-dx beta-plane, but the cells sit on a lat/lon mesh

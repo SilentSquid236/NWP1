@@ -5761,6 +5761,33 @@ Plan: 1 and 2 first (map set), 3 after P-81 settles.
 
 ---
 
+## 2026-11-04 — RAD: longwave cooling of the air; a small, consistent gain that misses its rule
+
+**Context.** Prompt 263: "Lets work on night cooling". NWP1 had no atmospheric radiation; this was the leading candidate for the warm nights left after the P-87 tests.
+
+**Scheme.** `grey_radiation.py`, one band (grey), with water vapour. It is the Byrne and O'Gorman (2013) longwave scheme with coefficients taken from the open-source Isca code (a = 0.8678, b = 1997.9), read on the server, nothing installed. The optional shortwave absorption by the air follows Geen et al. (2016). DOIs not yet checked into REFERENCES.
+- Offline check on the 10-28 00Z forecast: OLR ≈ 266 W/m²; downward longwave at the ground ≈ 323 W/m².
+- Cooling over land: 2.2 K/day at 0–200 m at 02 L, 2.3–3.1 K/day from 200 m to 8 km.
+
+**Test** (predictions md5 f5972c9a). Forecast-only from M2's C analyses, 12 starts. A re-run with radiation off gave matches identical to C.
+
+| arm | 2 m T | dewpoint | wind | MSLP |
+|---|---|---|---|---|
+| RL: longwave | 0.976 | 0.981 | 1.017 | 1.022 |
+| RLS: + shortwave | 0.975 | 0.982 | 1.015 | 1.018 |
+
+- R4 held for RLS. R1–R3 held only in part. R5 (cost) was refuted: 1.29×.
+- The adoption rule needed a 2 m T ratio ≤ 0.97; RLS reached 0.975. Not adopted.
+
+**Reading.**
+- The scheme behaves physically: nights cooler, 18Z starts gain most (RMSE −6 %), dewpoint better, and the warm drift aloft at +24 h smaller.
+- Its effect on the mean (−0.2 to −0.3 K) is small next to the analysis errors found in P-87. It makes production's already cold days a little colder.
+- Its right home is inside a package whose analysis is not cold: the P-87 arms run about +1 K warm.
+
+**AI-collaboration note.** The AI predicted a larger night effect (≥ 0.4 K) and a larger cooling aloft (0.5–2 K at 1 km) than the grey scheme gave. A grey band has no window, and the 117 m lowest level cannot show the strong cooling of the lowest tens of metres.
+
+---
+
 ## 2026-11-03 — P-87 option 1: implicit mixing, thin lowest layers, and a night surface test; nothing adopted
 
 **Context.** Prompt 261: "Lets fix option 1". Prompt 262: the user gave the AI authority to make decisions on the model while away. The AI read that as: it chooses tests and adoption under rules written beforehand, and code reaches production only through the user's push.
