@@ -64,7 +64,35 @@ hypothesis, **G** missing physics, **H** performance, **I** logistics.
 
 **Evidence that it is the surface budget, not only the 2 m operator.** The skin temperature itself is damped, before any 2 m diagnostic is applied. The calm-night warm bias (+3.1 K when the observed wind is < 1.5 m/s, about 0 when it is > 4 m/s), and valley stations (+1.2 K more at night), point the same way at night.
 
-**Candidates, none tested.** Daytime evaporative fraction 0.5 all day; soil heat capacity and the force-restore coefficient (one loam everywhere); the strength of the heat-flux coupling to a ~35–40 m lowest layer (P-84); the stable-side long tail of the heat flux, chosen to stop runaway decoupling; clear-sky radiation everywhere (this cuts the other way on cloudy days). The next step is an hour-by-hour energy-budget printout (Rn, H, LE, G) at a few clear-day stations, before changing any constant.
+**Budget printout and soundings (2026-11-02, prompt 260; p87_budget_result).** On clear afternoons the land fluxes are within the usual range: midday H 117–166 W/m², G 6–19 % of Rn, Tg − T₁ about 3 K. It is the air that is too cold. 12Z starts are 3.6 / 5.2 / 3.6 K too cold at 100 / 250 / 500 m above the ground at +1 h, and 5.6 / 4.8 / 3.3 K at +12 h over all moist 12Z starts (00Z starts at the same valid time: 2.0 / 1.8 / 1.2 K). The lowest model level is about 114 m above the ground (40 levels).
+
+**Cause found in the analysis; test M2 (predictions md5 0840a286).** `build.blend_surface` spreads the 2 m temperature innovation linearly up to 1000 m. On a cold morning that cools the warm air of the nocturnal inversion. M2 (`--blend-stable 150,3`) confines the temperature increment to 150 m where the air is stable. Setup: 12 cycled starts 10-28..10-30, 555,804 paired matches.
+- 12Z analyses at 975 hPa (inversion cases) −2.39 → −0.48 K.
+- 12Z starts at +12 h, 100–500 m: −3.2/−2.7/−1.9 → −1.5/−0.9/−0.3 K.
+- 13–16 L bias of 06Z and 12Z starts rises by 3.2 K.
+- But 2 m T RMSE ratio 0.996, dewpoint 1.140, wind 1.052, and nights 0.7–1.9 K warmer. It failed its rule and is not adopted.
+
+The model's lowest level sits at ~114 m, so a 150 m blend gives it only about a quarter of a cold surface increment, and the cold surface air is lost. So the blend depth is confirmed as one cause, but it cannot be fixed alone: the lowest layer is too thick to hold a surface inversion (P-84). Patch on the server, `scratch/m2`.
+
+**Test IM, option 1 (2026-11-03, prompt 261; predictions md5 7f02d631).** Same chain and dates as M2, 555,804 matches common to all arms. Thin lowest layers needed implicit mixing first: the explicit mixing diverged at 7.7 h with a 41 m lowest level. New option `--implicit-mixing`, neutral on the production grid (ratios 1.000).
+
+| arm | 2 m T | dewpoint | wind |
+|---|---|---|---|
+| L: thin layers (41 m) | 1.033 | 0.943 | 1.038 |
+| LB: L + stable blend | 1.003 | 1.085 | 1.094 |
+| LBT: LB + deep soil | 0.995 | 1.087 | 1.089 |
+
+- LBT removes the start-time dependence (spread of per-start-hour bias 5.42 → 0.57 K) and gives the best soundings (12Z +12 h, 100–500 m: −0.8/0.0/+0.2 K). But it is +1.2 K warm at all hours. Nothing adopted.
+- Reading: with the air aloft right, the model's own surface layer does not hold a cold surface. The 1000 m blend had hidden this by starting the whole lowest km too cold.
+
+**Test NS (2026-11-03; predictions md5 90272993).** Forecast physics only, run from LBT's analyses.
+- A lower-inertia surface (C_G × 1.85, the Noilhan and Planton 1989 vegetation value as recalled, not yet checked) cools the nights by 0.9 K: 2 m T 0.992 of LBT, 0.988 of production.
+- Dropping the stable-side long tail of the heat flux also cools the nights slightly (0.984 of LBT), against the AI's expectation.
+- Every package keeps dewpoint and wind 7–9 % worse than production, a cost of the thin layers and the stable blend. Nothing adopted.
+
+Open: the remaining night warm bias may need longwave cooling of the air itself (the model has no atmospheric radiation); and the wind and dewpoint cost of the thin layers is unexplained. Code for IM, M2 and NS: server `scratch/im`, `scratch/m2`, `scratch/ns` (not in the repo).
+
+**Other candidates, not tested.** Daytime evaporative fraction 0.5 all day; soil heat capacity and the force-restore coefficient (one loam everywhere); the strength of the heat-flux coupling to a ~35–40 m lowest layer (P-84); the stable-side long tail of the heat flux, chosen to stop runaway decoupling; clear-sky radiation everywhere (this cuts the other way on cloudy days). The next step is an hour-by-hour energy-budget printout (Rn, H, LE, G) at a few clear-day stations, before changing any constant.
 
 ## P-85 — The grid is a constant-dx beta-plane, but the cells sit on a lat/lon mesh
 

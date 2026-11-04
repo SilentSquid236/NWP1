@@ -346,6 +346,9 @@ phase breaks.
 | 257 | "can we get rid of the extra high and low pressures" | **DIR** | Free text, not an option pick, though the AI had listed the H/L labeller among open items. HL1: enclosed-centre rule, predictions first (md5 36c8992a). During the work two figures already in docs/ (instability_cross_section.png, instability_growth.png) arrived attached with no text; not counted as a prompt |
 | 258 | "can you look into temperature bias and correction while im gone" | **DIR** | Free text. The AI chose the whole study while the user was away: TB1 diagnosis and causal statistical corrections (predictions md5 4c7bac5e), then M1, a deep-soil fix (d03a4747). Found the cycle-hour error (P-86) and the damped ground (P-87); M1 RMSE -10.7 %, not adopted under its rule |
 | 259 | "if you need access to anything do it in the next 30s" | ADM | Nothing was needed; the AI listed its plan |
+| 260 | "Lets tackle p-87" | **DIR** | Free text, the option the AI had recommended. Energy-budget printout (expectations md5 b6cae774; E1, E2 refuted: the soil is not the fault). A sounding comparison found the 12Z analyses 3-5 K too cold at 100-500 m. M2, a stability-dependent surface blend (md5 0840a286), confirmed the cause (afternoons +3.2 K) but failed its rule (T 0.996, dewpoint 1.140) because the 114 m lowest level cannot hold a surface inversion |
+| 261 | "Lets fix option 1" | **DIR** | Free text naming the option the AI had recommended. Implicit mixing added (thin layers diverged without it); test IM, 4 arms (md5 7f02d631). Nothing passed its rule |
+| 262 | "can making your own decisions on the model while I am gone" | **DIR** | Delegation of decisions to the AI. Used for test choices: test NS, a night surface test (md5 90272993). No production change |
 
 **Observation.** Prompt 53 is 17 words (corrected 2026-10-18; previously 18) and is the most consequential
 instruction in the project. Before it, nine candidate causes had been patched
@@ -375,24 +378,24 @@ option, so this cannot yet be checked further back. Prompts 220 and 227 are othe
 
 ## Aggregate
 
-| tag | prompts 1-60 | share | all prompts 1-259 | share |
+| tag | prompts 1-60 | share | all prompts 1-262 | share |
 |---|---|---|---|---|
-| DIR direction-setting | 19 | 32% | 85 | 33% |
+| DIR direction-setting | 19 | 32% | 88 | 34% |
 | OBS observation / pasted output | 13 | 22% | 65 | 25% |
 | ADM administrative | 8 | 14% | 75 | 29% |
 | MET methodological | 9 | 15% | 20 | 8% |
 | CON constraint | 7 | 12% | 13 | 5% |
 | COR correction | 2 | 3% | 5 | 2% |
-| prompts counted | 59 | | 258 | |
+| prompts counted | 59 | | 261 | |
 
 How these counts were made:
-- They were computed from the table rows on 2026-10-18 and updated through prompt 259 on 2026-10-28. A row that groups
+- They were computed from the table rows on 2026-10-18 and updated through prompt 262 on 2026-11-03. A row that groups
   several prompts (28-30, 32 and 34, 153-158) counts once per prompt.
 - Shares are of prompts. They add to slightly more than 100 % because seven
   rows carry two tags. The tag counts therefore sum to 5 more than the prompts
   counted: +7 for the second tags, -1 for untagged prompt 24, -1 for prompt 143
-  (tagged Q). Recounted from the rows on 2026-10-25: 263 tags over 258 prompts.
-- Prompt 40 has no row, so 258 prompts are counted. Prompt 24 is untagged.
+  (tagged Q). Recounted from the rows on 2026-10-25: 266 tags over 261 prompts.
+- Prompt 40 has no row, so 261 prompts are counted. Prompt 24 is untagged.
   Prompt 143 is tagged **Q**, which is not in the classification.
 - The earlier version of this table (DIR 22, OBS 13, ADM 10, MET 9, CON 8,
   COR 3, over prompts 1-60) was a hand count and does not match the rows. The

@@ -5761,6 +5761,81 @@ Plan: 1 and 2 first (map set), 3 after P-81 settles.
 
 ---
 
+## 2026-11-03 — P-87 option 1: implicit mixing, thin lowest layers, and a night surface test; nothing adopted
+
+**Context.** Prompt 261: "Lets fix option 1". Prompt 262: the user gave the AI authority to make decisions on the model while away. The AI read that as: it chooses tests and adoption under rules written beforehand, and code reaches production only through the user's push.
+
+**Engineering.** With a 41 m lowest level (40 levels, "surface" form 1.19; production is ~117 m), the NH core's explicit mixing diverged at 7.7 h. The AI added `--implicit-mixing`, a backward-Euler solve of the same operator in the C physics kernel.
+- Tests 3/3: tiny step equals explicit to 4e-5; column integral conserved to 2e-13; bounded at 60 s where explicit overshoots by 0.24 K.
+- Core tests 9/9 and land-surface tests 9/9 still pass.
+- Cost: 4.2 against 3.4 min per forecast.
+
+**Test IM** (predictions md5 7f02d631). Same chain and dates as M2, 555,804 matches common to all arms.
+
+| arm | 2 m T | dewpoint | wind |
+|---|---|---|---|
+| I: implicit only | 1.000 | 1.001 | 1.000 |
+| L: thin layers | 1.033 | 0.943 | 1.038 |
+| LB: L + stable blend | 1.003 | 1.085 | 1.094 |
+| LBT: LB + M1 | 0.995 | 1.087 | 1.089 |
+
+- Held: IM1, IM6, IM7, IM8. Refuted: IM2–IM5.
+- LBT removed the start-time dependence (spread 5.42 → 0.57 K) and fits the soundings best. But it runs +1.2 K warm at all hours.
+
+**Test NS** (md5 90272993). Forecast physics only, from LBT's analyses.
+- C_G × 1.85 (vegetation-like surface): nights 0.9 K cooler; 2 m T 0.988 of production.
+- No long tail on the stable heat flux: 0.980 of production, and nights cooler, the opposite of NS2's prediction.
+- Dewpoint and wind stay 7–9 % worse than production in every package.
+- NS3 held; NS1, NS2 and NS4 were refuted. Nothing adopted.
+
+**What the AI decided, and why.** No production change. The best package lowers the 2 m temperature error by 2 % and raises the dewpoint and wind errors by 7–9 %. That fails every rule written for these tests, and it would trade one variable for two.
+
+**What it learned.**
+- The 1000 m surface blend makes the morning analyses too cold through the lowest km, and the start-time dependence comes from the deep-soil setting (P-86). Both are measured, with mechanisms.
+- Fixing them exposes the model's own warm surface layer at night. It has no longwave cooling of the air, and it holds a cold surface poorly.
+- The thin layers cost wind and dewpoint for reasons not yet understood. That is the open question before any of this can be used.
+
+**AI-collaboration notes.**
+- Two of the AI's physical expectations were wrong in this span. The soil was not the main fault (P-87 step 1), and the long tail was not keeping nights warm (NS2).
+- The predictions files caught both before any number was interpreted. The autonomy the user granted was used for test choices only.
+
+---
+
+## 2026-11-02 — P-87: the afternoons start cold in the analysis, not in the ground; M2 confirms the cause but fails
+
+**Context.** Prompt 260: "Lets tackle p-87".
+
+**Step 1, the energy budget.** Expectations were written first (md5 b6cae774). The forecast was instrumented with a wrapper (`ls_diag.py`) that records the force-restore terms every step, for 10-24 and 10-25 12Z, with and without the M1 offset, at about 290 clear-afternoon land cells a day.
+- E1 refuted: G is 6–19 % of midday Rn, not ≥ 25 %.
+- E2 refuted: midday H is 117–166 W/m².
+- E3 held: Tg − T₁ about 3 K.
+- E4 held only with M1; E5 held.
+- The ground is not the main problem. The AI had expected it to be.
+
+**Step 2, the soundings.** The model's lowest 2 km were compared with the radiosondes.
+- 12Z starts are already 3.6 / 5.2 / 3.6 K too cold at 100 / 250 / 500 m at +1 h. Over all moist 12Z starts they are 5.6 / 4.8 / 3.3 K too cold at +12 h. 00Z starts verifying at the same time are 2.0 / 1.8 / 1.2 K too cold.
+- The day starts with a cold lower atmosphere. The cause in the code is `build.blend_surface`, which spreads the 2 m temperature innovation linearly to 1000 m. On a cold morning that cools the inversion's warm air.
+- The lowest model level is about 114 m above the ground.
+
+**Step 3, test M2** (predictions md5 0840a286). The temperature increment's depth follows stability, from 1000 m (mixed) down to 150 m (inversion). The test cycled 12 starts, 10-28 00Z to 10-30 18Z, with arms C and B (555,804 paired matches).
+- B1 held: 12Z inversion cases at 975 hPa −2.39 → −0.48 K.
+- B2 held: 12Z starts at +12 h, 100–500 m, −3.2/−2.7/−1.9 → −1.5/−0.9/−0.3 K.
+- B4 held: afternoons of 06Z/12Z starts +3.2 K warmer.
+- B3 refuted: RMSE ratio 0.996.
+- B5 refuted: dewpoint 1.140, wind 1.052.
+- B6 refuted: nights after 00Z starts +1.2 → +3.1 K.
+- Not adopted.
+
+**Reading.** The mechanism is confirmed, but the fix moves the error rather than removing it. A 150 m blend gives the 114 m lowest level only about a quarter of a cold surface increment. The cold surface air at 00/06/12Z is then lost: the first 6 h are +1.8 K too warm.
+
+The model cannot hold a surface inversion with a lowest layer about 230 m deep. P-87 therefore needs the analysis blend and the lowest-layer depth (P-84) fixed together.
+
+**AI-collaboration notes.**
+- The AI's prior, written as E1/E2, put the fault in the soil. The printout refuted it within an hour, and the soundings showed where the cold air was.
+- M2's predictions did not consider that the model's lowest level sits above the stable depth the AI chose. A one-line check of z₁ against 150 m before the run would have predicted the warm early hours.
+
+---
+
 ## 2026-10-28 — TB1: the 2 m temperature error follows the cycle start time (deep soil set at the cycle time); M1 tests a fix
 
 **Context.** Prompt 258: "can you look into temperature bias and correction while im gone". The user was away for the whole of this entry, and every choice in it was made by the AI. Production was not changed.
