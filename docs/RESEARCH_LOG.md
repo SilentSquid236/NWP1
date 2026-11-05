@@ -5761,6 +5761,70 @@ Plan: 1 and 2 first (map set), 3 after P-81 settles.
 
 ---
 
+## 2026-11-05 — GE: GFS at the lateral boundaries; the frozen edges were the largest error in the 12 km forecast
+
+**Context.** Prompt 265 asked whether feeding in an existing global model would be easier than running one. Prompt 266 answered with "We can use the gfs to help the edges". The observation-only rule (P-53) is narrowed: GFS may drive the lateral boundaries, and the initial state stays our own analysis. Before this test, every 12 km forecast held its edges at the cycle-time analysis for 24 h.
+
+**Method.**
+- `tools/gfs_edges.py` fetches 90 GRIB messages per output time by byte range from the AWS copy of the GFS 0.5-degree files, about 20 MB each. The fields are TMP, RH, UGRD, VGRD and HGT on 18 levels. The cycle used is 6 h older than ours, forecast hours 6-30, because the same-hour GFS is not out at +1:45.
+- Bilinear to our cell centres. 875 and 825 hPa linear in ln p. 3-hourly to hourly linear in time.
+- `forecast.py --edge-frames DIR` puts these after the analysis as frames for hours 1-24. They go through the same conversion, filter/balance and stabilisation as the analysis.
+- Three arms, forecast-only from the M2 C analyses, on the same 12 starts as M2/IM/NS/RAD, with production's moist 12 km command:
+  - GT: analysis + GFS change;
+  - GR: GT blended to absolute GFS over 6 h;
+  - GA: absolute GFS from hour 1.
+- The control is M2 C, reused; the RAD C0 rerun had reproduced it exactly.
+- Predictions and rule: `ge_predictions.txt` (md5 ef25d17e), written before any forecast was scored. One frame comparison was seen before writing, and an erratum (written before scoring) corrects how the predictions file stated it.
+- Afterwards, the production-form code (repo HEAD with the `--edge-frames` option) was run on 10-28 00Z. It reproduced GA bit for bit (all arrays equal except the wall-clock field).
+
+**Result.** 555,804 paired matches. Ratios are arm RMSE divided by control RMSE.
+
+| | T | dewpoint | wind | MSLP |
+|---|---|---|---|---|
+| control RMSE | 4.99 K | 4.50 K | 3.77 m/s | 5.86 hPa |
+| GT | 0.742 | 0.837 | 0.880 | 0.405 |
+| GR | 0.635 | 0.585 | 0.663 | 0.222 |
+| GA | 0.629 | 0.574 | 0.645 | 0.218 |
+
+By lead, for GA:
+
+| lead | T | dewpoint | wind | MSLP |
+|---|---|---|---|---|
+| 1-6 h | 0.820 | 0.785 | 0.843 | 0.645 |
+| 19-24 h | 0.525 | 0.433 | 0.517 | 0.130 |
+
+- Wind: GA beat the control in 12 of 12 starts. Every arm finished every forecast.
+- Edge band against interior, GA: T 0.453 against 0.730, wind 0.682 against 0.635. The interior gains about as much as the edge band for wind.
+- Soundings, 12Z +24 h, RMS at 1000/2000/4000 m above ground: control 5.4/3.6/2.8 K, GA 1.3/1.3/1.1 K.
+- Cost: 3.55 against 3.40 min per forecast. About 70 s to download a cycle (180 MB); cached repeats take 5 s.
+
+**Predictions.**
+
+| prediction | outcome |
+|---|---|
+| P1 (MSLP) | held, by far |
+| P2 (wind) | held, by far |
+| P3 (T unchanged, 0.98-1.01) | refuted: T 0.63-0.74 |
+| P4 (dewpoint) | held for GA/GR; refuted for GT (0.837, not within 1 %) |
+| P5 (GA worse early) | refuted: GA wind 0.843 at 1-6 h, no start-up shock in the scores |
+| P6 (edge band gains more) | held for MSLP, refuted for wind |
+| P7 (cost) | held |
+
+**Interpretation.**
+- The frozen edges were not one error among several. They were the largest one in the 12 km forecast, and they grew with lead. Every physics test since M1 (TB1, M2, IM, NS, RAD) was measured on top of them; those ratios still hold as comparisons, but the absolute errors they were chipping at were mostly edge error.
+- The 2 m T gain is the surprise. The cycle-hour T bias was put down to the diurnal physics (P-86/87); part of it was air advected in from edges that held cycle-time temperatures all day.
+- GT, which keeps our analysis at the edges and takes only the GFS change, gets between a third and three quarters of GA's gain, depending on the variable. The difference between GT and GA is the analysis error at the edges, which the frame check had shown: 850-200 hPa winds 7-16 m/s RMS from GFS, our analysis windier at 900-750 hPa (P-82). That is a measure of the observation-only analysis, not only of the boundaries.
+
+**Status.** GA adopted under the pre-registered rule (authority of prompt 262). Two pieces of code are in the working copy and git clone:
+- `tools/gfs_edges.py` (new);
+- `src/forecast.py` (`--edge-frames`, inert unless given).
+
+The cycle hook is not written yet: `NWP_GFS_EDGES` in daily.sh, given only to the moist product run, so that the dry first-guess run keeps fixed edges and no GFS value reaches an analysis. After that is written and the user pushes, the crontab switch is `NWP_GFS_EDGES=abs`. The 3 km nest takes its edges from the 12 km product and should inherit the gain; that is untested. P-53 is marked addressed.
+
+**For the collaboration study.** The largest single improvement in the project came from relaxing a constraint the human had set, not from any of the physics the AI proposed. The AI's own predictions put the gain at 1-8 %; it was 35-78 %. Six weeks of physics tests were run inside an error the design had accepted on day one.
+
+---
+
 ## 2026-11-04 — RAD: longwave cooling of the air; a small, consistent gain that misses its rule
 
 **Context.** Prompt 263: "Lets work on night cooling". NWP1 had no atmospheric radiation; this was the leading candidate for the warm nights left after the P-87 tests.

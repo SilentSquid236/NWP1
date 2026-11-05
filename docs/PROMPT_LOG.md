@@ -351,6 +351,8 @@ phase breaks.
 | 262 | "can making your own decisions on the model while I am gone" | **DIR** | Delegation of decisions to the AI. Used for test choices: test NS, a night surface test (md5 90272993). No production change |
 | 263 | "Lets work on night cooling" | **DIR** | Free text, the open candidate the AI had named (no longwave cooling of the air). Grey radiation scheme added; test RAD (md5 f5972c9a): T 0.975, dewpoint 0.982, missed its rule by 0.005; not adopted |
 | 264 | "How hard would it be to run a low resolution global model" | MET | A question about scope, answered with an estimate; no work started. The server has gcc, gfortran and MPICH, so compiling is possible |
+| 265 | "would it be eaiser to feed an already existing global model in for our purposes?" | MET | A question about scope. The AI answered that operational global output (e.g. GFS) as edge values would be the easiest by far, but it ends the observation-only design. It offered a diagnostic arm to measure what the frozen edges cost; no work started |
+| 266 | "We can use the gfs to help the edges" | **DIR** | Free text taking the easiest option in the AI's answer to 265, limited to the edges: the initial state stays the observation-only analysis, and GFS may drive the lateral boundaries. The standing observation-only rule is narrowed, not dropped. Frame builder tools/gfs_edges.py (GFS 0.5 degree, 6 h older cycle); test GE, 3 arms (md5 ef25d17e). All passed; GA (absolute GFS) adopted by the rule: T 0.629, dewpoint 0.574, wind 0.645, MSLP 0.218 of the fixed-edge errors. The largest gain in the project |
 
 **Observation.** Prompt 53 is 17 words (corrected 2026-10-18; previously 18) and is the most consequential
 instruction in the project. Before it, nine candidate causes had been patched
@@ -380,24 +382,24 @@ option, so this cannot yet be checked further back. Prompts 220 and 227 are othe
 
 ## Aggregate
 
-| tag | prompts 1-60 | share | all prompts 1-264 | share |
+| tag | prompts 1-60 | share | all prompts 1-266 | share |
 |---|---|---|---|---|
-| DIR direction-setting | 19 | 32% | 89 | 34% |
+| DIR direction-setting | 19 | 32% | 90 | 34% |
 | OBS observation / pasted output | 13 | 22% | 65 | 25% |
-| ADM administrative | 8 | 14% | 75 | 29% |
-| MET methodological | 9 | 15% | 21 | 8% |
+| ADM administrative | 8 | 14% | 75 | 28% |
+| MET methodological | 9 | 15% | 22 | 8% |
 | CON constraint | 7 | 12% | 13 | 5% |
 | COR correction | 2 | 3% | 5 | 2% |
-| prompts counted | 59 | | 263 | |
+| prompts counted | 59 | | 265 | |
 
 How these counts were made:
-- They were computed from the table rows on 2026-10-18 and updated through prompt 264 on 2026-11-04. A row that groups
+- They were computed from the table rows on 2026-10-18 and updated through prompt 266 on 2026-11-05. A row that groups
   several prompts (28-30, 32 and 34, 153-158) counts once per prompt.
 - Shares are of prompts. They add to slightly more than 100 % because seven
   rows carry two tags. The tag counts therefore sum to 5 more than the prompts
   counted: +7 for the second tags, -1 for untagged prompt 24, -1 for prompt 143
-  (tagged Q). Recounted from the rows on 2026-10-25: 268 tags over 263 prompts.
-- Prompt 40 has no row, so 263 prompts are counted. Prompt 24 is untagged.
+  (tagged Q). Recounted from the rows on 2026-10-25, and updated since: 270 tags over 265 prompts.
+- Prompt 40 has no row, so 265 prompts are counted. Prompt 24 is untagged.
   Prompt 143 is tagged **Q**, which is not in the classification.
 - The earlier version of this table (DIR 22, OBS 13, ADM 10, MET 9, CON 8,
   COR 3, over prompts 1-60) was a hand count and does not match the rows. The

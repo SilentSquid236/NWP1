@@ -101,13 +101,19 @@ def load_state(path):
     return z[key], {k: z[k] for k in z.files if k not in FEATURE_KEYS}
 
 
-def driving_frames(run_dir):
+def driving_frames(run_dir, edge_frames=None):
     """
     The frames for a run, observation analysis first.
 
     An observation run has ONE frame, obs_analysis_f00.npz, and so frozen
     boundaries; an HRRR run has live_hrrr_f00..fNN. A directory holding both
     is refused -- which source drove a forecast must never be a guess.
+
+    edge_frames (--edge-frames, prompt 266, test GE): a directory of
+    gfs_edge_f01..fNN.npz from tools/gfs_edges.py. The initial state is still
+    the observation analysis; these frames drive only the edge relaxation from
+    hour 1 on. They are read only when asked for, never found by globbing the
+    run dir, so the dry run that becomes the next first guess cannot pick them up.
     """
     run_dir = Path(run_dir)
     key = lambda q: int(q.stem.split("_f")[-1])
@@ -116,6 +122,13 @@ def driving_frames(run_dir):
     if obs and hrrr:
         raise SystemExit(f"{run_dir} holds both observation and HRRR frames; "
                          f"refusing to guess which drives the run")
+    if edge_frames:
+        gfs = sorted(Path(edge_frames).glob("gfs_edge_f*.npz"), key=key)
+        if not obs or hrrr:
+            raise SystemExit(f"--edge-frames needs obs_analysis_f00.npz in {run_dir} and no HRRR frames")
+        if not gfs or [key(q) for q in gfs] != list(range(1, len(gfs) + 1)):
+            raise SystemExit(f"--edge-frames {edge_frames}: need gfs_edge_f01..fNN unbroken")
+        return obs[:1] + gfs, f"observations (initial state) + GFS edges from {edge_frames}"
     return (obs, "observations") if obs else (hrrr, "hrrr")
 
 
@@ -686,6 +699,10 @@ def main():
     p.add_argument("--nh-physics", choices=("stage", "step"), default="stage",
                    help="With --core nh: evaluate the physics in every RK stage (default) or "
                         "once per step, held over the stages (CAM stage S5)")
+    p.add_argument("--edge-frames", default=None,
+                   help="directory of gfs_edge_f01..fNN.npz (tools/gfs_edges.py): GFS drives the "
+                        "edge relaxation from hour 1; the initial state stays the observation "
+                        "analysis (prompt 266, test GE). Default: edges held at the analysis")
     p.add_argument("--boundary-forecast", default=None,
                    help="Nest: lateral boundaries from this coarser forecast.npz of the "
                         "same domain and cycle, interpolated to this grid every hour "
@@ -825,7 +842,9 @@ def main():
         args.land_surface = not args.surface_heating
 
     run_dir = Path(args.run_dir)
-    files, source = driving_frames(run_dir)
+    if args.edge_frames and args.boundary_forecast:
+        raise SystemExit("--edge-frames and --boundary-forecast both set the edges; give one")
+    files, source = driving_frames(run_dir, args.edge_frames)
     if not files:
         print(f"No obs_analysis_f*.npz or live_hrrr_f*.npz in {run_dir}. "
               f"Run src/ingest_obs.py (or ingest_hrrr.py) first.")

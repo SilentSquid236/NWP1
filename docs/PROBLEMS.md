@@ -728,13 +728,25 @@ service, which is P-06 and is where this project's defects have always been.
 ---
 
 ## P-53 — Observation-only initial state and frozen lateral boundaries
-**Category** G, I · **First seen** 2026-09-22 · **Status** OPEN
+**Category** G, I · **First seen** 2026-09-22 · **Status** ADDRESSED by test GE (2026-11-05); in production once the code is pushed and the cycle runs with GFS edges
 
 **Symptom.** Not a failure yet: a design with a known cost. With no model output allowed and nothing observed after the cycle time, the lateral boundaries can only be held to the initial analysis. At ~20 m/s air crosses ~860 km in 12 h of a ~1300 km domain, so error from the frozen edges should reach much of the interior by hour 12.
 
 **What is known.** Initial state from every reliable observation at the cycle time (`src/analysis/`); upper air from the previous run's forecast where soundings are missing; analysis area extended beyond the domain. Measurement to make: forecast error against distance from the nearest edge, by lead time (research log 2026-09-22, prediction P5).
 
 **Ruled out.** none yet.
+
+**Test GE (2026-11-05, prompt 266).** The user allowed GFS output at the edges only ("We can use the gfs to help the edges"); the initial state stays the observation analysis. `tools/gfs_edges.py` builds hourly frames from the GFS 0.5-degree forecast of the cycle 6 h older, and `forecast.py --edge-frames` drives the relaxation zone with them from hour 1. Forecast-only from the M2 C analyses, 12 starts (10-28 00Z to 10-30 18Z), 555,804 paired matches. The ratios below are RMSE divided by the fixed-edge control's RMSE:
+
+| arm | T | dewpoint | wind | MSLP |
+|---|---|---|---|---|
+| GT: GFS change only | 0.742 | 0.837 | 0.880 | 0.405 |
+| GR: ramp to GFS over 6 h | 0.635 | 0.585 | 0.663 | 0.222 |
+| GA: GFS absolute | 0.629 | 0.574 | 0.645 | 0.218 |
+
+The control's MSLP RMSE is 5.9 hPa; GA's is 1.3 hPa. The gain grows with lead. At 19-24 h GA is at 0.525 for T, 0.433 for dewpoint, 0.517 for wind and 0.130 for MSLP. The interior gains as well as the edge band: interior wind 0.635, edge-band wind 0.682. All three arms passed the pre-registered rule, and GA was chosen by the rule's tie-break (lowest wind ratio). Cost: +4 % forecast time and about 70 s of download per cycle. The frozen edges were the largest single error in the 12 km forecast, much larger than predicted (P3 expected T within 0.98-1.01).
+
+**Not done yet.** The production switch is not done. The NWP_GFS_EDGES hook in daily.sh and cam_cycle.sh has not been written. The first-guess path must keep fixed edges, so that no GFS value reaches an analysis. The 3 km nest is untested with GFS-driven 12 km edges; it should inherit the gain.
 
 ---
 

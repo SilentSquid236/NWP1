@@ -30,10 +30,10 @@ cd7d0f085e4d3284    173203  docs/nh2d_density_current.png
 8edbeb1f9f90e5b7     88994  docs/nh2d_mass_mountain_wave.png
 25bdef4fd9603cc4    116736  docs/nh3d_terrain_rest.png
 1eeb6616080945dd      6884  docs/POSTPROCESSING.md
-76bb1df7fba2b492    148280  docs/PROBLEMS.md
-8d778c12da9136f7     63875  docs/PROMPT_LOG.md
+cd58eff24a172b2a    149993  docs/PROBLEMS.md
+7fb6bee31228f570     65017  docs/PROMPT_LOG.md
 94ce3f65437ddd36     21574  docs/REFERENCES.md
-fd3abefe155292ad    457912  docs/RESEARCH_LOG.md
+203305ff289dcb48    462995  docs/RESEARCH_LOG.md
 bf17820767386e75     85879  docs/s3_backend_cost.png
 2ad8f171b4d38426    226489  docs/skew_compare.png
 78c3574bb1b0dd88      4845  docs/STABILITY.md
@@ -154,7 +154,7 @@ f2ade9ddf327f9ec      4662  src/dynamics/test_sigma_levels.py
 084a3dad35f43163      7189  src/dynamics/turbulence.py
 0912dc3ca37c39e5      4669  src/dynamics/vertical.py
 11ea32d1050e29c3      7067  src/dynamics/visualize_instability.py
-d8153973b29f975d     72490  src/forecast.py
+9eba0aa05dcf3047     73892  src/forecast.py
 72920dad90f90394     21010  src/ingest_hrrr.py
 b91684cfa553337c     14557  src/ingest_obs.py
 dc26fb241d4dec8a     22477  src/make_maps.py
@@ -213,6 +213,7 @@ ea8ab0134cf406a9      4032  tools/budget28.py
 88e11eeaa6411ec2     11068  tools/daily.sh
 2396001504e2f24a      4305  tools/edge_diag.py
 c4cb3526b7e6e2d4      1544  tools/fetch_boundaries.py
+07aa9485f3cd4ae6     11832  tools/gfs_edges.py
 72eb96ba205f925f       939  tools/lead_scores.py
 78dcce8adc448e93       962  tools/locate28.py
 909645a4c8bd7303      2719  tools/locate_growth.py
