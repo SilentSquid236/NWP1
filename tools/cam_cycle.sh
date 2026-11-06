@@ -50,6 +50,10 @@ UPPER_ARGS=""
 # 3 km run. Unset = forecast.py's default (exact).
 INIT12_ARGS=""; [ -n "${NWP_INIT_BALANCE:-}" ] && INIT12_ARGS="--init-balance $NWP_INIT_BALANCE"
 INIT3_ARGS=""; [ -n "${NWP_CAM_INIT_BALANCE:-}" ] && INIT3_ARGS="--init-balance $NWP_CAM_INIT_BALANCE"
+# NWP_GFS_EDGES (test GE, 2026-11-05): daily.sh gives GFS edge frames to the moist
+# 12 km product and deletes them once it exists. If that run failed and the frames
+# are still there, the rerun below (step 1b) uses them too.
+EDGE12_ARGS=""
 if [ "$CAM_MOIST" = 1 ]; then BUDGET_MIN="${NWP_CYCLE_BUDGET_MIN:-150}"
 else BUDGET_MIN="${NWP_CYCLE_BUDGET_MIN:-90}"; fi
 RESERVE_MIN=6   # forecast set-up (~1 min) + output write (~1.3 min since S5e writes
@@ -160,10 +164,11 @@ if [ "$CAM_MOIST" = 1 ]; then
             echo "=== 12 km moist NH forecast: reusing the 12 km product $BFM" >> "$LOG"
         else
         rm -f "$BFM"          # never nest in a stale file from an earlier attempt
+        [ -n "${NWP_GFS_EDGES:-}" ] && [ -d "$D12/gfs_edges" ] && EDGE12_ARGS="--edge-frames $D12/gfs_edges"
         step "12 km moist NH forecast (3 km edges)" python -u "$ROOT/src/forecast.py" --run-dir "$D12" \
             --hours "$HOURS" --output-every 1 --core nh --nh-backend c --advection upwind3 \
             --nh-physics step --levels 40 --threads "$CAM_THREADS" --moist $CAM_ICE_ARG --out "$BFM" \
-            $INIT12_ARGS --deadline-min 30 || true
+            $INIT12_ARGS $EDGE12_ARGS --deadline-min 30 || true
         fi
         if [ -f "$BFM" ]; then BFC="$BFM"
         else echo "=== moist 12 km forecast missing: 3 km edges from $BFC (no moisture at the edges)" >> "$LOG"; fi

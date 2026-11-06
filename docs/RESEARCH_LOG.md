@@ -5819,7 +5819,7 @@ By lead, for GA:
 - `tools/gfs_edges.py` (new);
 - `src/forecast.py` (`--edge-frames`, inert unless given).
 
-The cycle hook is not written yet: `NWP_GFS_EDGES` in daily.sh, given only to the moist product run, so that the dry first-guess run keeps fixed edges and no GFS value reaches an analysis. After that is written and the user pushes, the crontab switch is `NWP_GFS_EDGES=abs`. The 3 km nest takes its edges from the 12 km product and should inherit the gain; that is untested. P-53 is marked addressed.
+The cycle hook is `NWP_GFS_EDGES=<abs|ramp|tend>` in daily.sh (step 2a). It builds the frames in `$RUNDIR/gfs_edges` and gives them only to the moist product run. The dry first-guess run keeps fixed edges, so no GFS value reaches an analysis. The frames are deleted once the product exists. cam_cycle.sh step 1b uses them only if it has to rerun a failed product. If the frames cannot be made, the run falls back to fixed edges and logs it, without counting a failure. The hook was tested on the server on 11-05 06Z: the live GFS 00Z download took 67 s, then the product ran with 25 frames, the frames were deleted, and the status was 0. A forced failure (bad mode) fell back to 1 frame with status 0. After the user pushes, the crontab switch is `NWP_GFS_EDGES=abs`. The 3 km nest takes its edges from the 12 km product and should inherit the gain; that is untested. P-53 is marked addressed.
 
 **For the collaboration study.** The largest single improvement in the project came from relaxing a constraint the human had set, not from any of the physics the AI proposed. The AI's own predictions put the gain at 1-8 %; it was 35-78 %. Six weeks of physics tests were run inside an error the design had accepted on day one.
 

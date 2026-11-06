@@ -184,12 +184,37 @@ echo "rundir $RUNDIR" >> "$LOG"
 
 # 2a. The moist NH 12 km forecast: the 12 km product when NWP_12KM_MOIST=1
 # (same command as cam_cycle.sh step 1b, which then reuses this file).
+# NWP_GFS_EDGES=<abs|ramp|tend> (prompt 266, test GE, 2026-11-05; adopted: abs):
+# the product's edges follow the GFS forecast of the cycle 6 h older
+# (tools/gfs_edges.py) instead of the analysis held fixed for 24 h. The initial
+# state is still the observation analysis. ONLY this run is given the frames: the
+# dry run below is the next cycle's first guess, and it keeps fixed edges so that
+# no GFS value reaches an analysis. If the frames cannot be made, this run keeps
+# fixed edges and the log says so; that is not counted as a cycle failure.
+# The frames are deleted once the product exists (they are ~85 MB a cycle and the
+# GFS download stays cached for 3 days in $DATA/gfs_cache). Unset = fixed edges.
+EDGE_ARGS=""
+GFSDIR="$RUNDIR/gfs_edges"
+if [ "$MOIST12" = 1 ] && [ -n "${NWP_GFS_EDGES:-}" ] && [ -f "$RUNDIR/obs_analysis_f00.npz" ]; then
+    rm -rf "$GFSDIR"
+    echo "=== GFS edge frames ($NWP_GFS_EDGES)  $(date -u +%FT%TZ)  (+$(( ($(date +%s) - T0) / 60 )) min)" >> "$LOG"
+    timeout 900 python -u "$ROOT/tools/gfs_edges.py" --run-dir "$RUNDIR" --out-dir "$GFSDIR" \
+        --mode "$NWP_GFS_EDGES" --hours "$HOURS" >> "$LOG" 2>&1
+    rc=$?
+    if [ $rc -eq 0 ]; then
+        EDGE_ARGS="--edge-frames $GFSDIR"; echo "    ok" >> "$LOG"
+    else
+        rm -rf "$GFSDIR"; echo "    GFS frames unavailable (rc=$rc): fixed edges this cycle" >> "$LOG"
+    fi
+fi
 if [ "$MOIST12" = 1 ] && [ -f "$RUNDIR/obs_analysis_f00.npz" ]; then
     rm -f "$RUNDIR/forecast_nhm.npz"     # never keep a stale file from an earlier attempt
     step "moist 12 km forecast (product)" python -u "$ROOT/src/forecast.py" --run-dir "$RUNDIR" \
         --hours "$HOURS" --output-every 1 --core nh --nh-backend c --advection upwind3 \
         --nh-physics step --levels 40 --threads "$NH_THREADS" --moist $ICE_ARG \
-        --out "$RUNDIR/forecast_nhm.npz" $INIT_ARGS --deadline-min 30 || true
+        --out "$RUNDIR/forecast_nhm.npz" $INIT_ARGS $EDGE_ARGS --deadline-min 30 || true
+    # keep the frames only if the product is missing (cam_cycle.sh step 1b reruns it)
+    [ -f "$RUNDIR/forecast_nhm.npz" ] && rm -rf "$GFSDIR"
 fi
 
 # 2b. The dry hydrostatic forecast (the product when NWP_12KM_MOIST is unset;
