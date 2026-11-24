@@ -55,6 +55,7 @@ BUCKET = "https://noaa-gfs-bdp-pds.s3.amazonaws.com"
 VARS = {"TMP": "TMP", "RH": "RH", "UGRD": "UGRD", "VGRD": "VGRD", "HGT": "HGT"}
 # our level -> GFS levels it comes from (two entries: ln-p interpolation)
 MISSING = {875: (900, 850), 825: (850, 800)}
+RH_OVER_ICE = True
 
 
 def gfs_levels():
@@ -111,7 +112,7 @@ def subset_grib(cycle, fxx, cache):
         else:
             merged.append((a, b))
     out.parent.mkdir(parents=True, exist_ok=True)
-    tmp = out.with_suffix(".part")
+    tmp = out.with_name(f"{out.name}.part{os.getpid()}")   # unique: two runs may share the cache
     with open(tmp, "wb") as fh:
         for rg in merged:
             fh.write(fetch(url, rg))
@@ -182,6 +183,14 @@ def gfs_frame(cycle, fxx, cache, la, lo):
                 out[c, k] = (1 - t) * a + t * b
             else:
                 out[c, k] = sample(flds[(ch, p)], w)
+    # GFS RH is over ICE below 0 C (it matches GFS's own SPFH that way; test RHI).
+    # The model converts the RH channel with saturation over WATER, so convert.
+    if RH_OVER_ICE:
+        it, ir = config.CHANNELS.index("TMP"), config.CHANNELS.index("RH")
+        Tk = out[it]
+        esw = 611.2 * np.exp(17.67 * (Tk - 273.15) / (Tk - 29.65))
+        esi = 611.2 * np.exp(21.8745584 * (Tk - 273.16) / (Tk - 7.66))
+        out[ir] = np.where(Tk < 273.15, out[ir] * esi / esw, out[ir])
     return out
 
 

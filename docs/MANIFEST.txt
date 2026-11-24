@@ -30,10 +30,10 @@ cd7d0f085e4d3284    173203  docs/nh2d_density_current.png
 8edbeb1f9f90e5b7     88994  docs/nh2d_mass_mountain_wave.png
 25bdef4fd9603cc4    116736  docs/nh3d_terrain_rest.png
 1eeb6616080945dd      6884  docs/POSTPROCESSING.md
-5e4cf8b171aa3226    150111  docs/PROBLEMS.md
+053965bb5c7838aa    154321  docs/PROBLEMS.md
 7fb6bee31228f570     65017  docs/PROMPT_LOG.md
 94ce3f65437ddd36     21574  docs/REFERENCES.md
-e2962e253e1292f8    463488  docs/RESEARCH_LOG.md
+08d391f642d123aa    475343  docs/RESEARCH_LOG.md
 bf17820767386e75     85879  docs/s3_backend_cost.png
 2ad8f171b4d38426    226489  docs/skew_compare.png
 78c3574bb1b0dd88      4845  docs/STABILITY.md
@@ -213,7 +213,7 @@ a05368363cd2c6ae     11925  tools/cam_cycle.sh
 d7519565abbffb81     12599  tools/daily.sh
 2396001504e2f24a      4305  tools/edge_diag.py
 c4cb3526b7e6e2d4      1544  tools/fetch_boundaries.py
-07aa9485f3cd4ae6     11832  tools/gfs_edges.py
+2e80f648b41106cf     12401  tools/gfs_edges.py
 72eb96ba205f925f       939  tools/lead_scores.py
 78dcce8adc448e93       962  tools/locate28.py
 909645a4c8bd7303      2719  tools/locate_growth.py

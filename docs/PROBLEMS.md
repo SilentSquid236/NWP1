@@ -99,6 +99,47 @@ Open: the remaining night warm bias may need longwave cooling of the air itself 
 
 **Other candidates, not tested.** Daytime evaporative fraction 0.5 all day; soil heat capacity and the force-restore coefficient (one loam everywhere); the strength of the heat-flux coupling to a ~35–40 m lowest layer (P-84); the stable-side long tail of the heat flux, chosen to stop runaway decoupling; clear-sky radiation everywhere (this cuts the other way on cloudy days). The next step is an hour-by-hour energy-budget printout (Rn, H, LE, G) at a few clear-day stations, before changing any constant.
 
+---
+
+## P-89 — GFS edge humidity read as relative to water when it is relative to ice
+
+**Category** A · **First seen** 2026-11-24 (prompt 272, website reflectivity) · **Status** FIXED (test RHI, awaiting push)
+
+**Symptom.** Bands of simulated echo along the west and south-east edges of the 12 km product: 36-64 % of edge columns >= 15 dBZ, against 0-4 % in MRMS. The condensate (cloud ice and snow, up to 0.25 g/kg) sat at 200-475 hPa in the edge relaxation zone.
+
+**Cause.** GFS reports RH over ice below 0 °C. `tools/gfs_edges.py` passed it through and `forecast.py` converts the RH channel with saturation over water, so the edge vapour aloft was up to about 1.55 times too large, and the ice microphysics condensed the excess.
+
+**Fix.** `gfs_frame` converts RH to over-water for T < 273.15 K (`RH_OVER_ICE = True`). Test RHI (16 cycles): edge echo at +12 h 64 % -> 1 %, interior 15.5 % -> 9.2 %, surface ratios 0.998-1.003.
+
+**Left open.** The interior still has 3-4 times the MRMS echo fraction at 12-24 h. The "GFS wetter aloft by 12-17 %" statement in the LV/GE notes was this bug.
+
+---
+
+## P-88 — GFS edges: a sea-level pressure shock in the first hour and a -1 hPa bias
+
+**Category** B · **First seen** 2026-11-16 (test LV) · **Status** OPEN
+
+**Symptom.** Over 34 live 12 km cycles (11-06 12Z to 11-14 18Z), paired with fixed-edge reruns, all values in hPa (bias / RMSE):
+
+| lead | GFS edges | fixed edges |
+|---|---|---|
+| +1 h | -0.64 / 5.49 | +1.06 / 3.00 |
+| +3 h | -1.16 / 2.22 | +0.46 / 2.71 |
+| +12 h | -0.91 / 1.60 | +0.29 / 4.42 |
+| +24 h | -1.19 / 2.25 | -0.15 / 6.29 |
+
+The 1-6 h MSLP ratio is 1.008, the only lead band where GFS edges are not better. The bias is larger in the interior (-1.22) than within 180 km of the edges (-0.58).
+
+**What is known.** In the abs mode the edge frames jump from our analysis to GFS between hour 0 and hour 1, and the relaxation imposes that jump in surface pressure at once. The arm that ramps to GFS over 6 h (test GE, GR) had the lower 1-6 h MSLP ratio (0.624 against GA's 0.645). The bias source is not known; candidates are the frames' surface pressure, which comes from GFS heights through `hrrr_to_sigma_state`, against our station-based MSLP reduction.
+
+**Test RP (2026-11-17).** Over 38 cycles, ramping the frames to GFS cut the +1 h MSLP RMSE from 5.26 hPa to 2.76 hPa (6 h ramp) or 2.97 hPa (3 h), and the MSLP ratio over all leads to 0.901 and 0.928. Dewpoint got worse (1.041 and 1.013), so neither arm was adopted. The bias is unchanged from +6 h on in every arm (about -0.9 hPa at +12 h), so it is not a start-up effect.
+
+**Next.** Test RPQ: ramp everything except humidity. Separately, diagnose the bias: compare the GFS frames' surface pressure with our analysis p_s at the edges, and check GFS MSLP against the stations.
+
+**Ruled out.** none yet.
+
+---
+
 ## P-85 — The grid is a constant-dx beta-plane, but the cells sit on a lat/lon mesh
 
 **Category** B · **First seen** 2026-10-20 (found while sizing N2's continental outer level, prompt 240) · **Status** OPEN
@@ -215,6 +256,12 @@ The production levels keep the lat/lon box for now. Map factors in the dynamics,
 - Q3 was refuted as written. Its two-sided "within 2 %" band also rejected the wind improvement (−9.5 %); temperature stayed within 0.2 %. Under the rule J5 is therefore not adopted.
 - Interim scores on 11 starts had shown a +1 hPa north-band bias that the 12th start removed. It was reported to the user before the final score.
 - J5b (user's choice) is an out-of-sample replication of C against V5 on 10-15..10-18, with a one-sided harm rule (predictions md5 6644463a).
+
+**Test LV (2026-11-16): the jet now cuts the 3 km forecast short.** Since 11-09 12Z the 3 km run has stopped at its deadline at 19-21 h. Its adaptive step count is set by the initial maximum wind, which rose from 64-88 m/s (11-05 to 11-08) to 110-132 m/s (11-09 to 11-16), so the step count rose from about 146 to 226 per forecast hour. The 12 km analysis carries the same maxima (64.4 → 131.7 m/s), and the 3 km starts from it. Against the GFS 6 h forecast for 11-15 18Z to 11-16 12Z, the analysed maximum is 120-142 m/s at 200-300 hPa, where GFS has 21-24 m/s; the domain-wide GFS maximum is 44-71 m/s. Three of the four maxima sit on the west edge (x = 0-1, 44.5N 82W), the fourth near the south edge (37.6N 76.5W). Fixed-edge 3 km reruns needed exactly the same step counts (ratio 1.000 on all 8 cycles), so this is the analysis, not the GFS edges.
+
+**Two cycles lost (2026-11-21 12Z and 18Z).** Both 12 km forecasts, the moist product and the dry run, diverged at the first step. At 12Z the analysed maximum wind was 118.9 m/s (115.2 after the start-up balance), and max|u,v| reached 154 m/s at t+0.01 h, so the runs stopped and nothing was written. The 18Z cycle also ended with status 1 and no forecast. The 3 km runs had nothing to nest in. The 11-22 00Z cycle ran normally. P-82 has gone from a cost (a short time step and deadline cuts) to lost forecasts.
+
+---
 
 
 ## P-81 — The moist NH runs put 4–10× too much rain in a tropical-remnant event

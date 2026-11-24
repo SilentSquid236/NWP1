@@ -5761,6 +5761,164 @@ Plan: 1 and 2 first (map set), 3 after P-81 settles.
 
 ---
 
+## 2026-11-24 — RHI: GFS humidity is over ice below 0 °C; converting it removes the edge echoes; adopted
+
+**Context.** Prompt 272: the website's simulated reflectivity showed bands of echo along the west and south-east edges of the 12 km product. At four valid times (11-24 00/06/12Z), 36-62 % of columns within 4 cells of the edge had >= 15 dBZ, against 0-4 % in MRMS. The condensate sat at 200-475 hPa (-23 to -59 °C) and was absent from the interior at +3 h.
+
+**Cause.** Below 0 °C, GFS relative humidity is relative to ice: converted that way it matches GFS's own specific humidity within -0.4 to -1.5 % at 700-250 hPa, and converted over water it is 10-22 % too high. `tools/gfs_edges.py` passed RH through unchanged, and `forecast.py` (`qv_from_rh_sigma`) converts the RH channel with saturation over water, while the `--ice` microphysics condenses over ice. Edge vapour at 300 hPa was therefore about 1.55 times too large. The LV-era remark that "GFS is wetter aloft than our analysis by 12-17 %" was this convention difference, not a real difference. This is a bug from prompt 266, filed as P-89.
+
+**Hypothesis.** Written before any run in `rhi_predictions.txt` (md5 94ac8a90; one wording erratum in the background text, `rhi_predictions_erratum.txt`, not affecting the hypotheses): H1 edge echo fraction at +12 h <= 15 %; H2 edge condensate aloft down >= 70 %; H3 interior echo fraction down >= 30 %; H4 surface ratios within 0.99-1.005; H5 (weak) MSLP bias toward zero by >= 0.1 hPa. Rule: adopt if H1 holds, all four ratios <= 1.005 and no forecast fails.
+
+**Method.**
+- The fix: in `gfs_frame`, for T < 273.15 K, RH_water = RH × e_si/e_sw (Bolton over water, Murray over ice), behind `RH_OVER_ICE = True`.
+- 16 cycles (11-18 12Z to 11-22 18Z, excluding the two lost cycles of 11-21), 12 km moist product, deployed code 59438df plus the fix, production command and resource budget.
+- Control = the production forecasts. 717,389 common ASOS matches.
+- Echo fractions from qr with the website's Z-qr relation (rho = 1), edge band 0-9 cells, interior >= 25 cells, against MRMS at the same valid times.
+
+**Result.**
+
+| | T | dewpoint | wind | MSLP |
+|---|---|---|---|---|
+| RMSE ratio, RHI / production | 0.9994 | 0.9996 | 0.9980 | 1.0032 |
+
+MSLP RMSE 1.324 -> 1.328 hPa; bias -0.507 -> -0.524 hPa. By lead band all ratios are within 0.996-1.006.
+
+Fraction of columns >= 15 dBZ, edge band / interior (%):
+
+| lead | production | RHI | MRMS |
+|---|---|---|---|
+| +6 h | 62.4 / 4.6 | 0.4 / 1.8 | 1.2 / 1.4 |
+| +12 h | 64.3 / 15.5 | 1.0 / 9.2 | 1.8 / 2.1 |
+| +18 h | 63.1 / 15.2 | 1.6 / 8.7 | 2.4 / 2.2 |
+| +24 h | 58.6 / 14.0 | 1.7 / 7.4 | 2.1 / 2.1 |
+
+Edge-band condensate (qc + qr) at 200-475 hPa at +12 h: 0.2736 -> 0.0020 g/kg (-99 %). No forecast failed.
+
+**Predictions.**
+
+| prediction | outcome |
+|---|---|
+| H1 (edge <= 15 % at +12 h) | held (1.0 %); the control was 64 %, above the 30-60 % written down |
+| H2 (edge condensate -70 %) | held (-99 %) |
+| H3 (interior -30 %) | held (15.5 -> 9.2 %, -41 %) |
+| H4 (ratios 0.99-1.005) | held |
+| H5 (bias toward zero by 0.1 hPa) | refuted (-0.507 -> -0.524 hPa) |
+
+Rule: adopt.
+
+**Interpretation.** The edge echoes were entirely the humidity convention. The interior also lost over a third of its echo, so the excess vapour had been spreading inward aloft. The interior is still 3-4 times MRMS at 12-24 h (7-9 % against about 2 %), which this fix does not explain. Surface scores do not move, as expected for an error confined to the upper troposphere. The MSLP bias is not latent heating at the edges, which narrows P-88.
+
+Tests RP and the registered RPQ (`r2_predictions.txt`) used edges that carried the wrong humidity, and RP's dewpoint cost was attributed to "our analysis humidity during the ramp". That attribution, and RPQ's control, should be re-examined on the fixed edges before RPQ runs.
+
+**Status.** Adopted as a bug fix. `tools/gfs_edges.py` changed in R and G (with the pending cache-race fix); live once pushed and pulled, no crontab change. P-89 opened and fixed.
+
+---
+
+## 2026-11-17 — RP: ramped GFS edges remove the first-hour pressure jolt but cost dewpoint; not adopted
+
+**Context.** P-88 (test LV): with GFS edges the 12 km MSLP error at +1 h is about 5.3 hPa, against 3.0 hPa with fixed edges, because the edge frames jump from our analysis to GFS between hour 0 and hour 1. Prompt 271 approved testing the ramp mode (already in `tools/gfs_edges.py`) first.
+
+**Method.**
+- Forecast-only, 12 km moist product, 38 cycles (11-06 12Z to 11-15 18Z), deployed code 59438df, the production command at the production resource budget.
+- Control A = the production forecasts (abs edges); LV showed reruns at this budget are bit-identical.
+- Arms:
+  - R6: frames blended from our analysis to GFS over 6 h, `--mode ramp`, the repo default;
+  - R3: the same blend over 3 h.
+- 1.70 M common ASOS matches.
+- Predictions `rp_predictions.txt` (md5 ddb876b2), written before any run.
+- Two operational slips, neither of which touched a score:
+  - The two arms first downloaded the same GFS file at once and collided on a shared temporary filename. This is a real bug in `gfs_edges.py`; production runs one download at a time and never hit it. It is now fixed in the working copy: the temporary name carries the process id.
+  - Killing that first job left one truncated R3 forecast, which was deleted and rerun before final scoring.
+
+**Result.** Ratios are arm RMSE divided by control RMSE.
+
+| | T | dewpoint | wind | MSLP |
+|---|---|---|---|---|
+| R6 (6 h ramp) | 1.0049 | 1.0407 | 1.0079 | 0.9007 |
+| R3 (3 h ramp) | 1.0010 | 1.0130 | 1.0018 | 0.9275 |
+
+MSLP RMSE at +1 h: A 5.26, R6 2.76, R3 2.97 hPa.
+
+By lead for R6:
+
+| lead | MSLP | dewpoint |
+|---|---|---|
+| 1-6 h | 0.778 | 1.043 |
+| 7-12 h | 1.060 | 1.078 |
+
+The MSLP ratio of 1.060 at 7-12 h is a second, smaller adjustment when the ramp ends: R6's +6 h RMSE is 2.19 against A's 1.72. The -1 hPa bias is unchanged after 6 h (+12 h: A -0.86, R6 -0.87, R3 -0.87 hPa).
+
+**Predictions.**
+
+| prediction | outcome |
+|---|---|
+| R1 (+1 h MSLP) | held |
+| R2 (1-6 h MSLP) | held |
+| R3 (all-lead MSLP) | held |
+| R4 (T, dewpoint, wind within 0.99-1.01) | refuted for dewpoint in both arms |
+| R5 (7-24 h unchanged) | refuted for R6 (dewpoint 1.078, MSLP 1.060 at 7-12 h) and for R3's dewpoint (1.023) |
+| R6p (bias stays) | held |
+
+Rule: neither arm qualifies (dewpoint > 1.005), so abs stays.
+
+**Interpretation.** The ramp fixes what it was meant to fix. The cost is that, during the ramp, the edges carry our analysis's humidity, and LV and the Buffalo sounding of 11-16 12Z both show that humidity is poor. That is a hypothesis, not a measurement. The planned test RPQ (ramp everything except humidity) tests it. The -1 hPa bias is not a start-up effect; it persists to 24 h in every arm, so it needs its own diagnosis (P-88).
+
+**Status.** Not adopted; abs stays. P-88 updated. `tools/gfs_edges.py` temp-file fix in R and G, awaiting push.
+
+---
+
+## 2026-11-16 — LV: GFS edges on live cycles, 12 km and 3 km, against fixed-edge reruns
+
+**Context.** Prompt 269: "Can we check the 3km forecasts and see how the gfs edges are performing against no gfs edges". GFS edges have driven the 12 km product since cycle 11-06 12Z, and the 3 km run nests in that product.
+
+**Method.**
+- The deployed code (59438df) was rerun on the production analyses with the production commands, without `--edge-frames` (fixed edges).
+- 12 km: all 34 cycles from 11-06 12Z to 11-14 18Z, 26 threads.
+- 3 km: 8 cycles, two per cycle hour (00Z 11-07/11-11, 06Z 11-08/11-12, 12Z 11-09/11-13, 18Z 11-10/11-14), nested in the fixed-edge 12 km reruns.
+- Both arms verified against the same ASOS files; only matches present in both arms scored.
+- Predictions: `lv_predictions.txt` (md5 26d2c9e7), written before any control ran, plus an amendment (below) before any control was scored.
+- Production 3 km runs on 11-09 12Z and later stop at 19-21 h (deadline). Three controls were also cut (17-22 h) to keep clear of the next production cycle. Leads beyond either run's last hour are not assessed; the 19-24 h 3 km band rests on about half the matches of the other bands.
+
+**Reproducibility (amendment).** The first rerun of a production 12 km product differed from production by up to 13.6 m/s at 24 h. The rerun was pinned to 26 CPUs with NWP_RESOURCE_FRACTION=0.25, so its resource budget was 6 cores and torch ran 4 threads; cron runs unpinned on 104 cores, which gives a 26-core budget and 24 torch threads. The start-up balance then differs at round-off (residual 2.61e-16 against 2.91e-16), and moist convection grows that difference. With NWP_RESOURCE_FRACTION=1.0 under the same pinning (26-core budget, 24 torch threads), the 12 km product and the first 3 km hour were identical to production, bit for bit. Every forecast comparison made earlier in this project kept the same settings within a test, so their pairs are unaffected. A rerun that is meant to reproduce production must match the resource budget, not only the thread count.
+
+**Result.** Ratios are RMSE with GFS edges divided by RMSE with fixed edges.
+
+| | T | dewpoint | wind | MSLP | matches |
+|---|---|---|---|---|---|
+| 12 km, 34 cycles | 0.651 | 0.555 | 0.685 | 0.475 | 1.52 M |
+| 3 km, 8 cycles | 0.743 | 0.493 | 0.638 | 0.465 | 320 k |
+| (test GE, 12 km, 12 starts) | 0.629 | 0.574 | 0.645 | 0.218 | 556 k |
+
+- 12 km: better in 33 of 34 cycles for T and in all 34 for dewpoint, wind and MSLP.
+- 3 km: better in all 8 cycles for every variable.
+- By lead, the 3 km wind ratio falls from 0.844 (1-6 h) to 0.529 (19-24 h), dewpoint from 0.733 to 0.385.
+- The 3 km T gain is smaller than at 12 km (0.743 against 0.651), as predicted: its near-ground thermo relaxation is only 45 km wide.
+- MSLP is the exception at short lead. At 12 km the 1-6 h ratio is 1.008, with a +1 h error of 5.49 hPa against 3.00 hPa for fixed edges, and the GFS-edge runs carry a -0.9 to -1.2 hPa bias from +3 h on (P-88).
+- 3 km step counts were identical in both arms on all 8 cycles (146-226 per forecast hour). The rise since 11-08 follows the analysed jet: the 12 km initial maximum wind went from 64 m/s (11-05) to 112-132 m/s (11-09 to 11-16), where GFS has 44-71 m/s (P-82).
+
+**Predictions.**
+
+| prediction | outcome |
+|---|---|
+| L1 (12 km: T, dewpoint, wind, MSLP) | held for T, dewpoint and wind; MSLP missed (0.475 against <= 0.45) |
+| L2 (3 km) | held on all four |
+| L3 (gain grows with lead) | held |
+| L4 (step counts within 10 %) | held exactly (ratio 1.000) |
+| L5 (determinism) | failed as first run; held once the resource budget matched production (amendment) |
+
+No-harm rule: 3 km T 0.743 and wind 0.638, so no flag. The 12 km wind and MSLP ratios are below 1, so GE stands.
+
+**Interpretation.**
+- The live gains match test GE for T, dewpoint and wind. The MSLP gain is half GE's, because of the hour-1 shock and the bias.
+- The 3 km inherits the gain through its edges without a switch of its own, and gains more than the 12 km on dewpoint and wind.
+- The 3 km deadline cuts are not from GFS. They come from P-82's analysed jet, which drives the adaptive timestep. GFS would show that jet as an analysis error at once, but GFS may not enter the initial state, so that is the user's decision.
+
+**Status.** GFS edges stay. New: P-88 (MSLP start-up shock and bias). P-82 updated with the deadline cuts.
+
+**For the collaboration study.** The determinism check was pre-registered as a formality, and it failed. It found a reproducibility dependence (forecast output depends on the visible core count through torch threads in the start-up balance) that no earlier test had exposed, because every earlier test kept its arms on identical settings. The other unplanned finding, the jet behind the deadline cuts, came from reading the logs before writing predictions, not from the test itself.
+
+---
+
 ## 2026-11-05 — GE: GFS at the lateral boundaries; the frozen edges were the largest error in the 12 km forecast
 
 **Context.** Prompt 265 asked whether feeding in an existing global model would be easier than running one. Prompt 266 answered with "We can use the gfs to help the edges". The observation-only rule (P-53) is narrowed: GFS may drive the lateral boundaries, and the initial state stays our own analysis. Before this test, every 12 km forecast held its edges at the cycle-time analysis for 24 h.
